@@ -30,6 +30,7 @@ export class PlanetRenderer {
   private terrainGeo!: THREE.BufferGeometry
   private roadsMesh!: THREE.InstancedMesh
   private bldgMesh!: THREE.InstancedMesh
+  private crewMesh!: THREE.InstancedMesh
   private dummy = new THREE.Object3D()
   private clock = new THREE.Clock()
   private view: ViewMode = 'biome'
@@ -315,6 +316,13 @@ export class PlanetRenderer {
     this.bldgMesh.castShadow = true
     this.bldgMesh.frustumCulled = false
     this.scene.add(this.bldgMesh)
+
+    const crewGeo = new THREE.BoxGeometry(0.5, 0.3, 0.32)
+    this.crewMesh = new THREE.InstancedMesh(crewGeo, new THREE.MeshStandardMaterial({ color: 0xf2a23a, roughness: 0.5, metalness: 0.2 }), COLONY.build.maxBuildings + 8)
+    this.crewMesh.count = 0
+    this.crewMesh.castShadow = true
+    this.crewMesh.frustumCulled = false
+    this.scene.add(this.crewMesh)
   }
 
   private updateColonyLayer() {
@@ -346,20 +354,39 @@ export class PlanetRenderer {
       this.bldgMesh.setColorAt(bi, col)
       bi++
     }
+    const car = s.structures.find((st) => st.kind === 'caravan')!
+    let ci = 0
     for (const j of s.jobs) {
-      if (bi >= cap) break
-      this.dummy.position.set(this.wx(j.x), t.worldY(j.x, j.y), this.wz(j.y))
-      this.dummy.scale.set(1, Math.max(0.08, j.artifact.height * j.progress), 1)
-      this.dummy.rotation.set(0, 0, 0)
-      this.dummy.updateMatrix()
-      this.bldgMesh.setMatrixAt(bi, this.dummy.matrix)
-      col.setHex(j.artifact.color).multiplyScalar(0.55) // under construction = darker
-      this.bldgMesh.setColorAt(bi, col)
-      bi++
+      if (bi < cap) {
+        const phase = Math.max(0, (j.progress - 0.25) / 0.75) // rises only after the crew arrives
+        this.dummy.position.set(this.wx(j.x), t.worldY(j.x, j.y), this.wz(j.y))
+        this.dummy.scale.set(1, Math.max(0.04, j.artifact.height * phase), 1)
+        this.dummy.rotation.set(0, 0, 0)
+        this.dummy.updateMatrix()
+        this.bldgMesh.setMatrixAt(bi, this.dummy.matrix)
+        col.setHex(j.artifact.color).multiplyScalar(0.55) // under construction = darker
+        this.bldgMesh.setColorAt(bi, col)
+        bi++
+      }
+      // crew truck drives caravan -> site over the first quarter, then parks on site
+      if (ci < cap) {
+        const drive = Math.min(1, j.progress / 0.25)
+        const cx = car.x + (j.x - car.x) * drive
+        const cy = car.y + (j.y - car.y) * drive
+        const heading = Math.atan2(j.y - car.y, j.x - car.x)
+        this.dummy.position.set(this.wx(cx), t.worldY(Math.round(cx), Math.round(cy)) + 0.18, this.wz(cy))
+        this.dummy.scale.set(1, 1, 1)
+        this.dummy.rotation.set(0, -heading, 0)
+        this.dummy.updateMatrix()
+        this.crewMesh.setMatrixAt(ci, this.dummy.matrix)
+        ci++
+      }
     }
     this.bldgMesh.count = bi
     this.bldgMesh.instanceMatrix.needsUpdate = true
     if (this.bldgMesh.instanceColor) this.bldgMesh.instanceColor.needsUpdate = true
+    this.crewMesh.count = ci
+    this.crewMesh.instanceMatrix.needsUpdate = true
   }
 
   frame() {

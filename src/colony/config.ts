@@ -41,6 +41,16 @@ export const COLONY = {
     residentsPerHabitat: 3,
     powerLoadPerHabitat: 0.5,
     growRadius: 22, // cells from the landing the colony will expand into
+    solarFarmCost: 2600,
+    solarFarmOutput: 9, // kW peak generation
+    solarFarmBuildHours: 4,
+    powerHeadroom: 0.72, // build a farm when load exceeds this fraction of peak supply
+  },
+
+  economy: {
+    incomePerColonistPerDay: 150,
+    buildingUpkeepPerDay: 14,
+    roadUpkeepPerDay: 0.4,
   },
 
   render: {

@@ -95,7 +95,7 @@ export function ColonyApp() {
         <div className="row"><span>Buildings</span><b>{ui.colony.buildings}</b></div>
         <div className="row"><span>Building</span><b>{ui.colony.building}</b></div>
         <div className="row"><span>Solar</span><b>{ui.power.solarW.toFixed(1)} kW</b></div>
-        <div className="row"><span>Load</span><b>{ui.power.loadW.toFixed(1)} kW</b></div>
+        <div className="row"><span>Load</span><b style={{ color: ui.power.loadW > ui.power.solarW ? '#e0584d' : undefined }}>{ui.power.loadW.toFixed(1)} kW</b></div>
         <div className="batt">
           <div className="batt-head"><span>Battery</span><b>{pct}%</b></div>
           <div className="bar"><div style={{ width: `${pct}%`, background: battColor }} /></div>

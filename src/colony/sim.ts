@@ -39,6 +39,8 @@ export interface ColonyState {
   buildIds: number
   lastGrowMin: number
   buildingLoad: number
+  powerGen: number
+  lastIncomeDay: number
 }
 
 function daylightAt(hour: number, minute: number): number {
@@ -85,6 +87,8 @@ export class ColonySim {
       buildIds: 1,
       lastGrowMin: 0,
       buildingLoad: 0,
+      powerGen: 0,
+      lastIncomeDay: 0,
     }
     initBuild(this.state)
   }
@@ -126,7 +130,7 @@ export class ColonySim {
 
     const dtHours = dt / 60
     const p = s.power
-    p.solarW = COLONY.power.solarPeakW * c.daylight
+    p.solarW = (COLONY.power.solarPeakW + s.powerGen) * c.daylight
     p.loadW = COLONY.power.baseLoadW + s.colonists * 0.15 + s.buildingLoad
     p.batteryWh = Math.max(0, Math.min(p.batteryCapWh, p.batteryWh + (p.solarW - p.loadW) * dtHours))
 

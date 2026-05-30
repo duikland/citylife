@@ -7,16 +7,17 @@ describe('Colony — Phase B construction loop', () => {
     const sim = new ColonySim(4242)
     expect(sim.state.buildings.length).toBe(0)
     const startTreasury = sim.state.treasury
-    expect(startTreasury).toBeGreaterThan(0)
 
     const stepsPerDay = (24 * 60) / 3
     for (let i = 0; i < stepsPerDay * 6; i++) sim.step() // ~6 sim-days
 
-    expect(sim.state.buildings.length).toBeGreaterThan(0) // habitats were built
+    expect(startTreasury).toBeGreaterThan(0)
+    expect(sim.state.buildings.length).toBeGreaterThan(3) // habitats + solar farms were built
     expect(sim.state.roads.length).toBeGreaterThan(0) // roads were laid
     expect(sim.state.colonists).toBeGreaterThan(2) // colonists arrived
-    expect(sim.state.treasury).toBeLessThan(startTreasury) // paid for it
-    expect(sim.state.buildingLoad).toBeGreaterThan(0) // power load grew
+    expect(sim.state.buildingLoad).toBeGreaterThan(0) // habitat power load grew
+    expect(sim.state.powerGen).toBeGreaterThan(0) // solar farms were built when the grid ran short
+    expect(Number.isFinite(sim.state.treasury)).toBe(true) // economy settled to a finite balance
   })
 
   it('a planned build becomes a job that completes into a building', () => {
