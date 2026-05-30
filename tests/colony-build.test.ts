@@ -17,6 +17,8 @@ describe('Colony — Phase B construction loop', () => {
     expect(sim.state.colonists).toBeGreaterThan(2) // colonists arrived
     expect(sim.state.buildingLoad).toBeGreaterThan(0) // habitat power load grew
     expect(sim.state.powerGen).toBeGreaterThan(0) // solar farms were built when the grid ran short
+    expect(sim.state.totalJobs).toBeGreaterThan(0) // workplaces created jobs
+    expect(new Set(sim.state.buildings.map((b) => b.artifact.kind)).size).toBeGreaterThan(1) // a mix of building types
     expect(Number.isFinite(sim.state.treasury)).toBe(true) // economy settled to a finite balance
   })
 

@@ -24,7 +24,7 @@ export interface ColonyUiState {
   clock: { day: number; hour: number; minute: number; isDay: boolean }
   power: { solarW: number; loadW: number; batteryWh: number; batteryCapWh: number; pct: number }
   colonists: number
-  colony: { treasury: number; buildings: number; building: number; load: number }
+  colony: { treasury: number; buildings: number; building: number; load: number; jobs: number; employed: number }
   name: string
   biome: string
   view: ViewMode
@@ -137,6 +137,8 @@ export class ColonyRuntime {
         buildings: s.buildings.length,
         building: s.jobs.length,
         load: Math.round(s.power.loadW * 10) / 10,
+        jobs: s.totalJobs,
+        employed: s.colonists > 0 ? Math.round((Math.min(s.colonists, s.totalJobs) / s.colonists) * 100) : 0,
       },
       name: s.name,
       biome: BIOME_LABEL[s.terrain.biome[li]!] ?? 'Unknown',

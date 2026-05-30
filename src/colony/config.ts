@@ -45,6 +45,15 @@ export const COLONY = {
     solarFarmOutput: 9, // kW peak generation
     solarFarmBuildHours: 4,
     powerHeadroom: 0.72, // build a farm when load exceeds this fraction of peak supply
+    // workplaces (commercial / industrial) — create jobs
+    commercialCost: 1800,
+    industrialCost: 2000,
+    jobsPerCommercial: 4,
+    jobsPerIndustrial: 5,
+    commercialLoad: 0.6,
+    industrialLoad: 0.9,
+    workplaceBuildHours: 5,
+    jobDeficitThreshold: 5, // build a workplace when unemployment exceeds this
   },
 
   economy: {

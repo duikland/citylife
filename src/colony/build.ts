@@ -1,12 +1,13 @@
-// Phase B/C — the construction loop + economy + power generation.
-// The colony plans parcels, lays roads, an architect designs habitats (or solar farms
-// when the grid runs short), a crew truck drives out and builds them over time, colonists
-// arrive, and a daily economy (income vs upkeep) keeps the treasury — and growth — going.
+// Construction + economy + power + zoning.
+// The colony plans parcels, branches roads off the nearest existing road, and an architect
+// designs homes, workplaces (commercial/industrial), or solar farms based on what's needed.
+// Crew trucks build them; colonists arrive, take jobs, and a daily economy (scaled by
+// employment) funds continued growth.
 import { RNG } from '../engine/rng'
 import { COLONY } from './config'
 import type { ColonyState } from './sim'
 
-export type BuildKind = 'habitat' | 'solar'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar'
 
 export interface Parcel {
   id: number
@@ -19,8 +20,9 @@ export interface Artifact {
   color: number
   height: number
   residents: number
-  powerLoad: number // kW drawn (habitats)
-  powerGen: number // kW peak generated (solar farms)
+  jobs: number
+  powerLoad: number
+  powerGen: number
   buildTimeMin: number
   cost: number
 }
@@ -29,7 +31,7 @@ export interface ConstructionJob {
   x: number
   y: number
   artifact: Artifact
-  progress: number // 0..1
+  progress: number
 }
 export interface ColonyBuilding {
   id: number
@@ -42,7 +44,9 @@ export interface RoadCell {
   y: number
 }
 
-const HAB_COLORS = [0xe6cda2, 0xd8b48a, 0xc9b08f, 0x8fb6c9, 0xb88a6a]
+const HAB_COLORS = [0xe6cda2, 0xd8b48a, 0xc9b08f, 0xb88a6a]
+const COMMERCIAL_COLOR = 0x5fb6d8
+const INDUSTRIAL_COLOR = 0xcf8b54
 const SOLAR_COLOR = 0x18406a
 const key = (x: number, y: number) => x + ',' + y
 
@@ -59,6 +63,7 @@ export function initBuild(state: ColonyState): void {
   state.lastIncomeDay = state.clock.day
   state.buildingLoad = 0
   state.powerGen = 0
+  state.totalJobs = 0
   for (const s of state.structures) state.occupied.add(key(s.x, s.y))
 }
 
@@ -69,10 +74,27 @@ function designHabitat(state: ColonyState, rng: RNG): Artifact {
     color: HAB_COLORS[rng.int(0, HAB_COLORS.length - 1)]!,
     height: rng.range(0.8, 1.6),
     residents: COLONY.build.residentsPerHabitat,
+    jobs: 0,
     powerLoad: COLONY.build.powerLoadPerHabitat,
     powerGen: 0,
     buildTimeMin: COLONY.build.buildTimeHours * 60,
     cost: COLONY.build.habitatCost,
+  }
+}
+
+function designWorkplace(state: ColonyState, rng: RNG): Artifact {
+  const industrial = rng.chance(0.45)
+  return {
+    id: state.buildIds++,
+    kind: industrial ? 'industrial' : 'commercial',
+    color: industrial ? INDUSTRIAL_COLOR : COMMERCIAL_COLOR,
+    height: industrial ? rng.range(0.9, 1.5) : rng.range(1.0, 1.8),
+    residents: 0,
+    jobs: industrial ? COLONY.build.jobsPerIndustrial : COLONY.build.jobsPerCommercial,
+    powerLoad: industrial ? COLONY.build.industrialLoad : COLONY.build.commercialLoad,
+    powerGen: 0,
+    buildTimeMin: COLONY.build.workplaceBuildHours * 60,
+    cost: industrial ? COLONY.build.industrialCost : COLONY.build.commercialCost,
   }
 }
 
@@ -83,6 +105,7 @@ function designSolarFarm(state: ColonyState): Artifact {
     color: SOLAR_COLOR,
     height: 0.35,
     residents: 0,
+    jobs: 0,
     powerLoad: 0,
     powerGen: COLONY.build.solarFarmOutput,
     buildTimeMin: COLONY.build.solarFarmBuildHours * 60,
@@ -115,6 +138,21 @@ function addRoadPath(state: ColonyState, ax: number, ay: number, bx: number, by:
   return added
 }
 
+/** Nearest existing road cell (or the caravan) to (x,y) — so new roads branch off the network. */
+function nearestRoadAnchor(state: ColonyState, x: number, y: number): { x: number; y: number } {
+  const car = state.structures.find((s) => s.kind === 'caravan')!
+  let best = { x: car.x, y: car.y }
+  let bestD = Math.abs(car.x - x) + Math.abs(car.y - y)
+  for (const r of state.roads) {
+    const d = Math.abs(r.x - x) + Math.abs(r.y - y)
+    if (d < bestD) {
+      bestD = d
+      best = { x: r.x, y: r.y }
+    }
+  }
+  return best
+}
+
 function findGrowCell(state: ColonyState, rng: RNG): { x: number; y: number } | null {
   const car = state.structures.find((s) => s.kind === 'caravan')!
   const t = state.terrain
@@ -132,26 +170,32 @@ function findGrowCell(state: ColonyState, rng: RNG): { x: number; y: number } | 
   return null
 }
 
-/** Peak power supply (kW) if every farm ran at noon. */
 function peakSupply(state: ColonyState): number {
   return COLONY.power.solarPeakW + state.powerGen
 }
 
-/** Plan + pay for one build. Picks a solar farm when the grid is running short, else a habitat. */
+/** Decide what the colony needs next: power, jobs, or housing. */
+function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
+  const queuedGen = state.jobs.reduce((g, j) => g + j.artifact.powerGen, 0)
+  if (state.power.loadW > (peakSupply(state) + queuedGen) * COLONY.build.powerHeadroom) {
+    return designSolarFarm(state)
+  }
+  const pendingJobs = state.jobs.reduce((g, j) => g + j.artifact.jobs, 0)
+  const jobDeficit = state.colonists - (state.totalJobs + pendingJobs)
+  if (jobDeficit > COLONY.build.jobDeficitThreshold) return designWorkplace(state, rng)
+  return designHabitat(state, rng)
+}
+
+/** Plan + pay for one build, branching the road off the nearest existing road. */
 export function autoGrow(state: ColonyState, rng: RNG): boolean {
   if (state.buildings.length + state.jobs.length >= COLONY.build.maxBuildings) return false
-
-  // pending generation already queued in jobs, so we don't over-build farms
-  const queuedGen = state.jobs.reduce((g, j) => g + j.artifact.powerGen, 0)
-  const needPower = state.power.loadW > (peakSupply(state) + queuedGen) * COLONY.build.powerHeadroom
-  const artifact = needPower ? designSolarFarm(state) : designHabitat(state, rng)
-
+  const artifact = chooseArtifact(state, rng)
   if (state.treasury < artifact.cost + 600) return false
   const cell = findGrowCell(state, rng)
   if (!cell) return false
 
-  const car = state.structures.find((s) => s.kind === 'caravan')!
-  const roadCells = addRoadPath(state, car.x, car.y, cell.x, cell.y)
+  const anchor = nearestRoadAnchor(state, cell.x, cell.y)
+  const roadCells = addRoadPath(state, anchor.x, anchor.y, cell.x, cell.y)
   state.treasury -= roadCells * COLONY.build.roadCostPerCell
 
   state.parcels.push({ id: state.buildIds++, x: cell.x, y: cell.y })
@@ -168,21 +212,23 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
     j.progress += dtMin / j.artifact.buildTimeMin
     if (j.progress >= 1) {
       state.buildings.push({ id: j.id, x: j.x, y: j.y, artifact: j.artifact })
-      if (j.artifact.kind === 'solar') {
-        state.powerGen += j.artifact.powerGen
-      } else {
-        state.colonists += j.artifact.residents
-        state.buildingLoad += j.artifact.powerLoad
+      const a = j.artifact
+      if (a.kind === 'solar') state.powerGen += a.powerGen
+      else {
+        state.colonists += a.residents
+        state.totalJobs += a.jobs
+        state.buildingLoad += a.powerLoad
       }
       state.jobs.splice(i, 1)
     }
   }
 
-  // daily economy: income from colonists, upkeep on what you've built
   if (state.clock.day > state.lastIncomeDay) {
     const days = state.clock.day - state.lastIncomeDay
     state.lastIncomeDay = state.clock.day
-    const income = state.colonists * COLONY.economy.incomePerColonistPerDay
+    const employed = Math.min(state.colonists, state.totalJobs)
+    const rate = state.colonists > 0 ? employed / state.colonists : 0
+    const income = state.colonists * COLONY.economy.incomePerColonistPerDay * (0.6 + 0.4 * rate)
     const upkeep = state.buildings.length * COLONY.economy.buildingUpkeepPerDay + state.roads.length * COLONY.economy.roadUpkeepPerDay
     state.treasury += (income - upkeep) * days
   }
