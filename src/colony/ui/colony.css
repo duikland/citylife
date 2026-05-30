@@ -44,6 +44,8 @@ html, body, #root { margin: 0; height: 100%; background: #05070f; color: var(--t
 .batt-head b { color: var(--text); }
 .bar { height: 9px; background: rgba(255, 255, 255, 0.08); border-radius: 6px; overflow: hidden; }
 .bar > div { height: 100%; border-radius: 6px; transition: width 0.3s, background 0.3s; }
+.buildbtn { margin-top: 12px; width: 100%; background: var(--accent); color: #04231f; border: none; border-radius: 8px; padding: 8px; font-weight: 600; cursor: pointer; }
+.buildbtn:hover { filter: brightness(1.08); }
 
 .hint {
   position: absolute; bottom: 14px; left: 16px; max-width: 460px;

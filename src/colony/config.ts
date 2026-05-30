@@ -31,6 +31,18 @@ export const COLONY = {
     colonists: 2,
     name: 'Landing One',
   },
+  build: {
+    treasuryStart: 24000,
+    habitatCost: 1500,
+    roadCostPerCell: 35,
+    buildTimeHours: 5, // sim-hours to construct one habitat
+    growIntervalHours: 3, // colony starts a new build this often
+    maxBuildings: 60,
+    residentsPerHabitat: 3,
+    powerLoadPerHabitat: 0.5,
+    growRadius: 22, // cells from the landing the colony will expand into
+  },
+
   render: {
     seed: 4242,
   },

@@ -2,6 +2,8 @@
 import { RNG } from '../engine/rng'
 import { COLONY } from './config'
 import { Terrain } from './terrain'
+import { initBuild, stepBuild } from './build'
+import type { ColonyBuilding, ConstructionJob, Parcel, RoadCell } from './build'
 
 export type StructureKind = 'caravan' | 'solar' | 'battery' | 'rocket'
 export interface SeedStructure {
@@ -26,6 +28,17 @@ export interface ColonyState {
   structures: SeedStructure[]
   power: { solarW: number; loadW: number; batteryWh: number; batteryCapWh: number }
   colonists: number
+  // Phase B — construction
+  treasury: number
+  parcels: Parcel[]
+  jobs: ConstructionJob[]
+  buildings: ColonyBuilding[]
+  roads: RoadCell[]
+  roadSet: Set<string>
+  occupied: Set<string>
+  buildIds: number
+  lastGrowMin: number
+  buildingLoad: number
 }
 
 function daylightAt(hour: number, minute: number): number {
@@ -37,7 +50,7 @@ export class ColonySim {
   state: ColonyState
   rng: RNG
 
-  constructor(seed = COLONY.render.seed) {
+  constructor(seed: number = COLONY.render.seed) {
     this.rng = new RNG(seed)
     const terrain = new Terrain(this.rng)
     const { x: lx, y: ly } = terrain.landing
@@ -62,7 +75,18 @@ export class ColonySim {
         batteryCapWh: COLONY.power.batteryCapacityWh,
       },
       colonists: COLONY.seed.colonists,
+      treasury: 0,
+      parcels: [],
+      jobs: [],
+      buildings: [],
+      roads: [],
+      roadSet: new Set(),
+      occupied: new Set(),
+      buildIds: 1,
+      lastGrowMin: 0,
+      buildingLoad: 0,
     }
+    initBuild(this.state)
   }
 
   private place(terrain: Terrain, kind: StructureKind, x: number, y: number): SeedStructure {
@@ -103,7 +127,9 @@ export class ColonySim {
     const dtHours = dt / 60
     const p = s.power
     p.solarW = COLONY.power.solarPeakW * c.daylight
-    p.loadW = COLONY.power.baseLoadW + s.colonists * 0.15
+    p.loadW = COLONY.power.baseLoadW + s.colonists * 0.15 + s.buildingLoad
     p.batteryWh = Math.max(0, Math.min(p.batteryCapWh, p.batteryWh + (p.solarW - p.loadW) * dtHours))
+
+    stepBuild(s, this.rng, dt)
   }
 }

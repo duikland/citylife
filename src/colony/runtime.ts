@@ -3,6 +3,7 @@ import { COLONY } from './config'
 import { ColonySim } from './sim'
 import { PlanetRenderer, type CameraPreset, type ViewMode } from './render/PlanetRenderer'
 import { Biome } from './terrain'
+import { autoGrow } from './build'
 
 const BIOME_LABEL: Record<number, string> = {
   [Biome.Ocean]: 'Ocean',
@@ -23,6 +24,7 @@ export interface ColonyUiState {
   clock: { day: number; hour: number; minute: number; isDay: boolean }
   power: { solarW: number; loadW: number; batteryWh: number; batteryCapWh: number; pct: number }
   colonists: number
+  colony: { treasury: number; buildings: number; building: number; load: number }
   name: string
   biome: string
   view: ViewMode
@@ -43,7 +45,7 @@ export class ColonyRuntime {
   private preset: CameraPreset = 'district'
   private listeners = new Set<() => void>()
 
-  constructor(seed = COLONY.render.seed) {
+  constructor(seed: number = COLONY.render.seed) {
     this.sim = new ColonySim(seed)
   }
 
@@ -106,6 +108,10 @@ export class ColonyRuntime {
   resize() {
     this.renderer?.resize()
   }
+  buildNow() {
+    autoGrow(this.sim.state, this.sim.rng)
+    this.emit()
+  }
 
   subscribe(cb: () => void): () => void {
     this.listeners.add(cb)
@@ -126,6 +132,12 @@ export class ColonyRuntime {
       clock: { day: s.clock.day, hour: s.clock.hour, minute: s.clock.minute, isDay: s.clock.isDay },
       power: { solarW: p.solarW, loadW: p.loadW, batteryWh: p.batteryWh, batteryCapWh: p.batteryCapWh, pct: p.batteryWh / p.batteryCapWh },
       colonists: s.colonists,
+      colony: {
+        treasury: Math.round(s.treasury),
+        buildings: s.buildings.length,
+        building: s.jobs.length,
+        load: Math.round(s.power.loadW * 10) / 10,
+      },
       name: s.name,
       biome: BIOME_LABEL[s.terrain.biome[li]!] ?? 'Unknown',
       view: this.view,

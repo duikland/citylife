@@ -90,12 +90,16 @@ export function ColonyApp() {
         <h2>{ui.name}</h2>
         <div className="row"><span>Site</span><b>{ui.biome}</b></div>
         <div className="row"><span>Colonists</span><b>{ui.colonists}</b></div>
+        <div className="row"><span>Treasury</span><b>${ui.colony.treasury.toLocaleString()}</b></div>
+        <div className="row"><span>Buildings</span><b>{ui.colony.buildings}</b></div>
+        <div className="row"><span>Building</span><b>{ui.colony.building}</b></div>
         <div className="row"><span>Solar</span><b>{ui.power.solarW.toFixed(1)} kW</b></div>
         <div className="row"><span>Load</span><b>{ui.power.loadW.toFixed(1)} kW</b></div>
         <div className="batt">
           <div className="batt-head"><span>Battery</span><b>{pct}%</b></div>
           <div className="bar"><div style={{ width: `${pct}%`, background: battColor }} /></div>
         </div>
+        <button className="buildbtn" onClick={() => runtime.buildNow()}>+ Build habitat</button>
       </aside>
 
       <div className="hint">

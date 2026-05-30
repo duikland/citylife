@@ -28,6 +28,9 @@ export class PlanetRenderer {
   private hemi: THREE.HemisphereLight
   private terrainMesh!: THREE.Mesh
   private terrainGeo!: THREE.BufferGeometry
+  private roadsMesh!: THREE.InstancedMesh
+  private bldgMesh!: THREE.InstancedMesh
+  private dummy = new THREE.Object3D()
   private clock = new THREE.Clock()
   private view: ViewMode = 'biome'
   private disposed = false
@@ -58,7 +61,8 @@ export class PlanetRenderer {
     container.appendChild(this.renderer.domElement)
 
     this.scene.background = SKY_DAY.clone()
-    this.scene.fog = new THREE.Fog(SKY_DAY.clone(), this.N * 0.9, this.N * 4.2)
+    // Far plane must reach orbital distance or the planet view washes out to sky.
+    this.scene.fog = new THREE.Fog(SKY_DAY.clone(), this.N * 1.5, this.R * 1.6)
 
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.5, 12000)
 
@@ -87,6 +91,7 @@ export class PlanetRenderer {
     this.buildOcean()
     this.buildTerrain()
     this.buildStructures()
+    this.buildColonyLayer()
     this.setupComposer()
 
     this.applyPreset('district')
@@ -122,8 +127,8 @@ export class PlanetRenderer {
 
     // Atmosphere glow.
     const atmo = new THREE.Mesh(
-      new THREE.SphereGeometry(this.R * 1.025, 48, 36),
-      new THREE.MeshBasicMaterial({ color: 0x6fb7e6, transparent: true, opacity: 0.14, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.SphereGeometry(this.R * 1.05, 40, 28),
+      new THREE.MeshBasicMaterial({ color: 0x8fcfff, transparent: true, opacity: 0.1, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
     )
     atmo.position.set(0, -this.R, 0)
     this.scene.add(atmo)
@@ -270,8 +275,8 @@ export class PlanetRenderer {
     if (p === 'district') {
       return { pos: new THREE.Vector3(95, 105, 150), target: new THREE.Vector3(0, 5, 0) }
     }
-    // planet
-    return { pos: new THREE.Vector3(0, this.R * 0.5, this.R * 1.7), target: new THREE.Vector3(0, -this.R * 0.35, 0) }
+    // planet — orbital framing: your colony region with the planet curving away behind it
+    return { pos: new THREE.Vector3(0, this.N * 2.4, this.N * 3.4), target: new THREE.Vector3(0, 0, 0) }
   }
 
   applyPreset(p: CameraPreset) {
@@ -296,9 +301,71 @@ export class PlanetRenderer {
     this.sun.target.position.set(0, 0, 0)
   }
 
+  private buildColonyLayer() {
+    const roadGeo = new THREE.BoxGeometry(1, 0.08, 1)
+    this.roadsMesh = new THREE.InstancedMesh(roadGeo, new THREE.MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.95 }), 3200)
+    this.roadsMesh.count = 0
+    this.roadsMesh.frustumCulled = false
+    this.scene.add(this.roadsMesh)
+
+    const bGeo = new THREE.BoxGeometry(0.82, 1, 0.82)
+    bGeo.translate(0, 0.5, 0)
+    this.bldgMesh = new THREE.InstancedMesh(bGeo, new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.03 }), COLONY.build.maxBuildings + 8)
+    this.bldgMesh.count = 0
+    this.bldgMesh.castShadow = true
+    this.bldgMesh.frustumCulled = false
+    this.scene.add(this.bldgMesh)
+  }
+
+  private updateColonyLayer() {
+    const s = this.sim.state
+    const t = s.terrain
+    const rn = Math.min(s.roads.length, 3200)
+    this.roadsMesh.count = rn
+    for (let i = 0; i < rn; i++) {
+      const r = s.roads[i]!
+      this.dummy.position.set(this.wx(r.x), t.worldY(r.x, r.y) + 0.05, this.wz(r.y))
+      this.dummy.scale.set(1, 1, 1)
+      this.dummy.rotation.set(0, 0, 0)
+      this.dummy.updateMatrix()
+      this.roadsMesh.setMatrixAt(i, this.dummy.matrix)
+    }
+    this.roadsMesh.instanceMatrix.needsUpdate = true
+
+    const col = new THREE.Color()
+    const cap = COLONY.build.maxBuildings + 8
+    let bi = 0
+    for (const b of s.buildings) {
+      if (bi >= cap) break
+      this.dummy.position.set(this.wx(b.x), t.worldY(b.x, b.y), this.wz(b.y))
+      this.dummy.scale.set(1, Math.max(0.15, b.artifact.height), 1)
+      this.dummy.rotation.set(0, 0, 0)
+      this.dummy.updateMatrix()
+      this.bldgMesh.setMatrixAt(bi, this.dummy.matrix)
+      col.setHex(b.artifact.color)
+      this.bldgMesh.setColorAt(bi, col)
+      bi++
+    }
+    for (const j of s.jobs) {
+      if (bi >= cap) break
+      this.dummy.position.set(this.wx(j.x), t.worldY(j.x, j.y), this.wz(j.y))
+      this.dummy.scale.set(1, Math.max(0.08, j.artifact.height * j.progress), 1)
+      this.dummy.rotation.set(0, 0, 0)
+      this.dummy.updateMatrix()
+      this.bldgMesh.setMatrixAt(bi, this.dummy.matrix)
+      col.setHex(j.artifact.color).multiplyScalar(0.55) // under construction = darker
+      this.bldgMesh.setColorAt(bi, col)
+      bi++
+    }
+    this.bldgMesh.count = bi
+    this.bldgMesh.instanceMatrix.needsUpdate = true
+    if (this.bldgMesh.instanceColor) this.bldgMesh.instanceColor.needsUpdate = true
+  }
+
   frame() {
     if (this.disposed) return
     this.updateDayNight()
+    this.updateColonyLayer()
     this.controls.update()
     this.composer.render()
   }
