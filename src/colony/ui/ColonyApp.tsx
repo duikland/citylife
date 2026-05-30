@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { ColonyRuntime, type ColonyUiState } from '../runtime'
 import type { CameraPreset, ViewMode } from '../render/PlanetRenderer'
 import './colony.css'
@@ -31,6 +31,17 @@ export function ColonyApp() {
   const runtime = useRuntime()
   const hostRef = useRef<HTMLDivElement>(null)
   const ui: ColonyUiState = runtime.getUiState()
+  const [immig, setImmig] = useState<{ open: boolean; name: string; busy: boolean; card: { id: number; name: string } | null; error: string | null }>({ open: false, name: '', busy: false, card: null, error: null })
+  const openImmig = () => setImmig({ open: true, name: runtime.rollName(), busy: false, card: null, error: null })
+  const doRegister = async () => {
+    setImmig((s) => ({ ...s, busy: true, error: null }))
+    try {
+      const card = await runtime.registerSettler(immig.name.trim() || runtime.rollName())
+      setImmig((s) => ({ ...s, busy: false, card }))
+    } catch (e) {
+      setImmig((s) => ({ ...s, busy: false, error: String((e as Error)?.message ?? e) }))
+    }
+  }
 
   useEffect(() => {
     const el = hostRef.current
@@ -103,12 +114,53 @@ export function ColonyApp() {
           <div className="bar"><div style={{ width: `${pct}%`, background: battColor }} /></div>
         </div>
         <button className="buildbtn" onClick={() => runtime.buildNow()}>+ Build habitat</button>
+        <div className="row" style={{ marginTop: 10 }}><span>Settlers</span><b>{ui.settlers.count}</b></div>
+        {ui.settlers.recent.length > 0 && (
+          <div className="settler-list">{ui.settlers.recent.map((s) => <span key={s.id} className="chip">#{s.id} {s.name}</span>)}</div>
+        )}
+        <button className="immigbtn" onClick={openImmig}>🛸 Welcome a settler</button>
       </aside>
 
       <div className="hint">
         Phase A · A dropship has landed. Solar + lithium battery are your only power.
         Use <b>Planet / District / Street</b> to zoom, and the view toggles to read the land.
       </div>
+
+      {immig.open && (
+        <div className="modal-overlay" onClick={() => setImmig((s) => ({ ...s, open: false }))}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            {!immig.card ? (
+              <>
+                <h3>A settler wants to move to {ui.name} 🛸</h3>
+                <p>They'll register for a <b>KOOKER card</b> in your real kooker system, and we'll build them a unique home.</p>
+                <div className="name-row">
+                  <input value={immig.name} onChange={(e) => setImmig((s) => ({ ...s, name: e.target.value }))} disabled={immig.busy} placeholder="settler name" />
+                  <button title="roll a name" onClick={() => setImmig((s) => ({ ...s, name: runtime.rollName() }))} disabled={immig.busy}>🎲</button>
+                </div>
+                {immig.error && <div className="err">⚠ {immig.error}</div>}
+                <div className="modal-actions">
+                  <button onClick={() => setImmig((s) => ({ ...s, open: false }))} disabled={immig.busy}>Cancel</button>
+                  <button className="primary" onClick={doRegister} disabled={immig.busy || !immig.name.trim()}>{immig.busy ? '…registering' : 'Issue KOOKER card & build home'}</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>Welcome, {immig.card.name}! 🎉</h3>
+                <div className="kcard">
+                  <div className="kcard-label">KOOKER CARD</div>
+                  <div className="kcard-id">#{immig.card.id}</div>
+                  <div className="kcard-name">{immig.card.name}</div>
+                </div>
+                <p>Registered in kooker. Their unique home has been built in {ui.name}.</p>
+                <div className="modal-actions">
+                  <button onClick={openImmig}>Welcome another</button>
+                  <button className="primary" onClick={() => setImmig((s) => ({ ...s, open: false }))}>Done</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

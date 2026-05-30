@@ -223,6 +223,22 @@ export function autoGrow(state: ColonyState, rng: RNG): boolean {
   return true
 }
 
+/** Claim a free grid lot (developing a new block if needed) for a settler's home. */
+export function claimLot(state: ColonyState, rng: RNG): { x: number; y: number } | null {
+  let lot = availableLot(state, rng)
+  if (!lot) {
+    const nb = nextBlock(state)
+    if (nb) {
+      const roadCells = developBlock(state, nb.bx, nb.by)
+      state.treasury -= roadCells * COLONY.build.roadCostPerCell
+      lot = availableLot(state, rng)
+    }
+  }
+  if (!lot) return null
+  state.occupied.add(lot.x + ',' + lot.y)
+  return lot
+}
+
 /** Per-step: advance construction, settle the daily economy, and grow on an interval. */
 export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   for (let i = state.jobs.length - 1; i >= 0; i--) {

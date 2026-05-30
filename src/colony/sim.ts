@@ -6,6 +6,7 @@ import { initBuild, stepBuild } from './build'
 import type { ColonyBuilding, ConstructionJob, Parcel, RoadCell } from './build'
 import { updateTraffic } from './traffic'
 import type { Car } from './traffic'
+import type { Settler } from './settlers'
 
 export type StructureKind = 'caravan' | 'solar' | 'battery' | 'rocket'
 export interface SeedStructure {
@@ -47,6 +48,7 @@ export interface ColonyState {
   developedBlocks: Set<string>
   pollution: number
   cars: Car[]
+  settlers: Settler[]
 }
 
 function daylightAt(hour: number, minute: number): number {
@@ -99,6 +101,7 @@ export class ColonySim {
       developedBlocks: new Set(),
       pollution: 0,
       cars: [],
+      settlers: [],
     }
     initBuild(this.state)
   }

@@ -10,6 +10,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { COLONY } from '../config'
 import { BIOME_COLOR, Biome } from '../terrain'
 import type { ColonySim, SeedStructure } from '../sim'
+import type { HouseSpec } from '../house'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
 export type CameraPreset = 'street' | 'district' | 'planet'
@@ -34,6 +35,8 @@ export class PlanetRenderer {
   private streetPostMesh!: THREE.InstancedMesh
   private streetHeadMesh!: THREE.InstancedMesh
   private carsMesh!: THREE.InstancedMesh
+  private settlerGroup = new THREE.Group()
+  private lastSettlerCount = -1
   private dummy = new THREE.Object3D()
   private clock = new THREE.Clock()
   private view: ViewMode = 'biome'
@@ -348,6 +351,67 @@ export class PlanetRenderer {
     this.carsMesh.castShadow = true
     this.carsMesh.frustumCulled = false
     this.scene.add(this.carsMesh)
+
+    this.scene.add(this.settlerGroup) // unique KOOKER-settler homes live here
+  }
+
+  /** Rebuild the unique settler homes (cheap; only on a new registration). */
+  private rebuildSettlerHomes() {
+    for (const c of [...this.settlerGroup.children]) this.settlerGroup.remove(c)
+    const s = this.sim.state
+    const t = s.terrain
+    for (const settler of s.settlers) {
+      const home = this.buildHouseMesh(settler.house)
+      home.position.set(this.wx(settler.x), Math.max(0, t.worldY(settler.x, settler.y)), this.wz(settler.y))
+      this.settlerGroup.add(home)
+    }
+  }
+
+  /** Turn a HouseSpec (the AI's plan) into a one-off 3D house. */
+  private buildHouseMesh(h: HouseSpec): THREE.Object3D {
+    const g = new THREE.Group()
+    const wallMat = new THREE.MeshStandardMaterial({ color: h.wallColor, roughness: 0.82 })
+    const roofMat = new THREE.MeshStandardMaterial({ color: h.roofColor, roughness: 0.7 })
+    const bodyH = h.floors * h.storeyH
+    const body = new THREE.Mesh(new THREE.BoxGeometry(h.w, bodyH, h.d), wallMat)
+    body.position.y = bodyH / 2
+    body.castShadow = true
+    body.receiveShadow = true
+    g.add(body)
+    if (h.wing) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(h.w * 0.55, bodyH * 0.8, h.d * 0.6), wallMat)
+      wing.position.set(h.w * 0.5, bodyH * 0.4, h.d * 0.18)
+      wing.castShadow = true
+      g.add(wing)
+    }
+    if (h.roof === 'flat') {
+      const r = new THREE.Mesh(new THREE.BoxGeometry(h.w * 1.06, 0.08, h.d * 1.06), roofMat)
+      r.position.y = bodyH + 0.04
+      g.add(r)
+    } else {
+      const rad = Math.max(h.w, h.d) * 0.72
+      const ph = Math.max(0.18, h.roofPitch * rad)
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(rad, ph, 4), roofMat)
+      cone.rotation.y = Math.PI / 4
+      cone.position.y = bodyH + ph / 2
+      if (h.roof === 'gable') cone.scale.set(0.78, 1, 1.3)
+      cone.castShadow = true
+      g.add(cone)
+    }
+    if (h.chimney) {
+      const ch = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.42, 0.1), new THREE.MeshStandardMaterial({ color: 0x6a5a4a }))
+      ch.position.set(h.w * 0.28, bodyH + 0.28, h.d * 0.18)
+      g.add(ch)
+    }
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.3, 0.05), new THREE.MeshStandardMaterial({ color: 0x4a3b2a }))
+    door.position.set(0, 0.15, h.d / 2 + 0.01)
+    g.add(door)
+    if (h.porch) {
+      const porch = new THREE.Mesh(new THREE.BoxGeometry(h.w * 0.7, 0.05, 0.28), roofMat)
+      porch.position.set(0, Math.min(bodyH, 0.45), h.d / 2 + 0.12)
+      g.add(porch)
+    }
+    return g
   }
 
   private smoothRoadY(x: number, y: number): number {
@@ -359,6 +423,10 @@ export class PlanetRenderer {
   private updateColonyLayer() {
     const s = this.sim.state
     const t = s.terrain
+    if (s.settlers.length !== this.lastSettlerCount) {
+      this.rebuildSettlerHomes()
+      this.lastSettlerCount = s.settlers.length
+    }
     const rn = Math.min(s.roads.length, 3200)
     this.roadsMesh.count = rn
     for (let i = 0; i < rn; i++) {

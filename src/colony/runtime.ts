@@ -4,6 +4,8 @@ import { ColonySim } from './sim'
 import { PlanetRenderer, type CameraPreset, type ViewMode } from './render/PlanetRenderer'
 import { Biome } from './terrain'
 import { autoGrow } from './build'
+import { registerSettler as kookerRegister, generateName as randomSettlerName, type KookerCard } from './kooker'
+import { addSettler, saveSettlers, restoreSettlers } from './settlers'
 
 const BIOME_LABEL: Record<number, string> = {
   [Biome.Ocean]: 'Ocean',
@@ -25,6 +27,7 @@ export interface ColonyUiState {
   power: { solarW: number; loadW: number; batteryWh: number; batteryCapWh: number; pct: number }
   colonists: number
   colony: { treasury: number; buildings: number; building: number; load: number; jobs: number; employed: number; pollution: number }
+  settlers: { count: number; recent: { id: number; name: string }[] }
   name: string
   biome: string
   view: ViewMode
@@ -47,6 +50,21 @@ export class ColonyRuntime {
 
   constructor(seed: number = COLONY.render.seed) {
     this.sim = new ColonySim(seed)
+    restoreSettlers(this.sim.state) // re-place previously-registered KOOKER settlers
+  }
+
+  /** Roll a fresh playful settler name for the immigration dialog. */
+  rollName(): string {
+    return randomSettlerName(this.sim.rng)
+  }
+
+  /** Register a settler with the real kooker user service, place them with a unique home. */
+  async registerSettler(name: string): Promise<KookerCard> {
+    const card = await kookerRegister(name)
+    addSettler(this.sim.state, this.sim.rng, card)
+    saveSettlers(this.sim.state)
+    this.emit()
+    return card
   }
 
   start(container: HTMLElement) {
@@ -141,6 +159,7 @@ export class ColonyRuntime {
         employed: s.colonists > 0 ? Math.round((Math.min(s.colonists, s.totalJobs) / s.colonists) * 100) : 0,
         pollution: Math.round(s.pollution),
       },
+      settlers: { count: s.settlers.length, recent: s.settlers.slice(-6).reverse().map((x) => ({ id: x.kookerId, name: x.name })) },
       name: s.name,
       biome: BIOME_LABEL[s.terrain.biome[li]!] ?? 'Unknown',
       view: this.view,
