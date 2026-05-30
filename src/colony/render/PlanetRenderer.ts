@@ -441,15 +441,16 @@ export class PlanetRenderer {
     this.streetPostMesh.instanceMatrix.needsUpdate = true
     this.streetHeadMesh.instanceMatrix.needsUpdate = true
 
-    // cars — drawn offset to the LEFT of their heading (left-lane driving)
+    // cars — South African rules: keep LEFT. Driver's-left of heading h is (sin h, -cos h)
+    // in lot coords, so a car heading south (+y) sits on the east (+x) side, i.e. its left.
     const carCol = new THREE.Color()
     const off = COLONY.traffic.laneOffset
     const cn = Math.min(s.cars.length, COLONY.traffic.maxCars + 4)
     this.carsMesh.count = cn
     for (let i = 0; i < cn; i++) {
       const v = s.cars[i]!
-      const lx = v.x - Math.sin(v.heading) * off
-      const ly = v.y + Math.cos(v.heading) * off
+      const lx = v.x + Math.sin(v.heading) * off
+      const ly = v.y - Math.cos(v.heading) * off
       this.dummy.position.set(this.wx(lx), this.smoothRoadY(Math.round(v.x), Math.round(v.y)) + 0.12, this.wz(ly))
       this.dummy.rotation.set(0, -v.heading, 0)
       this.dummy.scale.set(1, 1, 1)
