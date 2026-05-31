@@ -72,9 +72,43 @@ function envChannels(): RadioChannel[] {
   return DEFAULT_CHANNELS.map((c) => ({ ...c, ref: map[c.id] ?? c.ref }))
 }
 
+/** Pull a YouTube playlist id and optional starting video id out of any common input shape:
+ *    PLABC...                              → { listId: 'PLABC...' }
+ *    youtube.com/watch?v=VID&list=PL...    → { listId: 'PL...', videoId: 'VID' }
+ *    youtube.com/playlist?list=PL...       → { listId: 'PL...' }
+ *    youtu.be/VID?list=PL...               → { listId: 'PL...', videoId: 'VID' }
+ *    VID&list=PL...                        → { listId: 'PL...', videoId: 'VID' }
+ *    a bare 11-char VID                    → { videoId: 'VID' }
+ */
+export function parseYouTubeRef(ref: string): { listId?: string; videoId?: string } {
+  const r = ref.trim()
+  if (!r) return {}
+  // Bare playlist id (PL...) or any youtube list prefix.
+  if (/^(PL|OLAK5uy|RD|UU|FL)[A-Za-z0-9_-]+$/.test(r)) return { listId: r }
+  // Query-string style: either `v=...&list=...` directly, or anything after a `?`.
+  const query = r.includes('?') ? r.slice(r.indexOf('?') + 1) : r
+  const qp = new URLSearchParams(query)
+  const listFromQp = qp.get('list') || undefined
+  let vidFromQp = qp.get('v') || undefined
+  // If a `list=` is present but no `v=`, the first segment is sometimes the bare video id
+  // (e.g. user pasted `VID&list=PL...` after dropping the `v=` prefix). Pick it up.
+  if (listFromQp && !vidFromQp) {
+    const first = query.split('&')[0] ?? ''
+    if (/^[A-Za-z0-9_-]{11}$/.test(first)) vidFromQp = first
+  }
+  if (listFromQp || vidFromQp) return { listId: listFromQp, videoId: vidFromQp }
+  // youtu.be/VIDEO_ID or youtube.com/embed/VIDEO_ID with no query string.
+  const m = r.match(/(?:youtu\.be\/|youtube\.com\/(?:embed|shorts)\/)([A-Za-z0-9_-]{6,})/)
+  if (m) return { videoId: m[1] }
+  // Last resort: looks like a raw 11-char video id.
+  if (/^[A-Za-z0-9_-]{11}$/.test(r)) return { videoId: r }
+  return {}
+}
+
 /** Build the YouTube IFrame URL for a channel. YouTube handles licensing for embedded playback. */
 export function channelEmbedUrl(channel: RadioChannel, opts: { autoplay?: boolean; muted?: boolean } = {}): string {
   if (!channel.ref) return ''
+  const { listId, videoId } = parseYouTubeRef(channel.ref)
   const params = new URLSearchParams({
     autoplay: opts.autoplay ? '1' : '0',
     mute: opts.muted ? '1' : '0',
@@ -83,14 +117,19 @@ export function channelEmbedUrl(channel: RadioChannel, opts: { autoplay?: boolea
     modestbranding: '1',
     enablejsapi: '1',
   })
-  if (channel.kind === 'youtube-playlist') {
+  if (listId) {
     params.set('listType', 'playlist')
-    params.set('list', channel.ref)
+    params.set('list', listId)
+    // If we ALSO have a starting video, embed that video so the playlist starts on it.
+    if (videoId) return `https://www.youtube.com/embed/${videoId}?${params.toString()}`
     return `https://www.youtube.com/embed/videoseries?${params.toString()}`
   }
-  // youtube-video
-  params.set('playlist', channel.ref) // required for loop=1 on a single video
-  return `https://www.youtube.com/embed/${channel.ref}?${params.toString()}`
+  if (videoId) {
+    // No list, just a single video — loop it back to itself.
+    params.set('playlist', videoId)
+    return `https://www.youtube.com/embed/${videoId}?${params.toString()}`
+  }
+  return ''
 }
 
 export function createRadio(): RadioState {

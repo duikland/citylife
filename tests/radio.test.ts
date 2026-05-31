@@ -6,6 +6,7 @@ import {
   toggleMuted,
   spinHouseAd,
   channelEmbedUrl,
+  parseYouTubeRef,
   currentChannel,
   anyConfigured,
   DEFAULT_CHANNELS,
@@ -83,8 +84,48 @@ describe('Low Power Radio state', () => {
   })
 
   it('anyConfigured tells whether at least one channel has a playlist set', () => {
-    expect(anyConfigured(createRadio())).toBe(false)
-    const wired = { ...createRadio(), channels: [{ ...DEFAULT_CHANNELS[0]!, ref: 'PLABC' }, ...DEFAULT_CHANNELS.slice(1)] }
+    // Pin a known-empty state — the live createRadio() may pick up VITE_RADIO_PLAYLIST_* env in dev.
+    const blank = { ...createRadio(), channels: DEFAULT_CHANNELS.map((c) => ({ ...c, ref: '' })) }
+    expect(anyConfigured(blank)).toBe(false)
+    const wired = { ...blank, channels: [{ ...DEFAULT_CHANNELS[0]!, ref: 'PLABC' }, ...blank.channels.slice(1)] }
     expect(anyConfigured(wired)).toBe(true)
+  })
+})
+
+describe('parseYouTubeRef — tolerant of any URL shape the user pastes', () => {
+  it('bare playlist id', () => {
+    expect(parseYouTubeRef('PLLEPa-vYw7we1ESoo7mtd7hG76aDZCKAX')).toEqual({ listId: 'PLLEPa-vYw7we1ESoo7mtd7hG76aDZCKAX' })
+  })
+  it('bare 11-char video id', () => {
+    expect(parseYouTubeRef('dQw4w9WgXcQ')).toEqual({ videoId: 'dQw4w9WgXcQ' })
+  })
+  it('watch URL with v + list params', () => {
+    expect(parseYouTubeRef('https://www.youtube.com/watch?v=uHWbaklm0bE&list=PLLEPa-vYw7we1ESoo7mtd7hG76aDZCKAX'))
+      .toEqual({ listId: 'PLLEPa-vYw7we1ESoo7mtd7hG76aDZCKAX', videoId: 'uHWbaklm0bE' })
+  })
+  it('the format users paste from YouTube (VID&list=PL...) — videoId is the bare 11-char prefix', () => {
+    expect(parseYouTubeRef('uHWbaklm0bE&list=PLLEPa-vYw7we1ESoo7mtd7hG76aDZCKAX'))
+      .toEqual({ listId: 'PLLEPa-vYw7we1ESoo7mtd7hG76aDZCKAX', videoId: 'uHWbaklm0bE' })
+  })
+  it('playlist page URL (list only, no v)', () => {
+    expect(parseYouTubeRef('https://www.youtube.com/playlist?list=PLABC'))
+      .toEqual({ listId: 'PLABC' })
+  })
+  it('youtu.be short url', () => {
+    expect(parseYouTubeRef('https://youtu.be/dQw4w9WgXcQ')).toEqual({ videoId: 'dQw4w9WgXcQ' })
+  })
+  it('empty / garbage', () => {
+    expect(parseYouTubeRef('')).toEqual({})
+    expect(parseYouTubeRef('not a url')).toEqual({})
+  })
+})
+
+describe('channelEmbedUrl — with playlist + starting video', () => {
+  it("user's pasted format yields a playlist embed that starts on the chosen video", () => {
+    const ch: RadioChannel = { id: 'drive', name: 'Drive', vibe: '', kind: 'youtube-playlist', ref: 'uHWbaklm0bE&list=PLLEPa-vYw7we1ESoo7mtd7hG76aDZCKAX' }
+    const url = channelEmbedUrl(ch, { autoplay: true })
+    expect(url).toContain('youtube.com/embed/uHWbaklm0bE')
+    expect(url).toContain('listType=playlist')
+    expect(url).toContain('list=PLLEPa-vYw7we1ESoo7mtd7hG76aDZCKAX')
   })
 })
