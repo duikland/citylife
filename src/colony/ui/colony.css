@@ -77,3 +77,18 @@ html, body, #root { margin: 0; height: 100%; background: #05070f; color: var(--t
   padding: 9px 13px; backdrop-filter: blur(8px); color: var(--muted); font-size: 12px;
 }
 .hint b { color: var(--text); }
+
+/* Border Authority login gate */
+.login { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 800px at 50% -10%, #0c1630, #05070f 72%); }
+.login-card { width: 344px; max-width: 92vw; background: var(--panel); border: 1px solid var(--brd); border-radius: 16px; padding: 26px 24px; backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: 10px; box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
+.login-brand { font-size: 30px; font-weight: 800; letter-spacing: 0.4px; }
+.login-brand span { color: var(--accent); }
+.login-sub { color: var(--muted); font-size: 12px; letter-spacing: 1.6px; text-transform: uppercase; }
+.login-blurb { color: var(--muted); font-size: 13px; margin: 4px 0 8px; line-height: 1.5; }
+.login-input { background: rgba(0,0,0,0.32); border: 1px solid var(--brd); color: var(--text); border-radius: 9px; padding: 11px 13px; font-size: 15px; }
+.login-input:focus { outline: none; border-color: var(--accent); }
+.login-btn { margin-top: 6px; background: var(--accent); color: #04231f; border: none; border-radius: 9px; padding: 11px; font-weight: 700; font-size: 15px; cursor: pointer; }
+.login-btn:hover { filter: brightness(1.08); }
+.login-err { color: #e0584d; font-size: 13px; }
+.login-hint { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.login-hint code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; }
