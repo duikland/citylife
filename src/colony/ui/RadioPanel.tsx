@@ -1,14 +1,38 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { channelEmbedUrl, currentChannel, anyConfigured, type RadioState } from '../radio'
 import type { ColonyRuntime } from '../runtime'
 
+/** Send a YouTube IFrame Player API command via postMessage. Works as long as the embed URL has
+ *  `enablejsapi=1` (it does — see channelEmbedUrl). Avoids reloading the iframe on mute/play. */
+function sendYT(iframe: HTMLIFrameElement | null, func: string, args: unknown[] = []) {
+  if (!iframe?.contentWindow) return
+  iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args }), '*')
+}
+
 /** Low Power Radio tray — bottom-right toggle that expands to a Now Playing panel.
- *  When a channel is selected, a hidden YouTube iframe streams the licensed playlist. */
+ *  The iframe starts MUTED so YouTube + Chrome allow autoplay; the operator's first Sound click
+ *  flips it via postMessage (no iframe reload, no track restart). */
 export function RadioPanel({ runtime, radio, tv }: { runtime: ColonyRuntime; radio: RadioState; tv: boolean }) {
   const [open, setOpen] = useState(false)
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const ch = currentChannel(radio)
-  const url = ch ? channelEmbedUrl(ch, { autoplay: true, muted: radio.muted }) : ''
+  // ALWAYS load the iframe muted so YouTube autoplay isn't blocked; we unmute via the JS API on
+  // the operator's first Sound click. The iframe URL stays constant per channel so it never reloads.
+  const url = ch ? channelEmbedUrl(ch, { autoplay: true, muted: true }) : ''
   const wired = anyConfigured(radio)
+
+  // React to radio.muted state: send the YouTube IFrame API command, don't rebuild the iframe.
+  useEffect(() => {
+    if (!iframeRef.current || !radio.on) return
+    sendYT(iframeRef.current, radio.muted ? 'mute' : 'unMute')
+    if (!radio.muted) sendYT(iframeRef.current, 'playVideo')
+  }, [radio.muted, radio.on, radio.channelId])
+
+  // React to radio.on: pause/resume without reloading.
+  useEffect(() => {
+    if (!iframeRef.current) return
+    sendYT(iframeRef.current, radio.on ? 'playVideo' : 'pauseVideo')
+  }, [radio.on])
 
   return (
     <>
@@ -41,9 +65,15 @@ export function RadioPanel({ runtime, radio, tv }: { runtime: ColonyRuntime; rad
 
             <div className="radio-controls">
               <button onClick={() => runtime.toggleRadio()}>{radio.on ? '⏸ Pause' : '▶ Play'}</button>
-              <button onClick={() => runtime.toggleRadioMuted()}>{radio.muted ? '🔇 Muted' : '🔈 Sound'}</button>
+              <button onClick={() => runtime.toggleRadioMuted()}>{radio.muted ? '🔇 Unmute' : '🔈 Mute'}</button>
               <button onClick={() => runtime.toggleTv()}>{tv ? '📺 Exit TV' : '📺 TV mode'}</button>
             </div>
+
+            {radio.on && radio.muted && (
+              <div className="radio-note">
+                YouTube blocks autoplay-with-sound on first paint. Click <b>🔇 Unmute</b> once and the sound stays on.
+              </div>
+            )}
 
             {radio.ads.length > 0 && (
               <div className="radio-ads">
@@ -61,6 +91,7 @@ export function RadioPanel({ runtime, radio, tv }: { runtime: ColonyRuntime; rad
 
       {radio.on && url && (
         <iframe
+          ref={iframeRef}
           className="radio-iframe"
           src={url}
           allow="autoplay; encrypted-media; picture-in-picture"

@@ -133,7 +133,9 @@ export function channelEmbedUrl(channel: RadioChannel, opts: { autoplay?: boolea
 }
 
 export function createRadio(): RadioState {
-  return { on: false, muted: false, channelId: null, channels: envChannels(), ads: [] }
+  // muted=true by default so YouTube + Chrome allow autoplay; the operator's first Unmute click
+  // fires a postMessage to the YouTube IFrame Player API — no iframe reload, no track restart.
+  return { on: false, muted: true, channelId: null, channels: envChannels(), ads: [] }
 }
 
 export function tuneTo(state: RadioState, channelId: string): RadioState {
