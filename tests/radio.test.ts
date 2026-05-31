@@ -48,9 +48,12 @@ describe('Low Power Radio state', () => {
   })
 
   it('toggleMuted flips the muted flag', () => {
-    const r = toggleMuted(createRadio())
-    expect(r.muted).toBe(true)
-    expect(toggleMuted(r).muted).toBe(false)
+    // Radio starts muted by default (so autoplay works). Toggling it unmutes.
+    const base = createRadio()
+    expect(base.muted).toBe(true)
+    const r = toggleMuted(base)
+    expect(r.muted).toBe(false)
+    expect(toggleMuted(r).muted).toBe(true)
   })
 
   it('spinHouseAd queues a sponsored line, newest first, capped at 8', () => {
