@@ -81,7 +81,7 @@ export class ColonySim {
       { kind: 'caravan', x: lx, y: ly },
       placeAvoid('rocket', lx + 3, ly + 2, 1),
       placeAvoid('solar', lx - 2, ly + 2, 1),
-      placeAvoid('battery', lx + 2, ly - 2, 0),
+      placeAvoid('battery', lx + 2, ly - 2, 1),
     ]
 
     this.state = {
@@ -143,6 +143,10 @@ export class ColonySim {
           const nx = px + dx, ny = py + dy
           if (!terrain.inBounds(nx, ny)) return false
           if (terrain.isWater(nx, ny)) return false
+          // Keep the WHOLE mesh footprint off the road frame, not just the centre
+          // cell: wide structures (rocket cylinder r~1.1, solar panel) otherwise
+          // sit one cell off-frame but visually spill onto the adjacent road.
+          if (onRoadFrame(nx, ny)) return false
         }
       }
       return true

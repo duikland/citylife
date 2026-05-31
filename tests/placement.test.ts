@@ -26,6 +26,16 @@ describe('Base placement (rocket / solar / battery / caravan)', () => {
           expect(onRoadFrame(st.x, st.y)).toBe(false)
         }
       })
+      it('structure footprints clear the road frame (wide meshes do not spill onto roads)', () => {
+        for (const st of s.structures) {
+          if (st.kind === 'caravan') continue
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              expect(onRoadFrame(st.x + dx, st.y + dy)).toBe(false)
+            }
+          }
+        }
+      })
       it('no two structures share a cell', () => {
         const seen = new Set<string>()
         for (const st of s.structures) {
