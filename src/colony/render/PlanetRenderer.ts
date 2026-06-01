@@ -60,6 +60,10 @@ export class PlanetRenderer {
   // Reads-only the wall-clock so it stays smooth even if the sim is paused.
   private cinematic = false
   private cinematicT0 = 0
+  // Per-car smoothed render state (position + heading), so cars glide between the 6 Hz sim steps
+  // and ease through turns instead of snapping their heading — and lane offset — at each corner.
+  private carRender = new Map<number, { x: number; y: number; h: number }>()
+  private lastCarT = 0
 
   private N: number
   private R: number
@@ -733,21 +737,51 @@ export class PlanetRenderer {
 
     // cars — South African rules: keep LEFT. Driver's-left of heading h is (sin h, -cos h)
     // in lot coords, so a car heading south (+y) sits on the east (+x) side, i.e. its left.
+    // The sim ticks at 6 Hz; we exponentially smooth each car's position + heading toward the
+    // sim state every frame so motion is fluid at 60 fps and turns (with the lane offset) ease
+    // instead of snapping a car sideways across the road at every corner.
     const carCol = new THREE.Color()
     const off = COLONY.traffic.laneOffset
     const cn = Math.min(s.cars.length, COLONY.traffic.maxCars + 4)
     this.carsMesh.count = cn
+    const carNow = performance.now()
+    const carDt = this.lastCarT ? Math.min(0.05, (carNow - this.lastCarT) / 1000) : 1 / 60
+    this.lastCarT = carNow
+    const aPos = 1 - Math.exp(-carDt * 16) // position catch-up (fast, ~1 frame lag)
+    const aHed = 1 - Math.exp(-carDt * 9) // heading ease (slower, smooth turns)
+    const liveCars = new Set<number>()
     for (let i = 0; i < cn; i++) {
       const v = s.cars[i]!
-      const lx = v.x + Math.sin(v.heading) * off
-      const ly = v.y - Math.cos(v.heading) * off
-      this.dummy.position.set(this.wx(lx), this.smoothRoadY(Math.round(v.x), Math.round(v.y)) + 0.12, this.wz(ly))
-      this.dummy.rotation.set(0, -v.heading, 0)
+      liveCars.add(v.id)
+      let e = this.carRender.get(v.id)
+      if (!e) {
+        e = { x: v.x, y: v.y, h: v.heading }
+        this.carRender.set(v.id, e)
+      }
+      // A re-route can jump a car a long way; snap rather than glide it across the map.
+      if (Math.hypot(v.x - e.x, v.y - e.y) > 3) {
+        e.x = v.x
+        e.y = v.y
+        e.h = v.heading
+      }
+      e.x += (v.x - e.x) * aPos
+      e.y += (v.y - e.y) * aPos
+      let dh = v.heading - e.h
+      dh -= Math.round(dh / (Math.PI * 2)) * (Math.PI * 2) // wrap to [-PI, PI]
+      e.h += dh * aHed
+      const lx = e.x + Math.sin(e.h) * off
+      const ly = e.y - Math.cos(e.h) * off
+      this.dummy.position.set(this.wx(lx), this.smoothRoadY(Math.round(e.x), Math.round(e.y)) + 0.12, this.wz(ly))
+      this.dummy.rotation.set(0, -e.h, 0)
       this.dummy.scale.set(1, 1, 1)
       this.dummy.updateMatrix()
       this.carsMesh.setMatrixAt(i, this.dummy.matrix)
       carCol.setHex(v.color)
       this.carsMesh.setColorAt(i, carCol)
+    }
+    // Drop smoothing state for any car that is no longer present.
+    if (this.carRender.size > cn) {
+      for (const id of this.carRender.keys()) if (!liveCars.has(id)) this.carRender.delete(id)
     }
     this.carsMesh.instanceMatrix.needsUpdate = true
     if (this.carsMesh.instanceColor) this.carsMesh.instanceColor.needsUpdate = true
