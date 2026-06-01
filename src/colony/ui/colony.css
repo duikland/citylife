@@ -211,3 +211,6 @@ body.tv-mode .radio-iframe.is-visible { right: 24px; bottom: 24px; width: 320px;
 /* Visible micro-player — to the RIGHT of the strip in default mode, bottom-right in TV mode */
 .radio-iframe.is-visible { position: fixed; top: 10px; left: 320px; width: 240px; height: 135px; opacity: 1; pointer-events: auto; border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,0.5); border: 1px solid var(--brd); }
 .radio-iframe.is-visible.is-tv { top: auto; left: auto; right: 24px; bottom: 24px; width: 320px; height: 180px; }
+
+/* Keyboard-shortcut hint line under the Phase tip */
+.hint-keys { opacity: 0.72; font-size: 11px; letter-spacing: 0.2px; }
