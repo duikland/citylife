@@ -50,6 +50,25 @@ export function ColonyApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Keyboard shortcuts: Space pauses, 1/2/3 switch camera, Z toggles zoning. Ignored while typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      switch (e.code) {
+        case 'Space': e.preventDefault(); runtime.setPaused(!runtime.getUiState().paused); break
+        case 'Digit1': runtime.setPreset('street'); break
+        case 'Digit2': runtime.setPreset('district'); break
+        case 'Digit3': runtime.setPreset('planet'); break
+        case 'KeyZ': runtime.toggleZones(); break
+        default: return
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const pct = Math.round(ui.power.pct * 100)
   const battColor = ui.power.pct > 0.4 ? '#39d353' : ui.power.pct > 0.15 ? '#e6c84d' : '#e0584d'
 
@@ -143,6 +162,7 @@ export function ColonyApp() {
       <div className="hint">
         Phase A · A dropship has landed. Solar + lithium battery are your only power.
         Use <b>Planet / District / Street</b> to zoom, and the view toggles to read the land.
+        <br /><span className="hint-keys"><b>Space</b> pause · <b>1/2/3</b> camera · <b>Z</b> zoning</span>
       </div>
 
       <RadioPanel runtime={runtime} radio={ui.radio} tv={ui.tv} />

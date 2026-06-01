@@ -7,6 +7,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { COLONY } from '../config'
 import { BIOME_COLOR, Biome } from '../terrain'
 import type { ColonySim, SeedStructure } from '../sim'
@@ -68,6 +69,8 @@ export class PlanetRenderer {
   // and ease through turns instead of snapping their heading — and lane offset — at each corner.
   private carRender = new Map<number, { x: number; y: number; h: number }>()
   private lastCarT = 0
+  // Pulsing red nav beacon at the rocket nose — material ref so frame() can blink it.
+  private beaconMat: THREE.MeshStandardMaterial | null = null
 
   private N: number
   private R: number
@@ -124,6 +127,7 @@ export class PlanetRenderer {
     this.buildPlanet()
     this.buildOcean()
     this.buildTerrain()
+    this.buildFoliage()
     this.buildStructures()
     this.buildColonyLayer()
     this.setupComposer()
@@ -203,6 +207,68 @@ export class PlanetRenderer {
     }
     makeStars(2800, 0, 5000, 1700, 0x8d99c8, 4, 0.7) // fine dust
     makeStars(380, 7, 5200, 1500, 0xeef2ff, 11, 0.95) // sparse bright stars
+
+    // A distant gas giant looming in the void — gives the deep-space backdrop depth and a focal
+    // point. Lit by the same sun, so it shows a soft day/night terminator. Sits beyond the orbit cap.
+    const giant = new THREE.Mesh(
+      new THREE.SphereGeometry(760, 48, 32),
+      new THREE.MeshStandardMaterial({ color: 0x4a5688, roughness: 1, metalness: 0, emissive: 0x1a2348, emissiveIntensity: 0.9, fog: false }),
+    )
+    giant.position.set(-1400, -100, -3400)
+    this.scene.add(giant)
+    const giantAtmo = new THREE.Mesh(
+      new THREE.SphereGeometry(815, 40, 24),
+      new THREE.MeshBasicMaterial({ color: 0x6f86c8, transparent: true, opacity: 0.22, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
+    )
+    giantAtmo.position.copy(giant.position)
+    this.scene.add(giantAtmo)
+  }
+
+  /** Scatter instanced foliage cones across the wooded land (dense in forest, sparse on plains), so
+   *  the island reads as living terrain rather than flat colour. Deterministic placement (stable per
+   *  seed); pure decoration with no sim or gameplay impact. */
+  private buildFoliage() {
+    const t = this.sim.state.terrain
+    const N = t.size
+    const hash = (n: number) => ((n * 2654435761) >>> 0) / 4294967296
+    const TREE_COLORS = [0x3f6b4a, 0x4f7d5a, 0x5b4a7d, 0x35633f]
+    const cells: number[] = []
+    for (let i = 0; i < N * N; i++) {
+      const b = t.biome[i]
+      if (b !== Biome.Forest && b !== Biome.Plains) continue
+      const x = i % N
+      const y = (i / N) | 0
+      if (t.isWater(x, y)) continue
+      const p = b === Biome.Forest ? 0.5 : 0.08
+      if (hash(i + 1) < p) cells.push(i)
+    }
+    const cap = Math.min(cells.length, 1400)
+    const geo = new THREE.ConeGeometry(0.42, 1.1, 6)
+    geo.translate(0, 0.55, 0)
+    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true }), cap)
+    mesh.castShadow = true
+    mesh.frustumCulled = false
+    const col = new THREE.Color()
+    let n = 0
+    for (let k = 0; k < cells.length && n < cap; k++) {
+      const i = cells[k]!
+      const x = i % N
+      const y = (i / N) | 0
+      const h1 = hash(i * 7 + 3)
+      const h2 = hash(i * 13 + 5)
+      const wy = Math.max(0, t.worldY(x, y))
+      const s = 0.7 + h1 * 0.7
+      this.dummy.position.set(this.wx(x) + (h1 - 0.5) * 0.7, wy, this.wz(y) + (h2 - 0.5) * 0.7)
+      this.dummy.scale.set(s, s + h2 * 0.6, s)
+      this.dummy.rotation.set(0, h2 * Math.PI, 0)
+      this.dummy.updateMatrix()
+      mesh.setMatrixAt(n, this.dummy.matrix)
+      col.setHex(TREE_COLORS[(i + x) % TREE_COLORS.length]!)
+      mesh.setColorAt(n, col)
+      n++
+    }
+    mesh.count = n
+    this.scene.add(mesh)
   }
 
   private buildOcean() {
@@ -339,7 +405,12 @@ export class PlanetRenderer {
       fin.position.set(0, 0.9, 0)
       body.castShadow = true
       nose.castShadow = true
-      g.add(body, nose, fin)
+      // Pulsing red nav beacon just above the nose — the landed dropship still has power.
+      const beaconMat = new THREE.MeshStandardMaterial({ color: 0xff6a55, emissive: 0xff2a18, emissiveIntensity: 1.5 })
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), beaconMat)
+      beacon.position.y = 7.25
+      this.beaconMat = beaconMat
+      g.add(body, nose, fin, beacon)
     }
     return g
   }
@@ -396,9 +467,15 @@ export class PlanetRenderer {
     this.roadLineMesh.frustumCulled = false
     this.scene.add(this.roadLineMesh)
 
-    const bGeo = new THREE.BoxGeometry(0.82, 1, 0.82)
-    bGeo.translate(0, 0.5, 0)
-    this.bldgMesh = new THREE.InstancedMesh(bGeo, new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.03 }), COLONY.build.maxBuildings + 8)
+    // Building = body box + a low hipped roof merged into one geometry, so each instance reads as a
+    // structure with a roof instead of a plain block. The roof scales with the building height.
+    const bBody = new THREE.BoxGeometry(0.82, 1, 0.82)
+    bBody.translate(0, 0.5, 0)
+    const bRoof = new THREE.ConeGeometry(0.64, 0.4, 4)
+    bRoof.rotateY(Math.PI / 4)
+    bRoof.translate(0, 1.2, 0)
+    const bGeo = mergeGeometries([bBody, bRoof])!
+    this.bldgMesh = new THREE.InstancedMesh(bGeo, new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.03, flatShading: true }), COLONY.build.maxBuildings + 8)
     this.bldgMesh.count = 0
     this.bldgMesh.castShadow = true
     this.bldgMesh.frustumCulled = false
@@ -816,6 +893,10 @@ export class PlanetRenderer {
     const bmat = this.bldgMesh.material as THREE.MeshStandardMaterial
     bmat.emissive.setHex(0xffd9a0)
     bmat.emissiveIntensity = night * 0.4
+    // Cars glow softly after dark so night traffic reads as moving lights flowing along the roads.
+    const cmat = this.carsMesh.material as THREE.MeshStandardMaterial
+    cmat.emissive.setHex(0xfff0d0)
+    cmat.emissiveIntensity = night * 0.5
   }
 
   frame() {
@@ -823,6 +904,10 @@ export class PlanetRenderer {
     this.updateDayNight()
     this.updateColonyLayer()
     this.updatePedestrians()
+    if (this.beaconMat) {
+      const blink = Math.max(0, Math.sin((performance.now() / 1000) * 2.4))
+      this.beaconMat.emissiveIntensity = 0.35 + blink * blink * 2.6
+    }
     if (this.cinematic) this.updateCinematic()
     this.controls.update()
     this.composer.render()
@@ -924,14 +1009,16 @@ export class PlanetRenderer {
     const cx = this.wx(t.landing.x)
     const cz = this.wz(t.landing.y)
     const cy = Math.max(0, t.worldY(t.landing.x, t.landing.y))
-    // 90 sec loop: angle drifts continuously; radius + height breathe with two slow sines.
+    // The camera continuously orbits the landing. Roughly every ~40s a cubic envelope pulls it way
+    // back and up into a wide establishing shot of the whole island adrift in space, then eases back
+    // down to street level — the Dark City money shot, on a loop.
     const T = (performance.now() - this.cinematicT0) / 1000
     const angle = (T / 90) * Math.PI * 2
-    const radiusBase = 30
-    const radius = radiusBase + Math.sin(T / 28) * 22 // 8..52 ish
-    const height = 14 + Math.sin(T / 17) * 11 // 3..25
+    const wide = Math.pow(Math.sin(T * 0.1571) * 0.5 + 0.5, 3) // 0..1, mostly low with ~40s peaks
+    const radius = 28 + Math.sin(T / 22) * 14 + wide * 120
+    const height = 12 + Math.sin(T / 15) * 8 + wide * 78
     this.camera.position.set(cx + Math.cos(angle) * radius, cy + height, cz + Math.sin(angle) * radius)
-    this.controls.target.set(cx, cy + 1.2, cz)
+    this.controls.target.set(cx, cy + 1.2 + wide * 6, cz)
   }
 
   private onResize = () => this.resize()
