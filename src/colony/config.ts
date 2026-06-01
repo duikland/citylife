@@ -84,6 +84,14 @@ export const COLONY = {
     // Population (spec 004): settlers immigrate to fill vacant housing when liveable; leave if power dies.
     immigrationPerDay: 6,
     emigrationPerDay: 4,
+    // Water Hub (spec 005): first service + first component sink. Waters habitats within range.
+    matWaterHub: 6,
+    compWaterHub: 8, // components consumed to build (the sink)
+    crewWaterHub: 3,
+    waterHubCost: 1400,
+    waterHubWorkers: 1,
+    waterHubRadius: 7, // cells; habitats within this of a hub are watered
+    waterHubMaintCompPerDay: 0.5, // ongoing component maintenance
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

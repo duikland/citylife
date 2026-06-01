@@ -1,5 +1,5 @@
 # Spec 005 — Water Hub: the first service, built from components
-- status: proposed
+- status: built
 - proposed-by: **Mara Venn, dockhand of East Pontoon** — live Hermes citizen (model hermes-codex-gpt-5.5)
 - date: 2026-06-01
 - depends-on: 003

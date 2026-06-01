@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water'
 
 export interface Parcel {
   id: number
@@ -30,6 +30,7 @@ export interface Artifact {
   materialsCost: number // spec 001: materials consumed to construct
   crew: number // spec 001: free colonists reserved for the build duration
   materialsGen: number // spec 002: materials/day produced when fully staffed (mines); 0 otherwise
+  componentsCost?: number // spec 005: components consumed to construct (services); defaults to 0
 }
 export interface ConstructionJob {
   id: number
@@ -56,6 +57,7 @@ const INDUSTRIAL_COLOR = 0xcf8b54
 const SOLAR_COLOR = 0x18406a
 const MINE_COLOR = 0x6b5a4a // rocky brown extraction site
 const WORKSHOP_COLOR = 0x8a7f3a // ochre workshop / fabricator
+const WATER_COLOR = 0x3aa6c8 // cyan water / life-support hub
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -219,6 +221,10 @@ function designWorkshop(state: ColonyState): Artifact {
   // Spec 003 — refines materials into components while staffed (rates read from config per workshop).
   return { id: state.buildIds++, kind: 'workshop', color: WORKSHOP_COLOR, height: 1.0, residents: 0, jobs: COLONY.build.workshopWorkers, powerLoad: 0.6, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.workshopCost, materialsCost: COLONY.build.matWorkshop, crew: COLONY.build.crewWorkshop, materialsGen: 0 }
 }
+function designWaterHub(state: ColonyState): Artifact {
+  // Spec 005 — first service: waters habitats in range; costs components to build (the first sink).
+  return { id: state.buildIds++, kind: 'water', color: WATER_COLOR, height: 0.8, residents: 0, jobs: COLONY.build.waterHubWorkers, powerLoad: 0.4, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.waterHubCost, materialsCost: COLONY.build.matWaterHub, crew: COLONY.build.crewWaterHub, materialsGen: 0, componentsCost: COLONY.build.compWaterHub }
+}
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
 function countKind(state: ColonyState, kind: BuildKind): number {
@@ -226,6 +232,17 @@ function countKind(state: ColonyState, kind: BuildKind): number {
   for (const b of state.buildings) if (b.artifact.kind === kind) n++
   for (const j of state.jobs) if (j.artifact.kind === kind) n++
   return n
+}
+
+/** Spec 005 — fraction of habitats within range of a Water Hub (1 when there are no habitats yet). */
+export function wateredFraction(state: ColonyState): number {
+  const habs = state.buildings.filter((b) => b.artifact.kind === 'habitat')
+  if (habs.length === 0) return 1
+  const hubs = state.buildings.filter((b) => b.artifact.kind === 'water')
+  if (hubs.length === 0) return 0
+  let served = 0
+  for (const h of habs) if (hubs.some((w) => Math.hypot(w.x - h.x, w.y - h.y) <= COLONY.build.waterHubRadius)) served++
+  return served / habs.length
 }
 
 function peakSupply(state: ColonyState): number {
@@ -237,6 +254,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   // Spec 003 — refine surplus into components: with a mine feeding us and supplies plentiful, raise
   // workshops up to ~2 per mine to turn materials into components.
   if (countKind(state, 'mine') > 0 && state.materials > COLONY.build.materialsSurplus && countKind(state, 'workshop') < countKind(state, 'mine') * 2) return designWorkshop(state)
+  // Spec 005 — service the homes: thirsty habitats + components on hand → raise a Water Hub (~1 per 4 homes).
+  if (countKind(state, 'habitat') > 0 && wateredFraction(state) < 0.9 && state.components >= COLONY.build.compWaterHub && countKind(state, 'water') < Math.ceil(countKind(state, 'habitat') / 4)) return designWaterHub(state)
   const queuedGen = state.jobs.reduce((g, j) => g + j.artifact.powerGen, 0)
   if (state.power.loadW > (peakSupply(state) + queuedGen) * COLONY.build.powerHeadroom) return designSolarFarm(state)
   const pendingJobs = state.jobs.reduce((g, j) => g + j.artifact.jobs, 0)
@@ -279,6 +298,7 @@ export function autoGrow(state: ColonyState, rng: RNG): boolean {
   const artifact = chooseArtifact(state, rng)
   if (state.treasury < artifact.cost + 600) return false
   if (state.materials < artifact.materialsCost) return false // not enough supplies
+  if (state.components < (artifact.componentsCost ?? 0)) return false // spec 005 — not enough refined goods
   if (free < artifact.crew) return false // not enough hands to raise it
 
   const c = caravan(state)
@@ -286,6 +306,7 @@ export function autoGrow(state: ColonyState, rng: RNG): boolean {
   state.occupied.add(key(lot.x, lot.y))
   state.treasury -= artifact.cost
   state.materials -= artifact.materialsCost // consumed up front; crew reserved via the job until done
+  state.components -= artifact.componentsCost ?? 0 // spec 005 — services consume refined goods to build
   state.jobs.push({ id: state.buildIds++, x: lot.x, y: lot.y, artifact, progress: 0, path: roadPath(state, c.x, c.y, lot.x, lot.y) })
   return true
 }
@@ -349,12 +370,22 @@ function immigration(state: ColonyState, dtMin: number): void {
     return
   }
   const cap = housingCapacity(state)
-  if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * perDay)
+  // Spec 005 — thirsty colonies grow slowly: immigration scales with how many homes are watered.
+  const desirability = Math.max(0.25, wateredFraction(state))
+  if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * perDay)
+}
+
+/** Spec 005 — services (water hubs) consume a trickle of components to run. */
+function serviceUpkeep(state: ColonyState, dtMin: number): void {
+  let upkeep = 0
+  for (const b of state.buildings) if (b.artifact.kind === 'water') upkeep += COLONY.build.waterHubMaintCompPerDay
+  if (upkeep > 0) state.components = Math.max(0, state.components - upkeep * (dtMin / (24 * 60)))
 }
 
 export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   produceMaterials(state, dtMin)
   produceComponents(state, dtMin)
+  serviceUpkeep(state, dtMin)
   immigration(state, dtMin)
   for (let i = state.jobs.length - 1; i >= 0; i--) {
     const j = state.jobs[i]!

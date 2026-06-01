@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -191,5 +191,47 @@ describe('Spec 004 — settler immigration fills housing capacity', () => {
     const col0 = s.colonists
     for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
     expect(s.colonists).toBeLessThan(col0)
+  })
+})
+
+describe('Spec 005 — Water Hub waters habitats and speeds immigration', () => {
+  const building = (kind: 'habitat' | 'water', x: number, y: number, residents = 0) => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: { id: 1, kind, color: 0, height: 1, residents, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 },
+  })
+
+  it('habitats are watered only when a hub is in range', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    expect(wateredFraction(s)).toBe(1) // no habitats yet
+    s.buildings.push(building('habitat', 50, 50, 3))
+    expect(wateredFraction(s)).toBe(0) // a home, no hub
+    s.buildings.push(building('water', 52, 50)) // within radius 7
+    expect(wateredFraction(s)).toBe(1)
+  })
+
+  it('a hub out of range does not water the habitat', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(building('habitat', 50, 50, 3))
+    s.buildings.push(building('water', 80, 80)) // far beyond radius 7
+    expect(wateredFraction(s)).toBe(0)
+  })
+
+  it('immigration is faster when homes are watered', () => {
+    const run = (withHub: boolean) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      s.buildings.push(building('habitat', 50, 50, 20)) // capacity 22
+      if (withHub) s.buildings.push(building('water', 51, 50))
+      s.power.batteryWh = s.power.batteryCapWh
+      s.power.solarW = 5
+      const col0 = s.colonists
+      for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+      return s.colonists - col0
+    }
+    expect(run(true)).toBeGreaterThan(run(false))
   })
 })

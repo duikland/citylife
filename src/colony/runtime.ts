@@ -3,7 +3,7 @@ import { COLONY } from './config'
 import { ColonySim } from './sim'
 import { PlanetRenderer, type CameraPreset, type ViewMode } from './render/PlanetRenderer'
 import { Biome } from './terrain'
-import { autoGrow, freeLabour, housingCapacity } from './build'
+import { autoGrow, freeLabour, housingCapacity, wateredFraction } from './build'
 import { registerSettler as kookerRegister, generateName as randomSettlerName, type KookerCard } from './kooker'
 import { addSettler, saveColony, restoreColony, clearColony } from './settlers'
 import { bankDeposits, CURRENCY } from './ledger'
@@ -32,7 +32,7 @@ export interface ColonyUiState {
   clock: { day: number; hour: number; minute: number; isDay: boolean }
   power: { solarW: number; loadW: number; batteryWh: number; batteryCapWh: number; pct: number }
   colonists: number
-  colony: { treasury: number; materials: number; components: number; freeLabour: number; capacity: number; buildings: number; building: number; load: number; jobs: number; employed: number; pollution: number }
+  colony: { treasury: number; materials: number; components: number; freeLabour: number; capacity: number; watered: number; buildings: number; building: number; load: number; jobs: number; employed: number; pollution: number }
   settlers: { count: number; recent: { id: number; name: string }[] }
   bank: { currency: string; deposits: number; accounts: number; recent: { id: number; memo: string }[] }
   border: { households: Household[]; bots: Bot[]; botSource: string; plots: Plot[] }
@@ -264,6 +264,7 @@ export class ColonyRuntime {
         components: Math.round(s.components),
         freeLabour: Math.floor(freeLabour(s)),
         capacity: housingCapacity(s),
+        watered: Math.round(wateredFraction(s) * 100),
         buildings: s.buildings.length,
         building: s.jobs.length,
         load: Math.round(s.power.loadW * 10) / 10,
