@@ -158,13 +158,20 @@ export class PlanetRenderer {
     rock.position.set(0, -height / 2 - 0.4, 0)
     this.scene.add(rock)
 
-    // A faint additive rim around the waterline so the slab edge glows against the dark.
+    // Additive glow at the waterline so the island reads as a lit slab adrift in the dark — a tight
+    // bright rim plus a taller, fainter halo that bleeds up into the void (Dark City energy).
     const rim = new THREE.Mesh(
-      new THREE.CylinderGeometry(top * 1.01, top * 0.9, this.N * 0.05, 9, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0x2f7da0, transparent: true, opacity: 0.25, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.CylinderGeometry(top * 1.01, top * 0.9, this.N * 0.06, 9, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x3aa6c8, transparent: true, opacity: 0.32, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
     )
-    rim.position.set(0, -0.7, 0)
+    rim.position.set(0, -0.6, 0)
     this.scene.add(rim)
+    const rimHalo = new THREE.Mesh(
+      new THREE.CylinderGeometry(top * 1.09, top * 0.98, this.N * 0.17, 9, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x256b8a, transparent: true, opacity: 0.11, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+    )
+    rimHalo.position.set(0, -0.36, 0)
+    this.scene.add(rimHalo)
 
     // Starfield — two deterministic Fibonacci shells (fine dust + sparse bright stars), fog-disabled
     // so the void always reads as deep space. Both sit beyond the camera's max orbit distance, so you
