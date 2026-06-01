@@ -1009,14 +1009,16 @@ export class PlanetRenderer {
     const cx = this.wx(t.landing.x)
     const cz = this.wz(t.landing.y)
     const cy = Math.max(0, t.worldY(t.landing.x, t.landing.y))
-    // 90 sec loop: angle drifts continuously; radius + height breathe with two slow sines.
+    // The camera continuously orbits the landing. Roughly every ~40s a cubic envelope pulls it way
+    // back and up into a wide establishing shot of the whole island adrift in space, then eases back
+    // down to street level — the Dark City money shot, on a loop.
     const T = (performance.now() - this.cinematicT0) / 1000
     const angle = (T / 90) * Math.PI * 2
-    const radiusBase = 30
-    const radius = radiusBase + Math.sin(T / 28) * 22 // 8..52 ish
-    const height = 14 + Math.sin(T / 17) * 11 // 3..25
+    const wide = Math.pow(Math.sin(T * 0.1571) * 0.5 + 0.5, 3) // 0..1, mostly low with ~40s peaks
+    const radius = 28 + Math.sin(T / 22) * 14 + wide * 120
+    const height = 12 + Math.sin(T / 15) * 8 + wide * 78
     this.camera.position.set(cx + Math.cos(angle) * radius, cy + height, cz + Math.sin(angle) * radius)
-    this.controls.target.set(cx, cy + 1.2, cz)
+    this.controls.target.set(cx, cy + 1.2 + wide * 6, cz)
   }
 
   private onResize = () => this.resize()
