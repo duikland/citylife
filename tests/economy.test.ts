@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -665,5 +665,55 @@ describe('Spec 013 — Reel Foundry refines components into luxury reels', () =>
     expect(s.reels).toBeLessThan(r0) // reels shipped out
     expect(s.reels).toBeGreaterThanOrEqual(COLONY.build.reelReserve) // never below the reserve
     expect(s.treasury).toBeGreaterThan(t0) // the premium earned
+  })
+})
+
+describe('Spec 014 — reel-fed theatres: culture needs the luxury good', () => {
+  const mk = (kind: 'theatre' | 'habitat' | 'water', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('a theatre runs at full culture with reels, dampened without, and no theatre is unaffected', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    expect(cultureFuelFactor(s)).toBe(1) // no theatre at all
+    s.buildings.push(mk('theatre', 50, 50))
+    s.reels = 10
+    expect(cultureFuelFactor(s)).toBe(1) // fuelled
+    s.reels = 0
+    expect(cultureFuelFactor(s)).toBe(COLONY.build.cultureStarvedFactor) // halls go dark
+  })
+
+  it('a staffed theatre burns reels from the stockpile', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('theatre', 50, 50, { jobs: 2 }))
+    s.reels = 10
+    s.totalJobs = 2
+    s.colonists = 2
+    for (let i = 0; i < 80; i++) stepBuild(s, sim.rng, 10)
+    expect(s.reels).toBeLessThan(10) // the shows consumed reels
+  })
+
+  it('immigration is faster when theatres are reel-fed than when they have run dry', () => {
+    const run = (fed: boolean) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      s.buildings.push(mk('habitat', 50, 50, { residents: 20 })) // capacity 22
+      s.buildings.push(mk('water', 51, 50))
+      s.buildings.push(mk('theatre', 52, 50))
+      s.power.batteryWh = s.power.batteryCapWh
+      s.power.solarW = 5
+      s.food = 1000
+      s.materials = 0 // disable autoGrow
+      s.reels = fed ? 1000 : 0 // plenty of reels vs none — same theatre coverage either way
+      const col0 = s.colonists
+      for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+      return s.colonists - col0
+    }
+    expect(run(true)).toBeGreaterThan(run(false))
   })
 })

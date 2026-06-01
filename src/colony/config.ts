@@ -132,6 +132,8 @@ export const COLONY = {
     theatreRadius: 8, // cells; habitats within this of a theatre are cultured
     theatreMaintCompPerDay: 1.5, // ongoing component (media) maintenance — the steepest sink
     cultureDesirabilityBonus: 0.4, // up to +40% immigration at full culture coverage
+    theatreReelsPerDay: 0.5, // spec 014 — reels each theatre burns as show media per day
+    cultureStarvedFactor: 0.5, // spec 014 — culture bonus multiplier when theatres have run out of reels
     // Civic Pulse Survey Office (spec 011): build + staff to unlock the liveability overlay.
     matSurvey: 18,
     compSurvey: 12,

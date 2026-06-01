@@ -1,5 +1,5 @@
 # Spec 014 — Reel-fed theatres: culture demands the luxury good
-- status: proposed
+- status: built
 - proposed-by: **Lys Ardent, theatre-keeper** — live Hermes returned empty (upstream flaky for a third tick), written in-character. A new voice, closing the loop Mara Venn opened when she first pitched Data-Reels (spec 010) and Niko Vance built the foundry (013).
 - date: 2026-06-01
 - depends-on: 010, 013

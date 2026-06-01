@@ -137,7 +137,7 @@ export function ColonyApp() {
         <div className="row"><span>Homes watered</span><b style={{ color: ui.colony.watered < 60 ? '#e6c84d' : undefined }}>{ui.colony.watered}%</b></div>
         <div className="row"><span>Homes fed</span><b style={{ color: ui.colony.provisioned < 60 ? '#e6c84d' : undefined }}>{ui.colony.provisioned}%</b></div>
         <div className="row"><span>Homes healthy</span><b style={{ color: ui.colony.health < 60 ? '#e6c84d' : undefined }}>{ui.colony.health}%</b></div>
-        <div className="row"><span>Homes cultured</span><b style={{ color: ui.colony.culture < 40 ? '#e6c84d' : undefined }}>{ui.colony.culture}%</b></div>
+        <div className="row"><span>Homes cultured</span><b style={{ color: ui.colony.culture < 40 || !ui.colony.cultureFuelled ? '#e6c84d' : undefined }} title={!ui.colony.cultureFuelled ? 'Theatres are out of reels — culture pull halved' : undefined}>{ui.colony.culture}%{!ui.colony.cultureFuelled ? ' · reels out' : ''}</b></div>
         <div className="row"><span>Liveability</span><b style={{ color: ui.colony.liveability < 40 ? '#e6c84d' : undefined }}>{ui.colony.surveyed ? `${ui.colony.liveability}%` : '— locked'}</b></div>
         <div className="row"><span>Free labour</span><b style={{ color: ui.colony.freeLabour === 0 ? '#e6c84d' : undefined }}>{ui.colony.freeLabour}</b></div>
         <div className="row"><span>Jobs</span><b>{ui.colony.jobs} · {ui.colony.employed}% empl.</b></div>

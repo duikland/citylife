@@ -330,6 +330,12 @@ export function cultureFraction(state: ColonyState): number {
   return served / habs.length
 }
 
+/** Spec 014 — theatres need reels to run their shows; with none in stock the culture bonus is dampened. */
+export function cultureFuelFactor(state: ColonyState): number {
+  if (countKind(state, 'theatre') === 0) return 1
+  return state.reels > 0 ? 1 : COLONY.build.cultureStarvedFactor
+}
+
 /** Spec 011 — is a building of `kind` within `radius` of this home? (per-home service coverage). */
 function nearBuildingKind(state: ColonyState, home: ColonyBuilding, kind: BuildKind, radius: number): boolean {
   return state.buildings.some((b) => b.artifact.kind === kind && Math.hypot(b.x - home.x, b.y - home.y) <= radius)
@@ -582,7 +588,8 @@ function immigration(state: ColonyState, dtMin: number): void {
   // Spec 006 — nicer homes (higher mean tier) draw settlers faster.
   const tierFactor = 1 + (habitatMeanTier(state) - 1) * 0.2 // tier 1 → 1.0, tier 3 → 1.4
   // Spec 010 — culture draws settlers: a cultured colony is more desirable.
-  const cultureFactor = 1 + COLONY.build.cultureDesirabilityBonus * cultureFraction(state)
+  // Spec 010/014 — culture draws settlers; a theatre with no reels (spec 014) runs dark, halving its pull.
+  const cultureFactor = 1 + COLONY.build.cultureDesirabilityBonus * cultureFraction(state) * cultureFuelFactor(state)
   const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor
   if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * perDay)
 }
@@ -591,15 +598,19 @@ function immigration(state: ColonyState, dtMin: number): void {
 function serviceUpkeep(state: ColonyState, dtMin: number): void {
   let upkeep = 0 // components (water/depot/clinic/theatre)
   let matUpkeep = 0 // materials (spec 011 — the survey office burns sensors/supplies)
+  let reelUpkeep = 0 // reels (spec 014 — theatres burn reels as show media)
   for (const b of state.buildings) {
     if (b.artifact.kind === 'water') upkeep += COLONY.build.waterHubMaintCompPerDay
     else if (b.artifact.kind === 'depot') upkeep += COLONY.build.depotMaintCompPerDay
     else if (b.artifact.kind === 'clinic') upkeep += COLONY.build.clinicMaintCompPerDay
-    else if (b.artifact.kind === 'theatre') upkeep += COLONY.build.theatreMaintCompPerDay
-    else if (b.artifact.kind === 'survey') matUpkeep += COLONY.build.surveyMaintMatPerDay
+    else if (b.artifact.kind === 'theatre') {
+      upkeep += COLONY.build.theatreMaintCompPerDay
+      reelUpkeep += COLONY.build.theatreReelsPerDay
+    } else if (b.artifact.kind === 'survey') matUpkeep += COLONY.build.surveyMaintMatPerDay
   }
   if (upkeep > 0) state.components = Math.max(0, state.components - upkeep * (dtMin / (24 * 60)))
   if (matUpkeep > 0) state.materials = Math.max(0, state.materials - matUpkeep * (dtMin / (24 * 60)))
+  if (reelUpkeep > 0) state.reels = Math.max(0, state.reels - reelUpkeep * (dtMin / (24 * 60)))
 }
 
 /** Spec 007 — staffed greenhouses grow food (boosted near a Water Hub); colonists eat a little each day. */
