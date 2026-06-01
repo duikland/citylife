@@ -1,5 +1,5 @@
 # Spec 004 — Settler immigration fills housing vacancies
-- status: proposed
+- status: built
 - proposed-by: Tomas Vren (works-foreman) — live Hermes inference returned no usable response, so written in-character
 - date: 2026-06-01
 - depends-on: 001

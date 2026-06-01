@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -141,5 +141,55 @@ describe('Spec 003 — workshops refine materials into components', () => {
       return s.components
     }
     expect(run(5)).toBeGreaterThan(run(2))
+  })
+})
+
+describe('Spec 004 — settler immigration fills housing capacity', () => {
+  const habitat = (residents = 3) => ({
+    id: 1, kind: 'habitat' as const, color: 0, height: 1, residents, jobs: 0,
+    powerLoad: 0.5, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0,
+  })
+
+  it('a finished habitat adds capacity, not instant colonists', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const cap0 = housingCapacity(s)
+    const col0 = s.colonists
+    s.buildings.push({ id: 1, x: s.terrain.landing.x + 3, y: s.terrain.landing.y, artifact: habitat(3) })
+    expect(housingCapacity(s)).toBe(cap0 + 3)
+    expect(s.colonists).toBe(col0)
+  })
+
+  it('settlers immigrate toward capacity when liveable', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push({ id: 1, x: s.terrain.landing.x + 3, y: s.terrain.landing.y, artifact: habitat(9) }) // capacity 11
+    s.power.batteryWh = s.power.batteryCapWh
+    s.power.solarW = 5 // liveable
+    const col0 = s.colonists
+    for (let i = 0; i < 300; i++) stepBuild(s, sim.rng, 10)
+    expect(s.colonists).toBeGreaterThan(col0)
+    expect(s.colonists).toBeLessThanOrEqual(housingCapacity(s))
+  })
+
+  it('no immigration when housing is full', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state // capacity 2 (no habitats), colonists already 2
+    s.power.solarW = 5
+    const col0 = Math.round(s.colonists)
+    for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+    expect(Math.round(s.colonists)).toBe(col0)
+  })
+
+  it('a power-dead colony loses settlers', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push({ id: 1, x: s.terrain.landing.x + 3, y: s.terrain.landing.y, artifact: habitat(20) })
+    s.colonists = 15
+    s.power.batteryWh = 0
+    s.power.solarW = 0 // power dead
+    const col0 = s.colonists
+    for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+    expect(s.colonists).toBeLessThan(col0)
   })
 })

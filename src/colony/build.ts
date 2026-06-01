@@ -332,9 +332,30 @@ function produceComponents(state: ColonyState, dtMin: number): void {
   }
 }
 
+/** Spec 004 — total housing the colony offers: the founders' dropship + each habitat's capacity. */
+export function housingCapacity(state: ColonyState): number {
+  let cap = COLONY.seed.colonists
+  for (const b of state.buildings) if (b.artifact.kind === 'habitat') cap += b.artifact.residents
+  return cap
+}
+
+/** Spec 004 — settlers immigrate to fill vacant housing while the colony is liveable; if power is
+ *  fully dead they drift away, down to the founding crew. */
+function immigration(state: ColonyState, dtMin: number): void {
+  const perDay = dtMin / (24 * 60)
+  const powerDead = state.power.batteryWh <= 0 && state.power.solarW <= 0
+  if (powerDead) {
+    state.colonists = Math.max(COLONY.seed.colonists, state.colonists - COLONY.build.emigrationPerDay * perDay)
+    return
+  }
+  const cap = housingCapacity(state)
+  if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * perDay)
+}
+
 export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   produceMaterials(state, dtMin)
   produceComponents(state, dtMin)
+  immigration(state, dtMin)
   for (let i = state.jobs.length - 1; i >= 0; i--) {
     const j = state.jobs[i]!
     j.progress += dtMin / j.artifact.buildTimeMin
@@ -343,7 +364,8 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
       const a = j.artifact
       if (a.kind === 'solar') state.powerGen += a.powerGen
       else {
-        state.colonists += a.residents
+        // Spec 004 — habitats add housing CAPACITY (a.residents), not instant colonists; settlers
+        // immigrate to fill it. Mines/workshops have residents 0, so this only changes habitats.
         state.totalJobs += a.jobs
         state.buildingLoad += a.powerLoad
         if (a.kind === 'industrial') state.pollution += COLONY.build.pollutionPerIndustrial

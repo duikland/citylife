@@ -81,6 +81,9 @@ export const COLONY = {
     workshopMaterialsIn: 4, // materials/day consumed at full staffing
     workshopComponentsOut: 2, // components/day produced at full staffing (2:1 ratio)
     materialsSurplus: 30, // raise a workshop to refine once the stockpile exceeds this
+    // Population (spec 004): settlers immigrate to fill vacant housing when liveable; leave if power dies.
+    immigrationPerDay: 6,
+    emigrationPerDay: 4,
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,
