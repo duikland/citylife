@@ -155,6 +155,10 @@ export class ColonyRuntime {
     this.renderer?.setZonesVisible(this.zonesVisible)
     this.emit()
   }
+  /** Capture the current view as a PNG data URL (HUD snapshot button); null before the renderer starts. */
+  snapshot(): string | null {
+    return this.renderer?.capturePNG() ?? null
+  }
   private startAdLoop() {
     if (this.adInterval) return
     // One sponsor / house ad every 90 seconds — the demo of the ad-revenue surface.

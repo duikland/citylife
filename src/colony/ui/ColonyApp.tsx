@@ -94,6 +94,21 @@ export function ColonyApp() {
             Zones
           </button>
         </div>
+        <div className="group">
+          <button
+            title="Save a PNG snapshot of the city"
+            onClick={() => {
+              const url = runtime.snapshot()
+              if (!url) return
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `citylife-sol${ui.clock.day}-${String(ui.clock.hour).padStart(2, '0')}${String(ui.clock.minute).padStart(2, '0')}.png`
+              a.click()
+            }}
+          >
+            📷
+          </button>
+        </div>
       </header>
 
       <aside className="hud">

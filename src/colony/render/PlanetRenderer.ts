@@ -82,7 +82,7 @@ export class PlanetRenderer {
     this.N = sim.state.terrain.size
     this.R = COLONY.world.planetRadius
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true })
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
     this.renderer.setPixelRatio(1)
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -813,6 +813,12 @@ export class PlanetRenderer {
     if (on === this.cinematic) return
     this.cinematic = on
     if (on) this.cinematicT0 = performance.now()
+  }
+
+  /** Render a fresh frame and return it as a PNG data URL — used by the HUD snapshot button. */
+  capturePNG(): string {
+    this.composer.render()
+    return this.renderer.domElement.toDataURL('image/png')
   }
 
   private updateCinematic() {
