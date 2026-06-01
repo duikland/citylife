@@ -139,6 +139,18 @@ export const COLONY = {
     surveyCost: 2400,
     surveyWorkers: 2,
     surveyMaintMatPerDay: 1, // sensor / survey-crew upkeep (materials)
+    // Skybridge Exchange (spec 012): trade — export surplus goods to neighbouring colonies for treasury.
+    matExchange: 16,
+    compExchange: 12,
+    crewExchange: 3,
+    exchangeCost: 2000,
+    exchangeWorkers: 2,
+    tradeComponentReserve: 20, // keep at least this many components before any are exported
+    tradeComponentPrice: 40, // $ earned per exported component
+    tradeComponentCapPerDay: 10, // max components one staffed exchange ships per day
+    tradeFoodReserve: 30,
+    tradeFoodPrice: 12,
+    tradeFoodCapPerDay: 15,
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

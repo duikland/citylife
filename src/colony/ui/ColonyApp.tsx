@@ -143,6 +143,7 @@ export function ColonyApp() {
         <div className="row"><span>Jobs</span><b>{ui.colony.jobs} · {ui.colony.employed}% empl.</b></div>
         <div className="row"><span>Pollution</span><b style={{ color: ui.colony.pollution > 60 ? '#e0584d' : ui.colony.pollution > 25 ? '#e6c84d' : undefined }}>{ui.colony.pollution}</b></div>
         <div className="row"><span>Treasury</span><b>${ui.colony.treasury.toLocaleString()}</b></div>
+        {ui.colony.trade > 0 && <div className="row"><span>Trade</span><b style={{ color: '#5fd0a0' }}>+${ui.colony.trade.toLocaleString()}/day</b></div>}
         <div className="row"><span>Materials</span><b style={{ color: ui.colony.materials < 6 ? '#e0584d' : undefined }}>{ui.colony.materials}</b></div>
         <div className="row"><span>Components</span><b>{ui.colony.components}</b></div>
         <div className="row"><span>Food</span><b style={{ color: ui.colony.food === 0 ? '#e6c84d' : undefined }}>{ui.colony.food}</b></div>

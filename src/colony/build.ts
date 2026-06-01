@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange'
 
 export interface Parcel {
   id: number
@@ -65,6 +65,7 @@ const DEPOT_COLOR = 0xc88a3a // amber ration depot
 const CLINIC_COLOR = 0xe3ebf0 // clinical white first-aid clinic
 const THEATRE_COLOR = 0x9a4fd0 // magenta holo-theatre
 const SURVEY_COLOR = 0x4a78b8 // civic blue survey office
+const EXCHANGE_COLOR = 0xc9a227 // gold skybridge exchange (trade)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -253,6 +254,10 @@ function designSurvey(state: ColonyState): Artifact {
   // Spec 011 — civic survey office; once built + staffed, unlocks the liveability overlay.
   return { id: state.buildIds++, kind: 'survey', color: SURVEY_COLOR, height: 1.2, residents: 0, jobs: COLONY.build.surveyWorkers, powerLoad: 0.5, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.surveyCost, materialsCost: COLONY.build.matSurvey, crew: COLONY.build.crewSurvey, materialsGen: 0, componentsCost: COLONY.build.compSurvey }
 }
+function designExchange(state: ColonyState): Artifact {
+  // Spec 012 — trade post; once built + staffed, exports the colony's surplus goods for treasury.
+  return { id: state.buildIds++, kind: 'exchange', color: EXCHANGE_COLOR, height: 1.0, residents: 0, jobs: COLONY.build.exchangeWorkers, powerLoad: 0.5, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.exchangeCost, materialsCost: COLONY.build.matExchange, crew: COLONY.build.crewExchange, materialsGen: 0, componentsCost: COLONY.build.compExchange }
+}
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
 function countKind(state: ColonyState, kind: BuildKind): number {
@@ -382,6 +387,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (countKind(state, 'habitat') > 0 && cultureFraction(state) < 0.9 && state.components >= COLONY.build.compTheatre && countKind(state, 'theatre') < Math.ceil(countKind(state, 'habitat') / 8)) return designTheatre(state)
   // Spec 011 — once the colony is established, raise a Civic Pulse Survey Office to unlock the liveability map.
   if (state.colonists > 8 && countKind(state, 'survey') < 1 && state.components >= COLONY.build.compSurvey) return designSurvey(state)
+  // Spec 012 — when components pile up past the trade reserve, raise a Skybridge Exchange to sell the surplus.
+  if (state.colonists > 8 && countKind(state, 'exchange') < 1 && state.components > COLONY.build.tradeComponentReserve && state.components >= COLONY.build.compExchange) return designExchange(state)
   const queuedGen = state.jobs.reduce((g, j) => g + j.artifact.powerGen, 0)
   if (state.power.loadW > (peakSupply(state) + queuedGen) * COLONY.build.powerHeadroom) return designSolarFarm(state)
   const pendingJobs = state.jobs.reduce((g, j) => g + j.artifact.jobs, 0)
@@ -585,6 +592,36 @@ function foodStep(state: ColonyState, dtMin: number): void {
   state.food = Math.max(0, state.food - state.colonists * COLONY.build.foodPerColonistPerDay * (dtMin / day))
 }
 
+/** Spec 012 — a staffed Skybridge Exchange exports SURPLUS goods (above a reserve) for treasury each day. */
+function tradeStep(state: ColonyState, dtMin: number): void {
+  const exchanges = countKind(state, 'exchange')
+  if (exchanges === 0) return
+  const staffing = state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0
+  if (staffing <= 0) return
+  const frac = dtMin / (24 * 60)
+  const compSell = Math.min(Math.max(0, state.components - COLONY.build.tradeComponentReserve), exchanges * COLONY.build.tradeComponentCapPerDay * staffing * frac)
+  if (compSell > 0) {
+    state.components -= compSell
+    state.treasury += compSell * COLONY.build.tradeComponentPrice
+  }
+  const foodSell = Math.min(Math.max(0, state.food - COLONY.build.tradeFoodReserve), exchanges * COLONY.build.tradeFoodCapPerDay * staffing * frac)
+  if (foodSell > 0) {
+    state.food -= foodSell
+    state.treasury += foodSell * COLONY.build.tradeFoodPrice
+  }
+}
+
+/** Spec 012 — current export income rate ($/day) the Exchanges would earn at this surplus + staffing (HUD). */
+export function tradeExportRate(state: ColonyState): number {
+  const exchanges = countKind(state, 'exchange')
+  if (exchanges === 0) return 0
+  const staffing = state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0
+  if (staffing <= 0) return 0
+  const compSell = Math.min(Math.max(0, state.components - COLONY.build.tradeComponentReserve), exchanges * COLONY.build.tradeComponentCapPerDay * staffing)
+  const foodSell = Math.min(Math.max(0, state.food - COLONY.build.tradeFoodReserve), exchanges * COLONY.build.tradeFoodCapPerDay * staffing)
+  return compSell * COLONY.build.tradeComponentPrice + foodSell * COLONY.build.tradeFoodPrice
+}
+
 export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   produceMaterials(state, dtMin)
   produceComponents(state, dtMin)
@@ -592,6 +629,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   foodStep(state, dtMin)
   housingStep(state, dtMin)
   immigration(state, dtMin)
+  tradeStep(state, dtMin)
   for (let i = state.jobs.length - 1; i >= 0; i--) {
     const j = state.jobs[i]!
     j.progress += dtMin / j.artifact.buildTimeMin

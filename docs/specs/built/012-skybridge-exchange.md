@@ -1,5 +1,5 @@
 # Spec 012 — Skybridge Exchange: trade surplus for treasury
-- status: proposed
+- status: built
 - proposed-by: **Bram Teel, dock-trader** — live Hermes returned empty (upstream flaky on this tick), written in-character. A new voice — the colony's first trader, not Mara Venn.
 - date: 2026-06-01
 - depends-on: 003

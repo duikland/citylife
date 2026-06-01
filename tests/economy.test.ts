@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -560,5 +560,58 @@ describe('Spec 011 — Civic Pulse Survey Office + the liveability map', () => {
     const blue = (h: number) => h & 0xff
     expect(red(liveabilityTint(0))).toBeGreaterThan(red(liveabilityTint(1))) // amber is redder
     expect(blue(liveabilityTint(1))).toBeGreaterThan(blue(liveabilityTint(0))) // cyan is bluer
+  })
+})
+
+describe('Spec 012 — Skybridge Exchange trades surplus for treasury', () => {
+  const mk = (kind: 'exchange', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('a staffed exchange ships surplus components above the reserve and earns treasury', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('exchange', 50, 50, { jobs: 2 }))
+    s.components = 60
+    s.food = 0
+    s.totalJobs = 2
+    s.colonists = 2 // fully staffed
+    s.treasury = 1000
+    const c0 = s.components
+    const t0 = s.treasury
+    for (let i = 0; i < 200; i++) stepBuild(s, sim.rng, 10)
+    expect(s.components).toBeLessThan(c0) // surplus shipped out
+    expect(s.components).toBeGreaterThanOrEqual(COLONY.build.tradeComponentReserve) // never traded below the reserve
+    expect(s.treasury).toBeGreaterThan(t0) // earned coin
+  })
+
+  it('nothing is exported when the stockpiles sit at the reserve', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('exchange', 50, 50, { jobs: 2 }))
+    s.components = COLONY.build.tradeComponentReserve
+    s.food = COLONY.build.tradeFoodReserve
+    s.totalJobs = 2
+    s.colonists = 2
+    s.treasury = 1000
+    for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+    expect(s.components).toBe(COLONY.build.tradeComponentReserve) // no surplus → no component trade
+    expect(s.treasury).toBe(1000) // nothing sold, so no trade income (food only fell to colonists eating)
+  })
+
+  it('an exchange with no staff trades nothing', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('exchange', 50, 50, { jobs: 2 }))
+    s.components = 60
+    s.totalJobs = 0
+    s.colonists = 0 // nobody to work it → staffing 0
+    const c0 = s.components
+    expect(tradeExportRate(s)).toBe(0)
+    for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+    expect(s.components).toBe(c0)
   })
 })
