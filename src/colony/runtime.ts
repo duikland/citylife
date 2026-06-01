@@ -3,7 +3,7 @@ import { COLONY } from './config'
 import { ColonySim } from './sim'
 import { PlanetRenderer, type CameraPreset, type ViewMode } from './render/PlanetRenderer'
 import { Biome } from './terrain'
-import { autoGrow, freeLabour, housingCapacity, wateredFraction, provisionedFraction, housingTierCounts, healthFraction, cultureFraction, colonyLiveability, surveyAvailable, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines } from './build'
+import { autoGrow, freeLabour, housingCapacity, wateredFraction, provisionedFraction, housingTierCounts, healthFraction, cultureFraction, colonyLiveability, surveyAvailable, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout } from './build'
 import { registerSettler as kookerRegister, generateName as randomSettlerName, type KookerCard } from './kooker'
 import { addSettler, saveColony, restoreColony, clearColony } from './settlers'
 import { bankDeposits, CURRENCY } from './ledger'
@@ -31,7 +31,7 @@ export interface ColonyUiState {
   paused: boolean
   speed: number
   clock: { day: number; hour: number; minute: number; isDay: boolean }
-  power: { solarW: number; loadW: number; batteryWh: number; batteryCapWh: number; pct: number }
+  power: { solarW: number; loadW: number; batteryWh: number; batteryCapWh: number; pct: number; brownout: boolean }
   colonists: number
   colony: { treasury: number; materials: number; components: number; food: number; reels: number; freeLabour: number; capacity: number; watered: number; provisioned: number; health: number; culture: number; cultureFuelled: boolean; liveability: number; surveyed: boolean; trade: number; tiers: [number, number, number]; buildings: number; building: number; load: number; jobs: number; employed: number; pollution: number }
   settlers: { count: number; recent: { id: number; name: string }[] }
@@ -297,7 +297,7 @@ export class ColonyRuntime {
       paused: this.paused,
       speed: this.speed,
       clock: { day: s.clock.day, hour: s.clock.hour, minute: s.clock.minute, isDay: s.clock.isDay },
-      power: { solarW: p.solarW, loadW: p.loadW, batteryWh: p.batteryWh, batteryCapWh: p.batteryCapWh, pct: p.batteryWh / p.batteryCapWh },
+      power: { solarW: p.solarW, loadW: p.loadW, batteryWh: p.batteryWh, batteryCapWh: p.batteryCapWh, pct: p.batteryWh / p.batteryCapWh, brownout: inBrownout(s) },
       colonists: Math.round(s.colonists),
       colony: {
         treasury: Math.round(s.treasury),

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -821,5 +821,49 @@ describe('Spec 016 — the Kookerverse Courier broadcasts the colony news', () =
     const lines = colonyHeadlines(s)
     expect(lines.some((l) => /reels gleam/i.test(l))).toBe(true)
     expect(lines.some((l) => /reels run dry/i.test(l))).toBe(false)
+  })
+})
+
+describe('Spec 017 — Brownout Priority Grid: power gets teeth', () => {
+  const mine = (x: number, y: number): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: { id: 1, kind: 'mine', color: 0, height: 1, residents: 0, jobs: 6, powerLoad: 0.3, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 5 },
+  })
+
+  it('a brownout needs BOTH an over-loaded grid and a drained battery', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.power.batteryWh = s.power.batteryCapWh
+    s.power.loadW = 100 // full battery, heavy load
+    expect(inBrownout(s)).toBe(false) // healthy battery → the grid rides it out
+    s.power.batteryWh = 0 // now drained, still over capacity
+    expect(inBrownout(s)).toBe(true)
+    s.power.loadW = 0 // drained but no load
+    expect(inBrownout(s)).toBe(false)
+  })
+
+  it('an under-powered colony produces less — heavy industry runs at the brownout factor', () => {
+    const run = (powered: boolean) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      s.materials = 10
+      s.buildings.push(mine(s.terrain.landing.x + 3, s.terrain.landing.y))
+      s.totalJobs = 6
+      s.colonists = 6 // fully staffed
+      s.power.solarW = 1 // a little sun, so this is a brownout — not a total blackout
+      if (powered) {
+        s.power.batteryWh = s.power.batteryCapWh
+        s.power.loadW = 0
+      } else {
+        s.power.batteryWh = 0
+        s.power.loadW = 100 // drained + over capacity → brownout
+      }
+      const m0 = s.materials
+      for (let i = 0; i < 80; i++) stepBuild(s, sim.rng, 10)
+      return s.materials - m0
+    }
+    expect(run(true)).toBeGreaterThan(run(false))
   })
 })

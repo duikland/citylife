@@ -170,6 +170,9 @@ export const COLONY = {
     crewMast: 3,
     mastCost: 1800,
     mastWorkers: 2,
+    // Brownout Priority Grid (spec 017): an under-powered colony slows its heavy industry.
+    brownoutBatteryThreshold: 0.25, // below this battery %, an over-loaded colony browns out
+    brownoutProductionFactor: 0.5, // industry output (mines/workshops/foundries/greenhouses) during a brownout
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

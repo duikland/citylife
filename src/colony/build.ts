@@ -411,6 +411,18 @@ export function liveabilityTint(score: number): number {
 function peakSupply(state: ColonyState): number {
   return COLONY.power.solarPeakW + state.powerGen
 }
+
+/** Spec 017 — the colony browns out when it is structurally under-powered (load over peak supply) AND the
+ *  battery has drained below the threshold. Only heavy industry sheds load; services keep priority. */
+export function inBrownout(state: ColonyState): boolean {
+  const pct = state.power.batteryCapWh > 0 ? state.power.batteryWh / state.power.batteryCapWh : 0
+  return state.power.loadW > peakSupply(state) && pct < COLONY.build.brownoutBatteryThreshold
+}
+
+/** Spec 017 — industry production multiplier: full power → 1, brownout → the reduced factor. */
+function powerFactor(state: ColonyState): number {
+  return inBrownout(state) ? COLONY.build.brownoutProductionFactor : 1
+}
 function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   // Spec 002 — supplies first: when the materials stockpile runs low, raise a mine to replenish it.
   if (state.materials < COLONY.build.materialsLowThreshold) return designMine(state)
@@ -513,12 +525,12 @@ function produceMaterials(state: ColonyState, dtMin: number): void {
   for (const b of state.buildings) if (b.artifact.kind === 'mine') gen += b.artifact.materialsGen
   if (gen <= 0) return
   const staffing = state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0
-  state.materials += gen * staffing * healthFactor(state) * (dtMin / (24 * 60)) // spec 009 — sick miners dig less
+  state.materials += gen * staffing * healthFactor(state) * powerFactor(state) * (dtMin / (24 * 60)) // spec 009/017 — sick or brownout-hit mines dig less
 }
 
 /** Spec 003 — staffed workshops consume materials and produce components (2:1); halt when materials run out. */
 function produceComponents(state: ColonyState, dtMin: number): void {
-  const eff = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) // spec 009 — sick workers refine less
+  const eff = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) * powerFactor(state) // spec 009/017 — sick or brownout workshops refine less
   if (eff <= 0) return
   const day = 24 * 60
   for (const b of state.buildings) {
@@ -534,7 +546,7 @@ function produceComponents(state: ColonyState, dtMin: number): void {
 
 /** Spec 013 — staffed reel foundries consume components and produce reels (2:1); halt when components run out. */
 function produceReels(state: ColonyState, dtMin: number): void {
-  const eff = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) // spec 009 — sick refiners weave less
+  const eff = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) * powerFactor(state) // spec 009/017 — sick or brownout foundries weave less
   if (eff <= 0) return
   const day = 24 * 60
   for (const b of state.buildings) {
@@ -667,7 +679,7 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
 /** Spec 007 — staffed greenhouses grow food (boosted near a Water Hub); colonists eat a little each day. */
 function foodStep(state: ColonyState, dtMin: number): void {
   const day = 24 * 60
-  const staffing = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) // spec 009 — sick growers tend less
+  const staffing = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) * powerFactor(state) // spec 009/017 — sick or brownout greenhouses grow less
   let grown = 0
   for (const b of state.buildings) {
     if (b.artifact.kind !== 'greenhouse') continue

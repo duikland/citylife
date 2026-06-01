@@ -156,6 +156,7 @@ export function ColonyApp() {
         <div className="row"><span>Building</span><b>{ui.colony.building}</b></div>
         <div className="row"><span>Solar</span><b>{ui.power.solarW.toFixed(1)} kW</b></div>
         <div className="row"><span>Load</span><b style={{ color: ui.power.loadW > ui.power.solarW ? '#e0584d' : undefined }}>{ui.power.loadW.toFixed(1)} kW</b></div>
+        {ui.power.brownout && <div className="row"><span style={{ color: '#e6c84d' }}>⚡ Brownout</span><b style={{ color: '#e6c84d' }} title="Grid over capacity + battery low — heavy industry at 50% until more solar is built">industry 50%</b></div>}
         <div className="batt">
           <div className="batt-head"><span>Battery</span><b>{pct}%</b></div>
           <div className="bar"><div style={{ width: `${pct}%`, background: battColor }} /></div>

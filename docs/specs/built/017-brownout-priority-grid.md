@@ -1,5 +1,5 @@
 # Spec 017 — Brownout Priority Grid: power gets teeth
-- status: proposed
+- status: built
 - proposed-by: **Mara Venn, CityLife grid electrician** — **LIVE Hermes** (model hermes-codex-gpt-5.5), her 7th accepted proposal, and the **first true Hermes-authored spec after a long upstream outage** (specs 012–016 were written in-character while the inference was dark). The citizens are speaking again.
 - date: 2026-06-01
 - depends-on: 002, 003
