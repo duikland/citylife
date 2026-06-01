@@ -89,6 +89,11 @@ export function ColonyApp() {
             </button>
           ))}
         </div>
+        <div className="group">
+          <button className={ui.zonesVisible ? 'on' : ''} onClick={() => runtime.toggleZones()} title="Show or hide the city-plan zoning overlay">
+            Zones
+          </button>
+        </div>
       </header>
 
       <aside className="hud">

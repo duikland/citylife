@@ -17,9 +17,12 @@ import { cellZone, ZONE_COLOR, VIBE_COLOR, type Plot } from '../cityPlan'
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
 export type CameraPreset = 'street' | 'district' | 'planet'
 
-const SKY_DAY = new THREE.Color(0x9ec3d6)
-const SKY_NIGHT = new THREE.Color(0x080b1e)
+// Dark City: the colony floats on a slab of rock adrift in deep space. The "sky" is the void —
+// dark even at midday — while a local sun still sweeps light across the island for day/night.
+const SKY_DAY = new THREE.Color(0x0b1022)
+const SKY_NIGHT = new THREE.Color(0x03040a)
 const OCEAN = 0x143a4a
+const SLAB_ROCK = 0x24242f
 
 export class PlanetRenderer {
   private scene = new THREE.Scene()
@@ -91,7 +94,7 @@ export class PlanetRenderer {
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = true
-    this.controls.maxPolarAngle = Math.PI * 0.495
+    this.controls.maxPolarAngle = Math.PI * 0.62
     this.controls.minDistance = 4
     this.controls.maxDistance = this.R * 2.6
     this.controls.target.set(0, 5, 0)
@@ -139,31 +142,59 @@ export class PlanetRenderer {
   }
 
   private buildPlanet() {
-    // The ball: a big sphere whose apex is at the origin, where the flat region sits.
-    const planet = new THREE.Mesh(
-      new THREE.SphereGeometry(this.R, 72, 54),
-      new THREE.MeshStandardMaterial({ color: OCEAN, roughness: 0.85, metalness: 0.05 }),
+    // Dark City: a tapered slab of rock drops from just under the waterline into the void, so the
+    // island clearly floats in space instead of sitting on a planet.
+    const top = this.N * 0.72
+    const base = this.N * 0.34
+    const height = this.N * 1.05
+    const rock = new THREE.Mesh(
+      new THREE.CylinderGeometry(top, base, height, 9, 1),
+      new THREE.MeshStandardMaterial({ color: SLAB_ROCK, roughness: 0.95, metalness: 0.08, flatShading: true }),
     )
-    planet.position.set(0, -this.R, 0)
-    planet.receiveShadow = false
-    this.scene.add(planet)
+    rock.position.set(0, -height / 2 - 0.4, 0)
+    this.scene.add(rock)
 
-    // Atmosphere glow.
-    const atmo = new THREE.Mesh(
-      new THREE.SphereGeometry(this.R * 1.05, 40, 28),
-      new THREE.MeshBasicMaterial({ color: 0x8fcfff, transparent: true, opacity: 0.1, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+    // A faint additive rim around the waterline so the slab edge glows against the dark.
+    const rim = new THREE.Mesh(
+      new THREE.CylinderGeometry(top * 1.01, top * 0.9, this.N * 0.05, 9, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x2f7da0, transparent: true, opacity: 0.25, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
     )
-    atmo.position.set(0, -this.R, 0)
-    this.scene.add(atmo)
+    rim.position.set(0, -0.7, 0)
+    this.scene.add(rim)
+
+    // Starfield — a deterministic Fibonacci shell, fog-disabled so the void always reads as deep
+    // space. Sits beyond the camera's max orbit distance so you never fly through it.
+    const starCount = 1500
+    const golden = Math.PI * (3 - Math.sqrt(5))
+    const sg = new THREE.BufferGeometry()
+    const pos = new Float32Array(starCount * 3)
+    for (let i = 0; i < starCount; i++) {
+      const y = 1 - (i / (starCount - 1)) * 2
+      const rad = Math.sqrt(Math.max(0, 1 - y * y))
+      const theta = golden * i
+      const r = 5200 + ((i * 131) % 1600)
+      pos[i * 3] = Math.cos(theta) * rad * r
+      pos[i * 3 + 1] = y * r
+      pos[i * 3 + 2] = Math.sin(theta) * rad * r
+    }
+    sg.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    const stars = new THREE.Points(
+      sg,
+      new THREE.PointsMaterial({ color: 0xcdd6ff, size: 7, sizeAttenuation: true, fog: false, transparent: true, opacity: 0.92 }),
+    )
+    stars.matrixAutoUpdate = false
+    this.scene.add(stars)
   }
 
   private buildOcean() {
+    // Water pooled on the slab — a disc meeting the rocky rim, not an endless sea to a horizon.
     const ocean = new THREE.Mesh(
-      new THREE.PlaneGeometry(this.N * 1.04, this.N * 1.04),
-      new THREE.MeshStandardMaterial({ color: 0x1c6a82, roughness: 0.12, metalness: 0.4, transparent: true, opacity: 0.9 }),
+      new THREE.CircleGeometry(this.N * 0.66, 72),
+      new THREE.MeshStandardMaterial({ color: 0x14506a, roughness: 0.15, metalness: 0.45, transparent: true, opacity: 0.92 }),
     )
     ocean.rotation.x = -Math.PI / 2
-    ocean.position.y = 0
+    ocean.position.y = -0.05
+    ocean.receiveShadow = true
     this.scene.add(ocean)
   }
 
@@ -232,6 +263,12 @@ export class PlanetRenderer {
       colorAttr.setXYZ(i, col.r, col.g, col.b)
     }
     colorAttr.needsUpdate = true
+  }
+
+  /** Show or hide the city-plan overlay (zone tints + plot flag-poles). */
+  setZonesVisible(v: boolean) {
+    if (this.zoneTintMesh) this.zoneTintMesh.visible = v
+    this.plotMarkers.visible = v
   }
 
   private buildStructures() {
@@ -431,7 +468,7 @@ export class PlanetRenderer {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
     geo.computeVertexNormals()
-    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.36, side: THREE.DoubleSide, depthWrite: false })
     this.zoneTintMesh = new THREE.Mesh(geo, mat)
     this.zoneTintMesh.frustumCulled = false
     this.scene.add(this.zoneTintMesh)
