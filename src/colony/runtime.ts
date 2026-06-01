@@ -69,8 +69,11 @@ export class ColonyRuntime {
   private radio: RadioState = createRadio()
   // TV mode hides the operator UI so you can put the city on any screen and just watch.
   private tv = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tv') === '1'
-  // City-plan zoning overlay (tints + plot flags) visible by default; toggled from the HUD.
-  private zonesVisible = true
+  // City-plan zoning overlay (zone tints + plot flags) — OFF by default. The static colour plan never
+  // helped planning and is superseded by the Caesar III economy (specs 001–010) that now drives how the
+  // city actually evolves. Kept as an opt-in HUD toggle while it's redesigned or retired
+  // (see docs/research/2026-06-01-zoning-redesign.md).
+  private zonesVisible = false
   private adInterval: ReturnType<typeof setInterval> | null = null
 
   constructor(seed: number = COLONY.render.seed) {

@@ -16,6 +16,17 @@ routine. Two goal-framed routines run every 20 minutes:
 
 The AI decides *what* to build or change; the review routine decides *how* and verifies it.
 
+## Investigation backlog
+Standing items the routines should fold into their work as the world matures (the Design Council can
+turn any of these into a spec; Review & Build can implement it):
+
+- **Zoning overlay — redesign or retire.** The old static city-plan zone tints are ugly and never
+  helped planning, and the economy (specs 001–010) now drives how the city evolves. The overlay is
+  already **off by default**; districts should instead *emerge from the built economy*, or the overlay
+  should visualise the new liveability signals (watered / fed / healthy / cultured / tier), or be
+  removed. Tasteful, toned palette; stays off by default. See
+  `docs/research/2026-06-01-zoning-redesign.md`.
+
 ## Spec queue location
 
 The canonical queue lives **outside the repo** at `D:\infra\projects\citylife-specs\{proposed,built}\`
