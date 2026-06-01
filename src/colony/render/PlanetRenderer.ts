@@ -68,6 +68,8 @@ export class PlanetRenderer {
   // and ease through turns instead of snapping their heading — and lane offset — at each corner.
   private carRender = new Map<number, { x: number; y: number; h: number }>()
   private lastCarT = 0
+  // Pulsing red nav beacon at the rocket nose — material ref so frame() can blink it.
+  private beaconMat: THREE.MeshStandardMaterial | null = null
 
   private N: number
   private R: number
@@ -402,7 +404,12 @@ export class PlanetRenderer {
       fin.position.set(0, 0.9, 0)
       body.castShadow = true
       nose.castShadow = true
-      g.add(body, nose, fin)
+      // Pulsing red nav beacon just above the nose — the landed dropship still has power.
+      const beaconMat = new THREE.MeshStandardMaterial({ color: 0xff6a55, emissive: 0xff2a18, emissiveIntensity: 1.5 })
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), beaconMat)
+      beacon.position.y = 7.25
+      this.beaconMat = beaconMat
+      g.add(body, nose, fin, beacon)
     }
     return g
   }
@@ -890,6 +897,10 @@ export class PlanetRenderer {
     this.updateDayNight()
     this.updateColonyLayer()
     this.updatePedestrians()
+    if (this.beaconMat) {
+      const blink = Math.max(0, Math.sin((performance.now() / 1000) * 2.4))
+      this.beaconMat.emissiveIntensity = 0.35 + blink * blink * 2.6
+    }
     if (this.cinematic) this.updateCinematic()
     this.controls.update()
     this.composer.render()
