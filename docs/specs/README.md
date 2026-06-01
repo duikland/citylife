@@ -24,7 +24,10 @@ turn any of these into a spec; Review & Build can implement it):
   liveability map (spec 011). Kept here as the worked example: a viewer flagged it, it was logged here,
   the Council proposed it, Review & Build shipped it. See `docs/research/2026-06-01-zoning-redesign.md`.
 
-- **Citizen News Radio (the "Kookerverse Courier").** From the scrolls under the rocky mountain
+- **Citizen News Radio (the "Kookerverse Courier").** ✅ *v1 built* — spec 016: a Broadcast Mast lights a
+  rotating news ticker of the colony's own headlines, read deterministically from live state + the citizen
+  roster. The Hermes-memory deepening (facts → the citizens' own stories) remains, awaiting persistent
+  bots. Original note below. From the scrolls under the rocky mountain
   (`docs/research/2026-06-01-the-scrolls-citizen-news-radio.md`): a station the colony **builds and
   staffs** that broadcasts *news about its own citizens and events* — who proposed what, who arrived at
   the border, which district hit Tier 3, when the reels run dry — instead of only the sponsor ads the Low
