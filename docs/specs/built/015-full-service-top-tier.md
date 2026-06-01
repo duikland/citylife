@@ -1,5 +1,5 @@
 # Spec 015 — The full-service top tier: grand homes demand everything
-- status: proposed
+- status: built
 - proposed-by: **Ravi Okondo, colony architect** — live Hermes returned empty (upstream flaky for a fourth tick), written in-character. Ravi returns to deepen the housing ladder he first proposed (spec 006), now that the whole service stack exists.
 - date: 2026-06-01
 - depends-on: 006, 008, 009, 010

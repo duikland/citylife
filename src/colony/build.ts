@@ -544,8 +544,21 @@ function habitatMeanTier(state: ColonyState): number {
   return n > 0 ? sum / n : 1
 }
 
-/** Spec 006 — homes evolve: a watered habitat with spare components upgrades a tier (consuming them);
- *  an unwatered one devolves after a grace period. Runs on an interval so growth stays gradual. */
+/** Spec 015 — a home is fully served when every service is in reach: water (005), food delivery (008),
+ *  health (009) and culture (010). The top housing tier (T3) requires it. */
+function fullyServed(state: ColonyState, home: ColonyBuilding): boolean {
+  return (
+    nearWater(state, home.x, home.y) &&
+    state.food > 0 &&
+    nearBuildingKind(state, home, 'depot', COLONY.build.rationDepotRadius) &&
+    nearBuildingKind(state, home, 'clinic', COLONY.build.clinicRadius) &&
+    nearBuildingKind(state, home, 'theatre', COLONY.build.theatreRadius)
+  )
+}
+
+/** Spec 006/015 — homes evolve on an interval. T1→T2 needs water + spare components; T2→T3 needs the FULL
+ *  service stack (water + food + health + culture) + components. A home devolves if it loses what its
+ *  current tier requires, after a grace period. */
 function housingStep(state: ColonyState, dtMin: number): void {
   state.housingTimer += dtMin
   if (state.housingTimer < COLONY.build.housingUpgradeIntervalHours * 60) return
@@ -554,18 +567,24 @@ function housingStep(state: ColonyState, dtMin: number): void {
   for (const b of state.buildings) {
     if (b.artifact.kind !== 'habitat') continue
     if (b.tier === undefined) b.tier = 1
-    if (nearWater(state, b.x, b.y)) {
+    const watered = nearWater(state, b.x, b.y)
+    const served = fullyServed(state, b) // spec 015 — the whole stack, required for the top tier
+    // Climb: T1→T2 on water, T2→T3 on the full service stack — each step spends spare components.
+    const canClimb = b.tier < 3 && (b.tier === 1 ? watered : served) && state.components >= COLONY.build.housingUpgradeCost
+    // Hold: a home keeps its tier only while it still meets that tier's requirement (T1 always holds).
+    const holds = b.tier <= 1 ? true : b.tier === 2 ? watered : served
+    if (canClimb) {
+      b.tier++
+      state.components -= COLONY.build.housingUpgradeCost
       b.dryMin = 0
-      if (b.tier < 3 && state.components >= COLONY.build.housingUpgradeCost) {
-        b.tier++
-        state.components -= COLONY.build.housingUpgradeCost
-      }
-    } else {
+    } else if (!holds) {
       b.dryMin = (b.dryMin ?? 0) + elapsed
       if (b.dryMin >= COLONY.build.housingDevolveGraceHours * 60 && b.tier > 1) {
         b.tier--
         b.dryMin = 0
       }
+    } else {
+      b.dryMin = 0
     }
   }
 }

@@ -717,3 +717,65 @@ describe('Spec 014 — reel-fed theatres: culture needs the luxury good', () => 
     expect(run(true)).toBeGreaterThan(run(false))
   })
 })
+
+describe('Spec 015 — the full-service top tier: grand homes demand the whole stack', () => {
+  const mkHab = (x: number, y: number, residents: number): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: { id: 1, kind: 'habitat', color: 0, height: 1, residents, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 },
+  })
+  const svc = (kind: 'water' | 'depot' | 'clinic' | 'theatre', x: number, y: number): ColonyBuilding => ({
+    id: x * 1000 + y + 7,
+    x,
+    y,
+    artifact: { id: 2, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 },
+  })
+
+  it('a watered home with components reaches T2 but cannot reach T3 without the full stack', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mkHab(50, 50, 3)
+    s.buildings.push(h)
+    s.buildings.push(svc('water', 51, 50))
+    s.components = 100
+    s.materials = 0
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
+    expect(h.tier).toBe(2) // climbs to T2, then stuck — no food / health / culture
+  })
+
+  it('a fully-served home (water + food + clinic + theatre) climbs to T3', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mkHab(50, 50, 3)
+    s.buildings.push(h)
+    s.food = 100
+    s.buildings.push(svc('water', 51, 50))
+    s.buildings.push(svc('depot', 51, 51))
+    s.buildings.push(svc('clinic', 49, 50))
+    s.buildings.push(svc('theatre', 50, 51))
+    s.components = 100
+    s.materials = 0
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
+    expect(h.tier).toBe(3) // the whole stack in reach → the grandest tier
+  })
+
+  it('a tier-3 home devolves when it loses a service', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mkHab(50, 50, 3)
+    h.tier = 3
+    s.buildings.push(h)
+    s.food = 100
+    s.buildings.push(svc('water', 51, 50))
+    s.buildings.push(svc('depot', 51, 51))
+    s.buildings.push(svc('clinic', 49, 50))
+    // no theatre in range → not fully served
+    s.components = 100
+    s.materials = 0
+    const cap0 = housingCapacity(s)
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
+    expect(h.tier!).toBeLessThan(3)
+    expect(housingCapacity(s)).toBeLessThan(cap0)
+  })
+})
