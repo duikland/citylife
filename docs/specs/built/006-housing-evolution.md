@@ -1,5 +1,5 @@
 # Spec 006 — Housing evolution: homes upgrade when served and supplied
-- status: proposed
+- status: built
 - proposed-by: Ravi Okondo (colony architect) — live Hermes returned 502/empty (upstream flaky), written in-character
 - date: 2026-06-01
 - depends-on: 005

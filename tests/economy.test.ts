@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -363,5 +363,71 @@ describe('Spec 008 — Ration Depot delivers food to the homes in reach', () => 
       return s.colonists - col0
     }
     expect(run(true)).toBeGreaterThan(run(false))
+  })
+})
+
+describe('Spec 006 — housing evolution: homes upgrade when watered + supplied, devolve when dry', () => {
+  const mkHab = (x: number, y: number, residents: number): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: { id: 1, kind: 'habitat', color: 0, height: 1, residents, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 },
+  })
+  const mkWater = (x: number, y: number): ColonyBuilding => ({
+    id: x * 1000 + y + 1,
+    x,
+    y,
+    artifact: { id: 2, kind: 'water', color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 },
+  })
+
+  it('a watered habitat with spare components climbs tiers, gains capacity, and consumes components', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mkHab(50, 50, 3)
+    s.buildings.push(h)
+    s.buildings.push(mkWater(51, 50)) // within radius — the home is watered
+    s.components = 100
+    s.materials = 0 // disable autoGrow so this isolates housing evolution
+    const cap0 = housingCapacity(s)
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60) // 60 sim-hours → several upgrade intervals
+    expect(h.tier!).toBeGreaterThan(1)
+    expect(housingCapacity(s)).toBeGreaterThan(cap0)
+    expect(s.components).toBeLessThan(100) // components were consumed on each upgrade
+  })
+
+  it('an unwatered habitat never upgrades', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mkHab(50, 50, 3)
+    s.buildings.push(h) // no Water Hub in range
+    s.components = 100
+    s.materials = 0
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
+    expect(h.tier ?? 1).toBe(1)
+  })
+
+  it('a watered habitat with no components cannot upgrade — the component sink gates it', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mkHab(50, 50, 3)
+    s.buildings.push(h)
+    s.buildings.push(mkWater(51, 50))
+    s.components = 0
+    s.materials = 0
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
+    expect(h.tier ?? 1).toBe(1)
+  })
+
+  it('a habitat devolves a tier when it loses water past the grace period', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mkHab(50, 50, 3)
+    h.tier = 3 // start at the top, then go dry (no Water Hub)
+    s.buildings.push(h)
+    s.materials = 0
+    const cap0 = housingCapacity(s)
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
+    expect(h.tier!).toBeLessThan(3)
+    expect(housingCapacity(s)).toBeLessThan(cap0)
   })
 })

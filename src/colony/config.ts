@@ -110,6 +110,11 @@ export const COLONY = {
     rationDepotRadius: 8, // cells; habitats within this of a depot are provisioned
     rationDepotHomes: 8, // max homes one depot can serve
     depotMaintCompPerDay: 1, // ongoing component maintenance
+    // Housing evolution (spec 006): homes upgrade tiers when watered + supplied with components.
+    housingTierBonus: [0, 2, 5], // capacity ADDED at tier 1 / 2 / 3 (a residents-3 home → 3 / 5 / 8)
+    housingUpgradeCost: 3, // components consumed per tier-up — the 2nd component sink
+    housingUpgradeIntervalHours: 12, // a watered, supplied home upgrades at most this often
+    housingDevolveGraceHours: 24, // an unwatered home steps down a tier after this long dry
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

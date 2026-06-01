@@ -46,6 +46,7 @@ export interface ColonyState {
   occupied: Set<string>
   buildIds: number
   lastGrowMin: number
+  housingTimer: number // spec 006 — accumulates sim-minutes; fires the upgrade/devolve pass on an interval
   buildingLoad: number
   powerGen: number
   lastIncomeDay: number
@@ -113,6 +114,7 @@ export class ColonySim {
       occupied: new Set(),
       buildIds: 1,
       lastGrowMin: 0,
+      housingTimer: 0,
       buildingLoad: 0,
       powerGen: 0,
       lastIncomeDay: 0,

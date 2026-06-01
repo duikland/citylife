@@ -45,6 +45,8 @@ export interface ColonyBuilding {
   x: number
   y: number
   artifact: Artifact
+  tier?: number // spec 006 — habitats evolve 1..3 (more capacity + desirability); undefined = tier 1
+  dryMin?: number // spec 006 — sim-minutes a habitat has gone without water (drives devolution)
 }
 export interface RoadCell {
   x: number
@@ -387,11 +389,58 @@ function produceComponents(state: ColonyState, dtMin: number): void {
   }
 }
 
-/** Spec 004 — total housing the colony offers: the founders' dropship + each habitat's capacity. */
+/** Spec 004/006 — total housing: the founders' dropship + each habitat's capacity at its CURRENT tier. */
 export function housingCapacity(state: ColonyState): number {
   let cap = COLONY.seed.colonists
-  for (const b of state.buildings) if (b.artifact.kind === 'habitat') cap += b.artifact.residents
+  for (const b of state.buildings) if (b.artifact.kind === 'habitat') cap += b.artifact.residents + housingTierBonus(b.tier)
   return cap
+}
+
+/** Spec 006 — extra capacity a habitat's tier grants on top of its base residents. */
+function housingTierBonus(tier: number | undefined): number {
+  const t = Math.max(1, Math.min(3, tier ?? 1))
+  return COLONY.build.housingTierBonus[t - 1]!
+}
+
+/** Spec 006 — how many habitats sit at each tier (1..3), for the HUD tier-mix readout. */
+export function housingTierCounts(state: ColonyState): [number, number, number] {
+  const c: [number, number, number] = [0, 0, 0]
+  for (const b of state.buildings) if (b.artifact.kind === 'habitat') c[Math.max(1, Math.min(3, b.tier ?? 1)) - 1]++
+  return c
+}
+
+/** Spec 006 — mean habitat tier; nicer homes draw settlers faster. */
+function habitatMeanTier(state: ColonyState): number {
+  let n = 0
+  let sum = 0
+  for (const b of state.buildings) if (b.artifact.kind === 'habitat') { n++; sum += Math.max(1, Math.min(3, b.tier ?? 1)) }
+  return n > 0 ? sum / n : 1
+}
+
+/** Spec 006 — homes evolve: a watered habitat with spare components upgrades a tier (consuming them);
+ *  an unwatered one devolves after a grace period. Runs on an interval so growth stays gradual. */
+function housingStep(state: ColonyState, dtMin: number): void {
+  state.housingTimer += dtMin
+  if (state.housingTimer < COLONY.build.housingUpgradeIntervalHours * 60) return
+  const elapsed = state.housingTimer
+  state.housingTimer = 0
+  for (const b of state.buildings) {
+    if (b.artifact.kind !== 'habitat') continue
+    if (b.tier === undefined) b.tier = 1
+    if (nearWater(state, b.x, b.y)) {
+      b.dryMin = 0
+      if (b.tier < 3 && state.components >= COLONY.build.housingUpgradeCost) {
+        b.tier++
+        state.components -= COLONY.build.housingUpgradeCost
+      }
+    } else {
+      b.dryMin = (b.dryMin ?? 0) + elapsed
+      if (b.dryMin >= COLONY.build.housingDevolveGraceHours * 60 && b.tier > 1) {
+        b.tier--
+        b.dryMin = 0
+      }
+    }
+  }
 }
 
 /** Spec 004 — settlers immigrate to fill vacant housing while the colony is liveable; if power is
@@ -409,7 +458,9 @@ function immigration(state: ColonyState, dtMin: number): void {
   // is built; 0.4 dropship-ration floor when truly hungry).
   const reach = countKind(state, 'depot') > 0 ? provisionedFraction(state) : state.food > 0 ? 0.5 : 0
   const fedFactor = 0.4 + 0.6 * reach
-  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor
+  // Spec 006 — nicer homes (higher mean tier) draw settlers faster.
+  const tierFactor = 1 + (habitatMeanTier(state) - 1) * 0.2 // tier 1 → 1.0, tier 3 → 1.4
+  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor
   if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * perDay)
 }
 
@@ -442,12 +493,15 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   produceComponents(state, dtMin)
   serviceUpkeep(state, dtMin)
   foodStep(state, dtMin)
+  housingStep(state, dtMin)
   immigration(state, dtMin)
   for (let i = state.jobs.length - 1; i >= 0; i--) {
     const j = state.jobs[i]!
     j.progress += dtMin / j.artifact.buildTimeMin
     if (j.progress >= 1) {
-      state.buildings.push({ id: j.id, x: j.x, y: j.y, artifact: j.artifact })
+      const nb: ColonyBuilding = { id: j.id, x: j.x, y: j.y, artifact: j.artifact }
+      if (j.artifact.kind === 'habitat') { nb.tier = 1; nb.dryMin = 0 } // spec 006 — homes start at tier 1
+      state.buildings.push(nb)
       const a = j.artifact
       if (a.kind === 'solar') state.powerGen += a.powerGen
       else {
