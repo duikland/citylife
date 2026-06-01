@@ -64,6 +64,15 @@ export const COLONY = {
     crewHabitat: 2,
     crewWork: 3,
     crewSolar: 2,
+    // Extraction (spec 002): a mine is the cheapest build (so a low-supply colony can still raise it)
+    // and produces materials while staffed; output scales with how staffed the colony is.
+    matMine: 4,
+    crewMine: 2,
+    mineCost: 1200,
+    mineWorkers: 6, // employment slots; full output needs all filled
+    mineOutputPerDay: 5, // materials/day at full staffing
+    mineBuildHours: 5,
+    materialsLowThreshold: 16, // build a mine when the stockpile drops below this
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

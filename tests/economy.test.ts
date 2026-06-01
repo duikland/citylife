@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -48,5 +48,50 @@ describe('Spec 001 — materials + labour gate construction', () => {
     for (let i = 0; i < 20; i++) autoGrow(s, sim.rng)
     const reserved = s.jobs.reduce((n, j) => n + j.artifact.crew, 0)
     expect(reserved).toBeLessThanOrEqual(s.colonists)
+  })
+})
+
+describe('Spec 002 — extraction: staffed mines produce materials', () => {
+  const mineArtifact = () => ({
+    id: 1, kind: 'mine' as const, color: 0x6b5a4a, height: 0.7, residents: 0, jobs: 6,
+    powerLoad: 0.3, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 5,
+  })
+
+  it('a fully staffed mine raises materials over sim time', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.materials = 10
+    s.buildings.push({ id: 1, x: s.terrain.landing.x + 3, y: s.terrain.landing.y, artifact: mineArtifact() })
+    s.totalJobs = 6
+    s.colonists = 6 // fully staffed → no free labour, so autoGrow won't interfere
+    const m0 = s.materials
+    for (let i = 0; i < 80; i++) stepBuild(s, sim.rng, 10)
+    expect(s.materials).toBeGreaterThan(m0)
+  })
+
+  it('with no mine and no colonists, materials do not change', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.materials = 10
+    s.colonists = 0
+    s.totalJobs = 0
+    const m0 = s.materials
+    for (let i = 0; i < 80; i++) stepBuild(s, sim.rng, 10)
+    expect(s.materials).toBe(m0)
+  })
+
+  it('an understaffed mine produces less than a fully staffed one', () => {
+    const run = (colonists: number) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      s.materials = 10
+      s.buildings.push({ id: 1, x: s.terrain.landing.x + 3, y: s.terrain.landing.y, artifact: mineArtifact() })
+      s.totalJobs = 6
+      s.colonists = colonists
+      const m0 = s.materials
+      for (let i = 0; i < 80; i++) stepBuild(s, sim.rng, 10)
+      return s.materials - m0
+    }
+    expect(run(6)).toBeGreaterThan(run(3))
   })
 })

@@ -1,5 +1,5 @@
 # Spec 002 — Extraction: the materials mine
-- status: proposed
+- status: built
 - proposed-by: claude (research-grounded, from the Caesar III study)
 - date: 2026-06-01
 - depends-on: 001

@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine'
 
 export interface Parcel {
   id: number
@@ -29,6 +29,7 @@ export interface Artifact {
   cost: number
   materialsCost: number // spec 001: materials consumed to construct
   crew: number // spec 001: free colonists reserved for the build duration
+  materialsGen: number // spec 002: materials/day produced when fully staffed (mines); 0 otherwise
 }
 export interface ConstructionJob {
   id: number
@@ -53,6 +54,7 @@ const HAB_COLORS = [0xe6cda2, 0xd8b48a, 0xc9b08f, 0xb88a6a]
 const COMMERCIAL_COLOR = 0x5fb6d8
 const INDUSTRIAL_COLOR = 0xcf8b54
 const SOLAR_COLOR = 0x18406a
+const MINE_COLOR = 0x6b5a4a // rocky brown extraction site
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -197,20 +199,27 @@ function availableLot(state: ColonyState, rng: RNG): { x: number; y: number } | 
 // ── architect ──
 
 function designHabitat(state: ColonyState, rng: RNG): Artifact {
-  return { id: state.buildIds++, kind: 'habitat', color: HAB_COLORS[rng.int(0, HAB_COLORS.length - 1)]!, height: rng.range(0.8, 1.6), residents: COLONY.build.residentsPerHabitat, jobs: 0, powerLoad: COLONY.build.powerLoadPerHabitat, powerGen: 0, buildTimeMin: COLONY.build.buildTimeHours * 60, cost: COLONY.build.habitatCost, materialsCost: COLONY.build.matHabitat, crew: COLONY.build.crewHabitat }
+  return { id: state.buildIds++, kind: 'habitat', color: HAB_COLORS[rng.int(0, HAB_COLORS.length - 1)]!, height: rng.range(0.8, 1.6), residents: COLONY.build.residentsPerHabitat, jobs: 0, powerLoad: COLONY.build.powerLoadPerHabitat, powerGen: 0, buildTimeMin: COLONY.build.buildTimeHours * 60, cost: COLONY.build.habitatCost, materialsCost: COLONY.build.matHabitat, crew: COLONY.build.crewHabitat, materialsGen: 0 }
 }
 function designWorkplace(state: ColonyState, rng: RNG): Artifact {
   const ind = rng.chance(0.45)
-  return { id: state.buildIds++, kind: ind ? 'industrial' : 'commercial', color: ind ? INDUSTRIAL_COLOR : COMMERCIAL_COLOR, height: ind ? rng.range(0.9, 1.5) : rng.range(1.0, 1.8), residents: 0, jobs: ind ? COLONY.build.jobsPerIndustrial : COLONY.build.jobsPerCommercial, powerLoad: ind ? COLONY.build.industrialLoad : COLONY.build.commercialLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: ind ? COLONY.build.industrialCost : COLONY.build.commercialCost, materialsCost: ind ? COLONY.build.matIndustrial : COLONY.build.matCommercial, crew: COLONY.build.crewWork }
+  return { id: state.buildIds++, kind: ind ? 'industrial' : 'commercial', color: ind ? INDUSTRIAL_COLOR : COMMERCIAL_COLOR, height: ind ? rng.range(0.9, 1.5) : rng.range(1.0, 1.8), residents: 0, jobs: ind ? COLONY.build.jobsPerIndustrial : COLONY.build.jobsPerCommercial, powerLoad: ind ? COLONY.build.industrialLoad : COLONY.build.commercialLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: ind ? COLONY.build.industrialCost : COLONY.build.commercialCost, materialsCost: ind ? COLONY.build.matIndustrial : COLONY.build.matCommercial, crew: COLONY.build.crewWork, materialsGen: 0 }
 }
 function designSolarFarm(state: ColonyState): Artifact {
-  return { id: state.buildIds++, kind: 'solar', color: SOLAR_COLOR, height: 0.35, residents: 0, jobs: 0, powerLoad: 0, powerGen: COLONY.build.solarFarmOutput, buildTimeMin: COLONY.build.solarFarmBuildHours * 60, cost: COLONY.build.solarFarmCost, materialsCost: COLONY.build.matSolar, crew: COLONY.build.crewSolar }
+  return { id: state.buildIds++, kind: 'solar', color: SOLAR_COLOR, height: 0.35, residents: 0, jobs: 0, powerLoad: 0, powerGen: COLONY.build.solarFarmOutput, buildTimeMin: COLONY.build.solarFarmBuildHours * 60, cost: COLONY.build.solarFarmCost, materialsCost: COLONY.build.matSolar, crew: COLONY.build.crewSolar, materialsGen: 0 }
+}
+function designMine(state: ColonyState): Artifact {
+  // Spec 002 — extraction: produces materials while staffed; cheapest build so a low-supply colony
+  // can still raise the mine that restores its own supply.
+  return { id: state.buildIds++, kind: 'mine', color: MINE_COLOR, height: 0.7, residents: 0, jobs: COLONY.build.mineWorkers, powerLoad: 0.3, powerGen: 0, buildTimeMin: COLONY.build.mineBuildHours * 60, cost: COLONY.build.mineCost, materialsCost: COLONY.build.matMine, crew: COLONY.build.crewMine, materialsGen: COLONY.build.mineOutputPerDay }
 }
 
 function peakSupply(state: ColonyState): number {
   return COLONY.power.solarPeakW + state.powerGen
 }
 function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
+  // Spec 002 — supplies first: when the materials stockpile runs low, raise a mine to replenish it.
+  if (state.materials < COLONY.build.materialsLowThreshold) return designMine(state)
   const queuedGen = state.jobs.reduce((g, j) => g + j.artifact.powerGen, 0)
   if (state.power.loadW > (peakSupply(state) + queuedGen) * COLONY.build.powerHeadroom) return designSolarFarm(state)
   const pendingJobs = state.jobs.reduce((g, j) => g + j.artifact.jobs, 0)
@@ -238,7 +247,7 @@ export function autoGrow(state: ColonyState, rng: RNG): boolean {
   // Spec 001 — labour + materials gate. A build needs free hands and supplies; bail early (before
   // developing a block) if we can't even afford the cheapest build. No more timer pop-ups.
   const free = freeLabour(state)
-  if (free < COLONY.build.crewSolar || state.materials < COLONY.build.matSolar) return false
+  if (free < COLONY.build.crewMine || state.materials < COLONY.build.matMine) return false
 
   let lot = availableLot(state, rng)
   if (!lot) {
@@ -281,7 +290,17 @@ export function claimLot(state: ColonyState, rng: RNG): { x: number; y: number }
 }
 
 /** Per-step: advance construction, settle the daily economy, and grow on an interval. */
+/** Spec 002 — staffed mines extract materials into the stockpile; output scales with global staffing. */
+function produceMaterials(state: ColonyState, dtMin: number): void {
+  let gen = 0
+  for (const b of state.buildings) if (b.artifact.kind === 'mine') gen += b.artifact.materialsGen
+  if (gen <= 0) return
+  const staffing = state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0
+  state.materials += gen * staffing * (dtMin / (24 * 60))
+}
+
 export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
+  produceMaterials(state, dtMin)
   for (let i = state.jobs.length - 1; i >= 0; i--) {
     const j = state.jobs[i]!
     j.progress += dtMin / j.artifact.buildTimeMin
