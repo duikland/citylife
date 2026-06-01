@@ -211,13 +211,13 @@ export class PlanetRenderer {
     // point. Lit by the same sun, so it shows a soft day/night terminator. Sits beyond the orbit cap.
     const giant = new THREE.Mesh(
       new THREE.SphereGeometry(760, 48, 32),
-      new THREE.MeshStandardMaterial({ color: 0x37406a, roughness: 1, metalness: 0, emissive: 0x0b1024, emissiveIntensity: 0.5, fog: false }),
+      new THREE.MeshStandardMaterial({ color: 0x4a5688, roughness: 1, metalness: 0, emissive: 0x1a2348, emissiveIntensity: 0.9, fog: false }),
     )
     giant.position.set(-1400, -100, -3400)
     this.scene.add(giant)
     const giantAtmo = new THREE.Mesh(
       new THREE.SphereGeometry(815, 40, 24),
-      new THREE.MeshBasicMaterial({ color: 0x5a6ea8, transparent: true, opacity: 0.13, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
+      new THREE.MeshBasicMaterial({ color: 0x6f86c8, transparent: true, opacity: 0.22, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
     )
     giantAtmo.position.copy(giant.position)
     this.scene.add(giantAtmo)
