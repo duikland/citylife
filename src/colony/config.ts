@@ -123,6 +123,15 @@ export const COLONY = {
     clinicWorkers: 2,
     clinicRadius: 8, // cells; habitats within this of a clinic are kept healthy
     clinicMaintCompPerDay: 1, // ongoing component (medicine) maintenance
+    // Holo-Theatre (spec 010): culture service — a cultured colony draws settlers faster.
+    matTheatre: 16,
+    compTheatre: 14,
+    crewTheatre: 3,
+    theatreCost: 2200,
+    theatreWorkers: 2,
+    theatreRadius: 8, // cells; habitats within this of a theatre are cultured
+    theatreMaintCompPerDay: 1.5, // ongoing component (media) maintenance — the steepest sink
+    cultureDesirabilityBonus: 0.4, // up to +40% immigration at full culture coverage
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

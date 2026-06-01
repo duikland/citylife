@@ -1,5 +1,5 @@
 # Spec 010 — Holo-Theatre: culture draws the skilled settlers
-- status: proposed
+- status: built
 - proposed-by: **Mara Venn, ration-depot quartermaster** — live Hermes citizen (model hermes-codex-gpt-5.5), her 5th accepted proposal (Water Hub 005, Greenhouse 007, Ration Depot 008, Clinic 009, now culture)
 - date: 2026-06-01
 - depends-on: 009

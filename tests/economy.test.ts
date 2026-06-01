@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -470,6 +470,50 @@ describe('Spec 009 — First Aid Clinic: health keeps the workers productive', (
       const m0 = s.materials
       for (let i = 0; i < 80; i++) stepBuild(s, sim.rng, 10)
       return s.materials - m0
+    }
+    expect(run(true)).toBeGreaterThan(run(false))
+  })
+})
+
+describe('Spec 010 — Holo-Theatre: culture draws the skilled settlers', () => {
+  const mk = (kind: 'habitat' | 'theatre' | 'water', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('a theatre brings culture to the homes within reach', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('habitat', 50, 50, { residents: 3 }))
+    expect(cultureFraction(s)).toBe(0) // a home, no theatre
+    s.buildings.push(mk('theatre', 52, 50)) // within radius 8
+    expect(cultureFraction(s)).toBe(1)
+  })
+
+  it('a theatre out of reach does not culture the home', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('habitat', 50, 50, { residents: 3 }))
+    s.buildings.push(mk('theatre', 80, 80)) // far beyond radius 8
+    expect(cultureFraction(s)).toBe(0)
+  })
+
+  it('immigration is faster with a Holo-Theatre (culture draws settlers) than without', () => {
+    const run = (withTheatre: boolean) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      s.buildings.push(mk('habitat', 50, 50, { residents: 20 })) // capacity 22
+      s.buildings.push(mk('water', 51, 50)) // watered — equal baseline both runs
+      if (withTheatre) s.buildings.push(mk('theatre', 52, 50)) // cultured
+      s.power.batteryWh = s.power.batteryCapWh
+      s.power.solarW = 5
+      s.food = 1000 // fed equally either way
+      s.materials = 0 // disable autoGrow so this isolates the culture bonus
+      const col0 = s.colonists
+      for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+      return s.colonists - col0
     }
     expect(run(true)).toBeGreaterThan(run(false))
   })

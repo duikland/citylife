@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre'
 
 export interface Parcel {
   id: number
@@ -63,6 +63,7 @@ const WATER_COLOR = 0x3aa6c8 // cyan water / life-support hub
 const GREENHOUSE_COLOR = 0x4f9d52 // green skyfarm greenhouse
 const DEPOT_COLOR = 0xc88a3a // amber ration depot
 const CLINIC_COLOR = 0xe3ebf0 // clinical white first-aid clinic
+const THEATRE_COLOR = 0x9a4fd0 // magenta holo-theatre
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -243,6 +244,10 @@ function designClinic(state: ColonyState): Artifact {
   // Spec 009 — health service; keeps nearby homes healthy so their workers stay productive.
   return { id: state.buildIds++, kind: 'clinic', color: CLINIC_COLOR, height: 0.7, residents: 0, jobs: COLONY.build.clinicWorkers, powerLoad: 0.4, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.clinicCost, materialsCost: COLONY.build.matClinic, crew: COLONY.build.crewClinic, materialsGen: 0, componentsCost: COLONY.build.compClinic }
 }
+function designTheatre(state: ColonyState): Artifact {
+  // Spec 010 — culture service; covers nearby homes and makes the colony more desirable to settlers.
+  return { id: state.buildIds++, kind: 'theatre', color: THEATRE_COLOR, height: 1.1, residents: 0, jobs: COLONY.build.theatreWorkers, powerLoad: 0.6, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.theatreCost, materialsCost: COLONY.build.matTheatre, crew: COLONY.build.crewTheatre, materialsGen: 0, componentsCost: COLONY.build.compTheatre }
+}
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
 function countKind(state: ColonyState, kind: BuildKind): number {
@@ -298,6 +303,17 @@ function healthFactor(state: ColonyState): number {
   return 0.6 + 0.4 * healthFraction(state)
 }
 
+/** Spec 010 — fraction of habitats reached by a Holo-Theatre (culture coverage); no homes → fully cultured. */
+export function cultureFraction(state: ColonyState): number {
+  const habs = state.buildings.filter((b) => b.artifact.kind === 'habitat')
+  if (!habs.length) return 1
+  const theatres = state.buildings.filter((b) => b.artifact.kind === 'theatre')
+  if (!theatres.length) return 0
+  let served = 0
+  for (const h of habs) if (theatres.some((t) => Math.hypot(t.x - h.x, t.y - h.y) <= COLONY.build.theatreRadius)) served++
+  return served / habs.length
+}
+
 function peakSupply(state: ColonyState): number {
   return COLONY.power.solarPeakW + state.powerGen
 }
@@ -315,6 +331,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (countKind(state, 'habitat') > 0 && state.food > 0 && provisionedFraction(state) < 0.9 && state.components >= COLONY.build.compDepot && countKind(state, 'depot') < Math.ceil(countKind(state, 'habitat') / COLONY.build.rationDepotHomes)) return designDepot(state)
   // Spec 009 — keep the workers well: homes exist + low health coverage + components → raise a First Aid Clinic.
   if (countKind(state, 'habitat') > 0 && healthFraction(state) < 0.9 && state.components >= COLONY.build.compClinic && countKind(state, 'clinic') < Math.ceil(countKind(state, 'habitat') / 6)) return designClinic(state)
+  // Spec 010 — culture for a thriving colony: homes exist + low culture coverage + components → raise a Holo-Theatre.
+  if (countKind(state, 'habitat') > 0 && cultureFraction(state) < 0.9 && state.components >= COLONY.build.compTheatre && countKind(state, 'theatre') < Math.ceil(countKind(state, 'habitat') / 8)) return designTheatre(state)
   const queuedGen = state.jobs.reduce((g, j) => g + j.artifact.powerGen, 0)
   if (state.power.loadW > (peakSupply(state) + queuedGen) * COLONY.build.powerHeadroom) return designSolarFarm(state)
   const pendingJobs = state.jobs.reduce((g, j) => g + j.artifact.jobs, 0)
@@ -483,7 +501,9 @@ function immigration(state: ColonyState, dtMin: number): void {
   const fedFactor = 0.4 + 0.6 * reach
   // Spec 006 — nicer homes (higher mean tier) draw settlers faster.
   const tierFactor = 1 + (habitatMeanTier(state) - 1) * 0.2 // tier 1 → 1.0, tier 3 → 1.4
-  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor
+  // Spec 010 — culture draws settlers: a cultured colony is more desirable.
+  const cultureFactor = 1 + COLONY.build.cultureDesirabilityBonus * cultureFraction(state)
+  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor
   if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * perDay)
 }
 
@@ -494,6 +514,7 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
     if (b.artifact.kind === 'water') upkeep += COLONY.build.waterHubMaintCompPerDay
     else if (b.artifact.kind === 'depot') upkeep += COLONY.build.depotMaintCompPerDay
     else if (b.artifact.kind === 'clinic') upkeep += COLONY.build.clinicMaintCompPerDay
+    else if (b.artifact.kind === 'theatre') upkeep += COLONY.build.theatreMaintCompPerDay
   }
   if (upkeep > 0) state.components = Math.max(0, state.components - upkeep * (dtMin / (24 * 60)))
 }
