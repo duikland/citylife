@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber'
 
 export interface Parcel {
   id: number
@@ -70,6 +70,7 @@ const EXCHANGE_COLOR = 0xc9a227 // gold skybridge exchange (trade)
 const FOUNDRY_COLOR = 0x6a5acd // indigo reel foundry (luxury good)
 const MAST_COLOR = 0x6fd0ff // signal-blue broadcast mast (the Courier)
 const BATTERY_COLOR = 0x4fd07a // green battery shed (grid buffer)
+const SCRUBBER_COLOR = 0x9acd32 // yellow-green air scrubber garden
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -275,6 +276,10 @@ function designBattery(state: ColonyState): Artifact {
   // Spec 018 — Battery Shed; passive grid buffer that fattens the colony's battery. Built from reels + components.
   return { id: state.buildIds++, kind: 'battery', color: BATTERY_COLOR, height: 0.5, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.batteryCost, materialsCost: COLONY.build.matBattery, crew: COLONY.build.crewBattery, materialsGen: 0, componentsCost: COLONY.build.compBattery, reelsCost: COLONY.build.reelBattery }
 }
+function designScrubber(state: ColonyState): Artifact {
+  // Spec 019 — Air Scrubber Garden; a green filter that clears smog from the homes within its radius.
+  return { id: state.buildIds++, kind: 'scrubber', color: SCRUBBER_COLOR, height: 0.45, residents: 0, jobs: COLONY.build.scrubberWorkers, powerLoad: 0.3, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.scrubberCost, materialsCost: COLONY.build.matScrubber, crew: COLONY.build.crewScrubber, materialsGen: 0, componentsCost: COLONY.build.compScrubber }
+}
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
 function countKind(state: ColonyState, kind: BuildKind): number {
@@ -352,7 +357,23 @@ function nearBuildingKind(state: ColonyState, home: ColonyBuilding, kind: BuildK
   return state.buildings.some((b) => b.artifact.kind === kind && Math.hypot(b.x - home.x, b.y - home.y) <= radius)
 }
 
-/** Spec 011 — a single home's liveability 0..1: how well it's served (water/food/health/culture) + its tier. */
+/** Spec 019 — a home breathes smog when a mine or foundry is within range and no scrubber garden clears it. */
+export function polluted(state: ColonyState, home: ColonyBuilding): boolean {
+  const nearIndustry = state.buildings.some((b) => (b.artifact.kind === 'mine' || b.artifact.kind === 'foundry') && Math.hypot(b.x - home.x, b.y - home.y) <= COLONY.build.smogRadius)
+  if (!nearIndustry) return false
+  return !state.buildings.some((b) => b.artifact.kind === 'scrubber' && Math.hypot(b.x - home.x, b.y - home.y) <= COLONY.build.scrubberRadius)
+}
+
+/** Spec 019 — fraction of habitats currently breathing smog (for the HUD). */
+export function pollutedFraction(state: ColonyState): number {
+  const habs = state.buildings.filter((b) => b.artifact.kind === 'habitat')
+  if (!habs.length) return 0
+  let n = 0
+  for (const h of habs) if (polluted(state, h)) n++
+  return n / habs.length
+}
+
+/** Spec 011/019 — a single home's liveability 0..1: how well it's served + its tier, minus a smog penalty. */
 export function homeLiveability(state: ColonyState, home: ColonyBuilding): number {
   if (home.artifact.kind !== 'habitat') return 0
   const watered = nearBuildingKind(state, home, 'water', COLONY.build.waterHubRadius) ? 1 : 0
@@ -361,7 +382,8 @@ export function homeLiveability(state: ColonyState, home: ColonyBuilding): numbe
   const cultured = nearBuildingKind(state, home, 'theatre', COLONY.build.theatreRadius) ? 1 : 0
   const services = (watered + provisioned + healthy + cultured) / 4
   const tierTerm = (Math.max(1, Math.min(3, home.tier ?? 1)) - 1) / 2
-  return 0.7 * services + 0.3 * tierTerm
+  const score = 0.7 * services + 0.3 * tierTerm
+  return polluted(state, home) ? Math.max(0, score - COLONY.build.pollutionPenalty) : score // spec 019 — smog drags it down
 }
 
 /** Spec 011 — mean liveability across all homes (0 if none), for the HUD readout. */
@@ -445,6 +467,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (countKind(state, 'habitat') > 0 && healthFraction(state) < 0.9 && state.components >= COLONY.build.compClinic && countKind(state, 'clinic') < Math.ceil(countKind(state, 'habitat') / 6)) return designClinic(state)
   // Spec 010 — culture for a thriving colony: homes exist + low culture coverage + components → raise a Holo-Theatre.
   if (countKind(state, 'habitat') > 0 && cultureFraction(state) < 0.9 && state.components >= COLONY.build.compTheatre && countKind(state, 'theatre') < Math.ceil(countKind(state, 'habitat') / 8)) return designTheatre(state)
+  // Spec 019 — clear the air: smoggy homes + components on hand → plant an Air Scrubber Garden.
+  if (pollutedFraction(state) > 0.1 && state.components >= COLONY.build.compScrubber && countKind(state, 'scrubber') < Math.ceil(countKind(state, 'habitat') / 6)) return designScrubber(state)
   // Spec 011 — once the colony is established, raise a Civic Pulse Survey Office to unlock the liveability map.
   if (state.colonists > 8 && countKind(state, 'survey') < 1 && state.components >= COLONY.build.compSurvey) return designSurvey(state)
   // Spec 012 — when components pile up past the trade reserve, raise a Skybridge Exchange to sell the surplus.
@@ -602,6 +626,7 @@ function habitatMeanTier(state: ColonyState): number {
  *  health (009) and culture (010). The top housing tier (T3) requires it. */
 function fullyServed(state: ColonyState, home: ColonyBuilding): boolean {
   return (
+    !polluted(state, home) && // spec 019 — a smoggy home can't reach the top tier
     nearWater(state, home.x, home.y) &&
     state.food > 0 &&
     nearBuildingKind(state, home, 'depot', COLONY.build.rationDepotRadius) &&
@@ -681,6 +706,7 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
       reelUpkeep += COLONY.build.theatreReelsPerDay
     } else if (b.artifact.kind === 'survey') matUpkeep += COLONY.build.surveyMaintMatPerDay
     else if (b.artifact.kind === 'battery') upkeep += COLONY.build.batteryMaintCompPerDay
+    else if (b.artifact.kind === 'scrubber') upkeep += COLONY.build.scrubberMaintCompPerDay
   }
   if (upkeep > 0) state.components = Math.max(0, state.components - upkeep * (dtMin / (24 * 60)))
   if (matUpkeep > 0) state.materials = Math.max(0, state.materials - matUpkeep * (dtMin / (24 * 60)))

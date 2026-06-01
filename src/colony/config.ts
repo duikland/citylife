@@ -181,6 +181,16 @@ export const COLONY = {
     batteryCost: 1500,
     batteryShedCapWh: 40, // Wh added to the colony's battery capacity per shed (base cap is 80)
     batteryMaintCompPerDay: 1, // upkeep
+    // Smog Drift + Air Scrubber Garden (spec 019): industry fouls nearby homes; gardens clear the air.
+    smogRadius: 6, // homes within this of a mine/foundry breathe smog (unless a scrubber covers them)
+    scrubberRadius: 8, // an Air Scrubber Garden clears smog within this radius
+    pollutionPenalty: 0.3, // liveability a polluted home loses
+    matScrubber: 12,
+    compScrubber: 8,
+    crewScrubber: 3,
+    scrubberCost: 1600,
+    scrubberWorkers: 2,
+    scrubberMaintCompPerDay: 1,
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

@@ -1,5 +1,5 @@
 # Spec 019 — Smog Drift + Air Scrubber Gardens: dirty growth has a civic price
-- status: proposed
+- status: built
 - proposed-by: **Jalen Orro, terrace farmer (Ring 3)** — **LIVE Hermes** (model hermes-codex-gpt-5.5). A NEW voice at last — the council's first proposal not from Mara Venn in four ticks. Opens a fresh dimension: pollution.
 - date: 2026-06-02
 - depends-on: 002, 013, 011, 015

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -901,5 +901,49 @@ describe('Spec 018 — Battery Sheds buffer the grid (built from reels)', () => 
     expect(ok).toBe(true)
     expect(s.jobs[s.jobs.length - 1]!.artifact.kind).toBe('battery')
     expect(s.reels).toBe(r0 - COLONY.build.reelBattery) // reels consumed to build it
+  })
+})
+
+describe('Spec 019 — Smog Drift + Air Scrubber Gardens', () => {
+  const mk = (kind: 'habitat' | 'mine' | 'foundry' | 'scrubber' | 'water' | 'depot' | 'clinic' | 'theatre', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('a home beside a mine breathes smog; a scrubber garden clears it', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mk('habitat', 50, 50, { residents: 3 })
+    s.buildings.push(h)
+    expect(polluted(s, h)).toBe(false) // no industry near
+    s.buildings.push(mk('mine', 53, 50)) // within the smog radius
+    expect(polluted(s, h)).toBe(true)
+    expect(pollutedFraction(s)).toBe(1)
+    s.buildings.push(mk('scrubber', 51, 50)) // within the scrubber radius
+    expect(polluted(s, h)).toBe(false) // air cleared
+  })
+
+  it('a polluted home loses liveability and is blocked from the top tier until a scrubber clears it', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mk('habitat', 50, 50, { residents: 3 })
+    s.buildings.push(h)
+    s.food = 100
+    s.buildings.push(mk('water', 51, 50))
+    s.buildings.push(mk('depot', 51, 51))
+    s.buildings.push(mk('clinic', 49, 50))
+    s.buildings.push(mk('theatre', 50, 51))
+    s.buildings.push(mk('foundry', 52, 50)) // fouls the air
+    s.components = 100
+    s.materials = 0
+    const livSmoggy = homeLiveability(s, h)
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
+    expect(h.tier!).toBeLessThan(3) // smog blocks the top tier
+    s.buildings.push(mk('scrubber', 50, 49)) // plant a garden over the home
+    expect(homeLiveability(s, h)).toBeGreaterThan(livSmoggy) // liveability restored once cleared
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
+    expect(h.tier!).toBe(3) // now it can climb to the top
   })
 })
