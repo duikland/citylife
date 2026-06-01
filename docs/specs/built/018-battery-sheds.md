@@ -1,5 +1,5 @@
 # Spec 018 — Battery Sheds: store the power, plan the grid
-- status: proposed
+- status: built
 - proposed-by: **Mara Venn, night-shift Grid Listener (Dock-Spoke 3)** — **LIVE Hermes** (model hermes-codex-gpt-5.5), her 8th accepted proposal and the 2nd in a row since the inference recovered. A direct follow-up to the brownout grid she proposed last tick (017).
 - date: 2026-06-01
 - depends-on: 017, 013

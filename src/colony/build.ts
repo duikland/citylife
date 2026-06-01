@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery'
 
 export interface Parcel {
   id: number
@@ -31,6 +31,7 @@ export interface Artifact {
   crew: number // spec 001: free colonists reserved for the build duration
   materialsGen: number // spec 002: materials/day produced when fully staffed (mines); 0 otherwise
   componentsCost?: number // spec 005: components consumed to construct (services); defaults to 0
+  reelsCost?: number // spec 018: reels (luxury good) consumed to construct (battery sheds); defaults to 0
 }
 export interface ConstructionJob {
   id: number
@@ -68,6 +69,7 @@ const SURVEY_COLOR = 0x4a78b8 // civic blue survey office
 const EXCHANGE_COLOR = 0xc9a227 // gold skybridge exchange (trade)
 const FOUNDRY_COLOR = 0x6a5acd // indigo reel foundry (luxury good)
 const MAST_COLOR = 0x6fd0ff // signal-blue broadcast mast (the Courier)
+const BATTERY_COLOR = 0x4fd07a // green battery shed (grid buffer)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -269,6 +271,10 @@ function designMast(state: ColonyState): Artifact {
   // Spec 016 — Broadcast Mast; once built + staffed, the Kookerverse Courier reads the colony's own news.
   return { id: state.buildIds++, kind: 'mast', color: MAST_COLOR, height: 1.6, residents: 0, jobs: COLONY.build.mastWorkers, powerLoad: 0.5, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.mastCost, materialsCost: COLONY.build.matMast, crew: COLONY.build.crewMast, materialsGen: 0, componentsCost: COLONY.build.compMast }
 }
+function designBattery(state: ColonyState): Artifact {
+  // Spec 018 — Battery Shed; passive grid buffer that fattens the colony's battery. Built from reels + components.
+  return { id: state.buildIds++, kind: 'battery', color: BATTERY_COLOR, height: 0.5, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.batteryCost, materialsCost: COLONY.build.matBattery, crew: COLONY.build.crewBattery, materialsGen: 0, componentsCost: COLONY.build.compBattery, reelsCost: COLONY.build.reelBattery }
+}
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
 function countKind(state: ColonyState, kind: BuildKind): number {
@@ -448,6 +454,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   // Spec 016 — once the colony is a real town, raise a Broadcast Mast so the Kookerverse Courier can speak.
   if (state.colonists > 12 && countKind(state, 'mast') < 1 && state.components >= COLONY.build.compMast) return designMast(state)
   const queuedGen = state.jobs.reduce((g, j) => g + j.artifact.powerGen, 0)
+  // Spec 018 — buffer the grid first when brownout-prone and reels are spare: a Battery Shed (capped vs solar so solar still leads).
+  if (inBrownout(state) && state.reels >= COLONY.build.reelBattery && state.components >= COLONY.build.compBattery && countKind(state, 'battery') < countKind(state, 'solar') + 1) return designBattery(state)
   if (state.power.loadW > (peakSupply(state) + queuedGen) * COLONY.build.powerHeadroom) return designSolarFarm(state)
   const pendingJobs = state.jobs.reduce((g, j) => g + j.artifact.jobs, 0)
   if (state.colonists - (state.totalJobs + pendingJobs) > COLONY.build.jobDeficitThreshold) return designWorkplace(state, rng)
@@ -490,6 +498,7 @@ export function autoGrow(state: ColonyState, rng: RNG): boolean {
   if (state.treasury < artifact.cost + 600) return false
   if (state.materials < artifact.materialsCost) return false // not enough supplies
   if (state.components < (artifact.componentsCost ?? 0)) return false // spec 005 — not enough refined goods
+  if (state.reels < (artifact.reelsCost ?? 0)) return false // spec 018 — not enough reels (battery sheds)
   if (free < artifact.crew) return false // not enough hands to raise it
 
   const c = caravan(state)
@@ -498,6 +507,7 @@ export function autoGrow(state: ColonyState, rng: RNG): boolean {
   state.treasury -= artifact.cost
   state.materials -= artifact.materialsCost // consumed up front; crew reserved via the job until done
   state.components -= artifact.componentsCost ?? 0 // spec 005 — services consume refined goods to build
+  state.reels -= artifact.reelsCost ?? 0 // spec 018 — battery sheds consume reels to build
   state.jobs.push({ id: state.buildIds++, x: lot.x, y: lot.y, artifact, progress: 0, path: roadPath(state, c.x, c.y, lot.x, lot.y) })
   return true
 }
@@ -670,6 +680,7 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
       upkeep += COLONY.build.theatreMaintCompPerDay
       reelUpkeep += COLONY.build.theatreReelsPerDay
     } else if (b.artifact.kind === 'survey') matUpkeep += COLONY.build.surveyMaintMatPerDay
+    else if (b.artifact.kind === 'battery') upkeep += COLONY.build.batteryMaintCompPerDay
   }
   if (upkeep > 0) state.components = Math.max(0, state.components - upkeep * (dtMin / (24 * 60)))
   if (matUpkeep > 0) state.materials = Math.max(0, state.materials - matUpkeep * (dtMin / (24 * 60)))
@@ -745,6 +756,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
       state.buildings.push(nb)
       const a = j.artifact
       if (a.kind === 'solar') state.powerGen += a.powerGen
+      else if (a.kind === 'battery') state.power.batteryCapWh += COLONY.build.batteryShedCapWh // spec 018 — a bigger tank
       else {
         // Spec 004 — habitats add housing CAPACITY (a.residents), not instant colonists; settlers
         // immigrate to fill it. Mines/workshops have residents 0, so this only changes habitats.

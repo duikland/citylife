@@ -867,3 +867,39 @@ describe('Spec 017 — Brownout Priority Grid: power gets teeth', () => {
     expect(run(true)).toBeGreaterThan(run(false))
   })
 })
+
+describe('Spec 018 — Battery Sheds buffer the grid (built from reels)', () => {
+  it('a finished Battery Shed raises the colony battery capacity', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const cap0 = s.power.batteryCapWh
+    s.jobs.push({
+      id: 1,
+      x: s.terrain.landing.x + 3,
+      y: s.terrain.landing.y,
+      artifact: { id: 1, kind: 'battery', color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 },
+      progress: 0.95,
+      path: [],
+    })
+    for (let i = 0; i < 5; i++) stepBuild(s, sim.rng, 10) // the shed finishes
+    expect(s.power.batteryCapWh).toBe(cap0 + COLONY.build.batteryShedCapWh)
+  })
+
+  it('building a Battery Shed draws down reels (the luxury good) to construct', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 5
+    s.materials = 50
+    s.components = 50
+    s.reels = 10
+    s.food = 100
+    s.treasury = 5000
+    s.power.batteryWh = 0
+    s.power.loadW = 100 // brownout-prone grid → autoGrow buffers it with a Battery Shed
+    const r0 = s.reels
+    const ok = autoGrow(s, sim.rng)
+    expect(ok).toBe(true)
+    expect(s.jobs[s.jobs.length - 1]!.artifact.kind).toBe('battery')
+    expect(s.reels).toBe(r0 - COLONY.build.reelBattery) // reels consumed to build it
+  })
+})

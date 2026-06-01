@@ -173,6 +173,14 @@ export const COLONY = {
     // Brownout Priority Grid (spec 017): an under-powered colony slows its heavy industry.
     brownoutBatteryThreshold: 0.25, // below this battery %, an over-loaded colony browns out
     brownoutProductionFactor: 0.5, // industry output (mines/workshops/foundries/greenhouses) during a brownout
+    // Battery Shed (spec 018): buffer buildings that fatten the colony's battery — built from reels.
+    matBattery: 10,
+    compBattery: 12,
+    reelBattery: 3, // luxury reels consumed to build one (reels find a third home: the grid)
+    crewBattery: 3,
+    batteryCost: 1500,
+    batteryShedCapWh: 40, // Wh added to the colony's battery capacity per shed (base cap is 80)
+    batteryMaintCompPerDay: 1, // upkeep
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,
