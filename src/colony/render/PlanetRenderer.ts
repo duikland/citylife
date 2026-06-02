@@ -14,6 +14,7 @@ import type { ColonySim, SeedStructure } from '../sim'
 import type { HouseSpec } from '../house'
 import { gridOrigin } from '../grid'
 import { cellZone, ZONE_COLOR, VIBE_COLOR, type Plot } from '../cityPlan'
+import { homeLiveability, surveyAvailable, liveabilityTint, porterStatus } from '../build'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
 export type CameraPreset = 'street' | 'district' | 'planet'
@@ -38,6 +39,23 @@ export class PlanetRenderer {
   private roadSurfaceMesh!: THREE.Mesh
   private roadLineMesh!: THREE.Mesh
   private lastRoadCount = -1
+  // Foliage is rebuilt as the colony grows so trees never sit under streets or buildings.
+  private foliageMesh?: THREE.InstancedMesh
+  private lastFoliageSig = -2
+  // Road cells the ambient pedestrians stroll along (their pavement network), refreshed when roads grow.
+  private roadCells: { x: number; y: number }[] = []
+  // Sized plot foundations + the spoke roads that serve them from the colony core (the planned-settlement layer).
+  private plotPadGroup = new THREE.Group()
+  private lastPadSig = ''
+  // Spec 073 — Porter Sheds: the economy embodied. Goods pile up as crates/sacks at each shed (growing + shrinking with the live
+  // stock), and porter handcarts run the roads while the shed is staffed. Never on water.
+  private porterPileMesh!: THREE.InstancedMesh
+  private porterCartMesh!: THREE.InstancedMesh
+  private porterCarts: { x: number; y: number; tx: number; ty: number; spd: number }[] = []
+  private lastPorterT = 0
+  // A head so the ambient figures read as little PEOPLE, not pills. The visible crowd is capped to the real colonist count
+  // (they are the colony's actual people, not a decorative droid army) — the named-Hermes-citizen binding is the next step.
+  private pedHeadMesh!: THREE.InstancedMesh
   private bldgMesh!: THREE.InstancedMesh
   private crewMesh!: THREE.InstancedMesh
   private streetPostMesh!: THREE.InstancedMesh
@@ -53,6 +71,7 @@ export class PlanetRenderer {
   // and named flag-pole markers at every plot. Both are built once from the terrain; the markers
   // dim and re-label as plots get allocated.
   private zoneTintMesh: THREE.Mesh | null = null
+  private liveabilityOn = false // spec 011 — the overlay toggle now drives the liveability map
   private plotMarkers = new THREE.Group()
   private plotMeshes = new Map<string, { pole: THREE.Mesh; flag: THREE.Mesh; flagMat: THREE.MeshStandardMaterial }>()
   private lastPlotSig = ''
@@ -227,11 +246,29 @@ export class PlanetRenderer {
   /** Scatter instanced foliage cones across the wooded land (dense in forest, sparse on plains), so
    *  the island reads as living terrain rather than flat colour. Deterministic placement (stable per
    *  seed); pure decoration with no sim or gameplay impact. */
+  /** Build (or rebuild) the tree cover. Trees are kept OFF the streets, OFF every building/worksite (+ a one-cell
+   *  verge), and OUT of the civic core, so the settled ground reads as a cleared, planned place — not a forest with
+   *  roads bulldozed through it. Rebuilt as the colony grows (roads + buildings change). */
   private buildFoliage() {
-    const t = this.sim.state.terrain
+    const s = this.sim.state
+    const t = s.terrain
     const N = t.size
     const hash = (n: number) => ((n * 2654435761) >>> 0) / 4294967296
     const TREE_COLORS = [0x3f6b4a, 0x4f7d5a, 0x5b4a7d, 0x35633f]
+    // Cells the colony has cleared: roads, buildings and worksites (each with a one-cell verge), plus the civic core.
+    const cleared = new Set<number>()
+    const mark = (cx: number, cy: number, rad: number) => {
+      const ix = Math.round(cx), iy = Math.round(cy)
+      for (let yy = iy - rad; yy <= iy + rad; yy++) for (let xx = ix - rad; xx <= ix + rad; xx++) {
+        if (xx >= 0 && yy >= 0 && xx < N && yy < N) cleared.add(yy * N + xx)
+      }
+    }
+    for (const r of s.roads) mark(r.x, r.y, 1)
+    for (const b of s.buildings) mark(b.x, b.y, 1)
+    for (const j of s.jobs) mark(j.x, j.y, 1)
+    for (const st of s.structures) mark(st.x, st.y, 1) // the caravan/rocket + landmarks
+    if (s.cityPlan) for (const p of s.cityPlan.plots) mark(p.x, p.y, Math.max(1, Math.ceil(Math.max(p.w || 1, p.h || 1) / 2))) // clear the lots + their verge
+    mark(t.landing.x, t.landing.y, 4) // keep the colony heart clear
     const cells: number[] = []
     for (let i = 0; i < N * N; i++) {
       const b = t.biome[i]
@@ -239,13 +276,21 @@ export class PlanetRenderer {
       const x = i % N
       const y = (i / N) | 0
       if (t.isWater(x, y)) continue
+      if (cleared.has(i)) continue // no trees on the streets or under the homes
       const p = b === Biome.Forest ? 0.5 : 0.08
       if (hash(i + 1) < p) cells.push(i)
+    }
+    // Replace any prior foliage mesh (this method is now a rebuild) — dispose the old GPU resources first.
+    if (this.foliageMesh) {
+      this.scene.remove(this.foliageMesh)
+      this.foliageMesh.geometry.dispose()
+      ;(this.foliageMesh.material as THREE.Material).dispose()
+      this.foliageMesh = undefined
     }
     const cap = Math.min(cells.length, 1400)
     const geo = new THREE.ConeGeometry(0.42, 1.1, 6)
     geo.translate(0, 0.55, 0)
-    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true }), cap)
+    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true }), Math.max(1, cap))
     mesh.castShadow = true
     mesh.frustumCulled = false
     const col = new THREE.Color()
@@ -257,9 +302,9 @@ export class PlanetRenderer {
       const h1 = hash(i * 7 + 3)
       const h2 = hash(i * 13 + 5)
       const wy = Math.max(0, t.worldY(x, y))
-      const s = 0.7 + h1 * 0.7
+      const sc = 0.7 + h1 * 0.7
       this.dummy.position.set(this.wx(x) + (h1 - 0.5) * 0.7, wy, this.wz(y) + (h2 - 0.5) * 0.7)
-      this.dummy.scale.set(s, s + h2 * 0.6, s)
+      this.dummy.scale.set(sc, sc + h2 * 0.6, sc)
       this.dummy.rotation.set(0, h2 * Math.PI, 0)
       this.dummy.updateMatrix()
       mesh.setMatrixAt(n, this.dummy.matrix)
@@ -268,6 +313,7 @@ export class PlanetRenderer {
       n++
     }
     mesh.count = n
+    this.foliageMesh = mesh
     this.scene.add(mesh)
   }
 
@@ -352,8 +398,11 @@ export class PlanetRenderer {
 
   /** Show or hide the city-plan overlay (zone tints + plot flag-poles). */
   setZonesVisible(v: boolean) {
-    if (this.zoneTintMesh) this.zoneTintMesh.visible = v
-    this.plotMarkers.visible = v
+    // Spec 011 — repurposed: drives the liveability overlay (homes tinted by wellbeing). The old static
+    // zone tints + named-plot flags are retired, so they stay hidden regardless of the toggle.
+    this.liveabilityOn = v
+    if (this.zoneTintMesh) this.zoneTintMesh.visible = false
+    this.plotMarkers.visible = false
   }
 
   private buildStructures() {
@@ -495,7 +544,31 @@ export class PlanetRenderer {
     this.pedMesh.castShadow = true
     this.pedMesh.frustumCulled = false
     this.scene.add(this.pedMesh)
+    // a head atop each body so the figures read as people (same instance transform, head baked above the body)
+    const pedHeadGeo = new THREE.SphereGeometry(0.1, 8, 6)
+    pedHeadGeo.translate(0, 0.72, 0)
+    this.pedHeadMesh = new THREE.InstancedMesh(pedHeadGeo, new THREE.MeshStandardMaterial({ color: 0xe0b48a, roughness: 0.85 }), 28)
+    this.pedHeadMesh.count = 0
+    this.pedHeadMesh.castShadow = true
+    this.pedHeadMesh.frustumCulled = false
+    this.scene.add(this.pedHeadMesh)
     this.initPedestrians()
+
+    // Spec 073 — goods piled at the Porter Sheds (crates + sacks), and the porter handcarts on the roads.
+    const crateGeo = new THREE.BoxGeometry(0.34, 0.34, 0.34)
+    crateGeo.translate(0, 0.17, 0)
+    this.porterPileMesh = new THREE.InstancedMesh(crateGeo, new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, flatShading: true }), 320)
+    this.porterPileMesh.count = 0
+    this.porterPileMesh.castShadow = true
+    this.porterPileMesh.frustumCulled = false
+    this.scene.add(this.porterPileMesh)
+    const cartGeo = new THREE.BoxGeometry(0.42, 0.22, 0.3)
+    cartGeo.translate(0, 0.14, 0)
+    this.porterCartMesh = new THREE.InstancedMesh(cartGeo, new THREE.MeshStandardMaterial({ color: 0x9a7a4a, roughness: 0.6, metalness: 0.1 }), 28)
+    this.porterCartMesh.count = 0
+    this.porterCartMesh.castShadow = true
+    this.porterCartMesh.frustumCulled = false
+    this.scene.add(this.porterCartMesh)
 
     // street lights at grid intersections
     const lightCap = 360
@@ -521,6 +594,7 @@ export class PlanetRenderer {
 
     this.scene.add(this.settlerGroup) // unique KOOKER-settler homes live here
     this.scene.add(this.plotMarkers) // city-plan flag poles, one per plot
+    this.scene.add(this.plotPadGroup) // sized plot foundations + their spoke roads
 
     // Zone tint: paint each land cell within the city's reach with its surveyed zone colour. The
     // residential arc (north + west), commercial arc (east), industrial arc (south), and civic
@@ -641,6 +715,84 @@ export class PlanetRenderer {
   }
 
   /** Turn a HouseSpec (the AI's plan) into a one-off 3D house. */
+  /** RETIRED (see docs/research/2026-06-02-land-organisation-and-roads.md). The scattered named-plot pads + straight spoke
+   *  roads were the wrong paradigm — Caesar-III "settler walks to a human-marked far plot" — and the spokes ran straight over
+   *  terrain and water heedless of the land. The replacement is a land-suitability metadata layer + a planner-driven, compact,
+   *  least-cost road skeleton (roads-first, then parcels, then lots). Kept as a no-op so nothing renders until that lands. */
+  private buildPlotPads(_plots: Plot[]) {
+    if (this.plotPadGroup.children.length > 0) {
+      for (const ch of [...this.plotPadGroup.children]) {
+        this.plotPadGroup.remove(ch)
+        const m = ch as THREE.Mesh
+        if (m.geometry) m.geometry.dispose()
+        if (m.material) (m.material as THREE.Material).dispose()
+      }
+    }
+    this.lastPadSig = 'retired'
+    return
+    // eslint-disable-next-line no-unreachable
+    const plots = _plots
+    const sig = plots.map((p) => `${p.id}:${p.w || 1}x${p.h || 1}`).join('|')
+    if (sig === this.lastPadSig) return
+    this.lastPadSig = sig
+    const t = this.sim.state.terrain
+    for (const ch of [...this.plotPadGroup.children]) {
+      this.plotPadGroup.remove(ch)
+      const m = ch as THREE.Mesh
+      if (m.geometry) m.geometry.dispose()
+      if (m.material) (m.material as THREE.Material).dispose()
+    }
+    const lx = t.landing.x, ly = t.landing.y
+    const padMat = new THREE.MeshStandardMaterial({ color: 0x9a948c, roughness: 0.9, metalness: 0 }) // poured-deck concrete
+    const kerbMat = new THREE.MeshStandardMaterial({ color: 0xbfc6c9, roughness: 0.8 })
+    // one merged ribbon for all the spoke roads (draped over the terrain)
+    const surf: number[] = []
+    const triPush = (p: number[], q: number[], r: number[]) => surf.push(p[0]!, p[1]!, p[2]!, q[0]!, q[1]!, q[2]!, r[0]!, r[1]!, r[2]!)
+    const quad = (a: number[], b: number[], c: number[], d: number[]) => { triPush(a, c, b); triPush(b, c, d) }
+    for (const p of plots) {
+      const w = Math.max(1, p.w || 1), h = Math.max(1, p.h || 1)
+      const hx = (w - 1) / 2, hy = (h - 1) / 2
+      // leveled foundation height: sit at the highest corner of the lot so it cuts uphill and fills downhill
+      let padY = 0
+      for (let yy = p.y - hy; yy <= p.y + hy; yy++) for (let xx = p.x - hx; xx <= p.x + hx; xx++) padY = Math.max(padY, Math.max(0, t.worldY(Math.round(xx), Math.round(yy))))
+      // the kerb (a hair larger + lower) frames the pad
+      const kerb = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.16, h + 0.4), kerbMat)
+      kerb.position.set(this.wx(p.x), padY + 0.02, this.wz(p.y))
+      kerb.receiveShadow = true
+      this.plotPadGroup.add(kerb)
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(w, 0.22, h), padMat)
+      pad.position.set(this.wx(p.x), padY + 0.06, this.wz(p.y))
+      pad.receiveShadow = true
+      this.plotPadGroup.add(pad)
+      // spoke road from the colony core to this plot, draped, ~0.8 wide
+      const dx = p.x - lx, dy = p.y - ly
+      const steps = Math.max(1, Math.round(Math.hypot(dx, dy)))
+      const nl = Math.hypot(dx, dy) || 1
+      const ox = (dy / nl) * 0.4, oy = (-dx / nl) * 0.4 // perpendicular half-width
+      for (let s = 0; s < steps; s++) {
+        const fx0 = lx + dx * (s / steps), fy0 = ly + dy * (s / steps)
+        const fx1 = lx + dx * ((s + 1) / steps), fy1 = ly + dy * ((s + 1) / steps)
+        if (t.isWater(Math.round(fx0), Math.round(fy0)) || t.isWater(Math.round(fx1), Math.round(fy1))) continue // a road never paves over open water — it breaks at the shore (ground units obey the physics of the world)
+        const h0 = Math.max(0, t.worldY(Math.round(fx0), Math.round(fy0))) + 0.06
+        const h1 = Math.max(0, t.worldY(Math.round(fx1), Math.round(fy1))) + 0.06
+        quad(
+          [this.wx(fx0) + ox, h0, this.wz(fy0) + oy],
+          [this.wx(fx0) - ox, h0, this.wz(fy0) - oy],
+          [this.wx(fx1) + ox, h1, this.wz(fy1) + oy],
+          [this.wx(fx1) - ox, h1, this.wz(fy1) - oy],
+        )
+      }
+    }
+    if (surf.length) {
+      const sg = new THREE.BufferGeometry()
+      sg.setAttribute('position', new THREE.Float32BufferAttribute(surf, 3))
+      sg.computeVertexNormals()
+      const spoke = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ color: 0x2b2b30, roughness: 0.95, side: THREE.DoubleSide }))
+      spoke.frustumCulled = false
+      this.plotPadGroup.add(spoke)
+    }
+  }
+
   private buildHouseMesh(h: HouseSpec): THREE.Object3D {
     const g = new THREE.Group()
     const wallMat = new THREE.MeshStandardMaterial({ color: h.wallColor, roughness: 0.82 })
@@ -747,12 +899,25 @@ export class PlanetRenderer {
       this.rebuildRoads()
       this.lastRoadCount = s.roads.length
     }
+    // as the cleared footprint (roads + buildings + worksites) changes, re-clear the trees from it and refresh the
+    // pavement the ambient pedestrians stroll along.
+    const folSig = s.roads.length * 100003 + s.buildings.length * 101 + s.jobs.length + (s.cityPlan ? s.cityPlan.plots.length * 7 : 0)
+    if (folSig !== this.lastFoliageSig) {
+      this.buildFoliage()
+      this.roadCells = s.roads.map((r) => ({ x: r.x, y: r.y }))
+      this.lastFoliageSig = folSig
+    }
     const rn = s.roads.length
     // plot markers reflect allocation changes (allocated → dim flag, lowered pole)
-    if (s.cityPlan) this.syncPlotMarkers(s.cityPlan.plots)
+    if (s.cityPlan) {
+      this.syncPlotMarkers(s.cityPlan.plots)
+      this.buildPlotPads(s.cityPlan.plots) // sized foundations + spoke roads to the marked plots
+    }
 
     const col = new THREE.Color()
     const cap = COLONY.build.maxBuildings + 8
+    // Spec 011 — when the liveability overlay is on AND a survey office is up, tint homes by wellbeing.
+    const liveOn = this.liveabilityOn && surveyAvailable(s)
     let bi = 0
     for (const b of s.buildings) {
       if (bi >= cap) break
@@ -761,7 +926,8 @@ export class PlanetRenderer {
       this.dummy.rotation.set(0, 0, 0)
       this.dummy.updateMatrix()
       this.bldgMesh.setMatrixAt(bi, this.dummy.matrix)
-      col.setHex(b.artifact.color)
+      if (liveOn && b.artifact.kind === 'habitat') col.setHex(liveabilityTint(homeLiveability(s, b)))
+      else col.setHex(b.artifact.color)
       this.bldgMesh.setColorAt(bi, col)
       bi++
     }
@@ -904,6 +1070,7 @@ export class PlanetRenderer {
     this.updateDayNight()
     this.updateColonyLayer()
     this.updatePedestrians()
+    this.updatePorters() // spec 073 — goods piled at the sheds + porter carts on the roads
     if (this.beaconMat) {
       const blink = Math.max(0, Math.sin((performance.now() / 1000) * 2.4))
       this.beaconMat.emissiveIntensity = 0.35 + blink * blink * 2.6
@@ -934,7 +1101,28 @@ export class PlanetRenderer {
     return !t.isWater(ix, iy)
   }
 
-  /** Seed ~16 wandering pedestrians on land within walking distance of the landing site. */
+  /** Pick a pedestrian's next stroll target: a nearby road cell (so they keep to the pavement), nudged a little to the
+   *  kerb so they don't all walk the centre line. Falls back to a gentle wander near the landing before any streets exist. */
+  private pickPedTarget(px: number, py: number, lx: number, ly: number): { x: number; y: number } {
+    const rc = this.roadCells
+    if (rc.length) {
+      let near = rc.filter((c) => { const dd = Math.hypot(c.x - px, c.y - py); return dd > 1.5 && dd < 16 })
+      if (!near.length) near = rc
+      const c = near[(Math.random() * near.length) | 0]!
+      return { x: c.x + (Math.random() - 0.5) * 0.5, y: c.y + (Math.random() - 0.5) * 0.5 }
+    }
+    for (let tries = 0; tries < 8; tries++) {
+      const ang = Math.atan2(ly - py, lx - px) + (Math.random() - 0.5) * Math.PI * 1.6
+      const step = 3 + Math.random() * 6
+      const nx = px + Math.cos(ang) * step
+      const ny = py + Math.sin(ang) * step
+      if (this.pedOnLand(nx, ny) && Math.hypot(nx - lx, ny - ly) < 18) return { x: nx, y: ny }
+    }
+    return { x: px, y: py }
+  }
+
+  /** Seed a POOL of figures on land near the landing; how many are actually shown tracks the real colonist count (see
+   *  updatePedestrians), so the crowd is the colony's own people — not a fixed decorative droid army. */
   private initPedestrians() {
     const t = this.sim.state.terrain
     const lx = t.landing.x, ly = t.landing.y
@@ -942,7 +1130,7 @@ export class PlanetRenderer {
     const col = new THREE.Color()
     this.peds = []
     let guard = 0
-    while (this.peds.length < 16 && guard++ < 500) {
+    while (this.peds.length < 28 && guard++ < 800) {
       const a = Math.random() * Math.PI * 2
       const r = 2 + Math.random() * 14
       const x = lx + Math.cos(a) * r
@@ -958,7 +1146,8 @@ export class PlanetRenderer {
     if (this.pedMesh.instanceColor) this.pedMesh.instanceColor.needsUpdate = true
   }
 
-  /** Per-frame: stroll each pedestrian toward a nearby land target, picking a new one on arrival. */
+  /** Per-frame: stroll each visible pedestrian toward a nearby land target. The visible count tracks the REAL colonist
+   *  population (capped to the pool), so the streets are as busy as the colony actually is — these are its people. */
   private updatePedestrians() {
     if (!this.pedMesh || this.peds.length === 0) return
     const t = this.sim.state.terrain
@@ -966,22 +1155,15 @@ export class PlanetRenderer {
     const now = performance.now()
     const dt = this.lastPedT ? Math.min(0.05, (now - this.lastPedT) / 1000) : 1 / 60
     this.lastPedT = now
-    for (let i = 0; i < this.peds.length; i++) {
+    const want = Math.max(0, Math.min(this.peds.length, Math.round(this.sim.state.colonists))) // one figure per real colonist
+    for (let i = 0; i < want; i++) {
       const p = this.peds[i]!
       let dx = p.tx - p.x, dy = p.ty - p.y
       let d = Math.hypot(dx, dy)
       if (d < 0.4) {
-        for (let tries = 0; tries < 8; tries++) {
-          const ang = Math.atan2(ly - p.y, lx - p.x) + (Math.random() - 0.5) * Math.PI * 1.6
-          const step = 3 + Math.random() * 6
-          const nx = p.x + Math.cos(ang) * step
-          const ny = p.y + Math.sin(ang) * step
-          if (this.pedOnLand(nx, ny) && Math.hypot(nx - lx, ny - ly) < 18) {
-            p.tx = nx
-            p.ty = ny
-            break
-          }
-        }
+        const next = this.pickPedTarget(p.x, p.y, lx, ly)
+        p.tx = next.x
+        p.ty = next.y
         dx = p.tx - p.x
         dy = p.ty - p.y
         d = Math.hypot(dx, dy)
@@ -1000,8 +1182,84 @@ export class PlanetRenderer {
       this.dummy.scale.set(1, 1, 1)
       this.dummy.updateMatrix()
       this.pedMesh.setMatrixAt(i, this.dummy.matrix)
+      this.pedHeadMesh.setMatrixAt(i, this.dummy.matrix) // the head rides the same transform, baked above the body
     }
+    this.pedMesh.count = want
     this.pedMesh.instanceMatrix.needsUpdate = true
+    this.pedHeadMesh.count = want
+    this.pedHeadMesh.instanceMatrix.needsUpdate = true
+  }
+
+  /** Spec 073 — the Porter Sheds made visible: goods pile up as crates (materials) + sacks (food) beside each shed, growing and
+   *  shrinking with the LIVE stock, and porter handcarts run the road network while a shed is staffed. Never on water. Inert with no shed. */
+  private updatePorters() {
+    if (!this.porterPileMesh || !this.porterCartMesh) return
+    const s = this.sim.state
+    const t = s.terrain
+    const sheds = s.buildings.filter((b) => b.artifact.kind === 'porter')
+    if (sheds.length === 0) {
+      if (this.porterPileMesh.count !== 0) { this.porterPileMesh.count = 0; this.porterPileMesh.instanceMatrix.needsUpdate = true }
+      if (this.porterCartMesh.count !== 0) { this.porterCartMesh.count = 0; this.porterCartMesh.instanceMatrix.needsUpdate = true }
+      this.porterCarts = []
+      return
+    }
+    // ---- piles: crates of materials + sacks of food at each shed, quantised to the live stock (grow + shrink) ----
+    const col = new THREE.Color()
+    const matUnits = Math.min(COLONY.build.pileMaxUnits, Math.floor((s.materials ?? 0) / COLONY.build.pilePerMaterials))
+    const foodUnits = Math.min(COLONY.build.pileMaxUnits, Math.floor((s.food ?? 0) / COLONY.build.pilePerFood))
+    let pi = 0
+    for (const shed of sheds) {
+      const baseY = Math.max(0, t.worldY(shed.x, shed.y)) + 0.02
+      const lay = (units: number, ox: number, hex: number) => {
+        for (let u = 0; u < units && pi < 320; u++) {
+          const gx = u % 3, gz = (u / 3) | 0
+          this.dummy.position.set(this.wx(shed.x) + ox + gx * 0.36, baseY, this.wz(shed.y) + 0.7 + gz * 0.36)
+          this.dummy.rotation.set(0, 0, 0)
+          this.dummy.scale.set(1, 1, 1)
+          this.dummy.updateMatrix()
+          this.porterPileMesh.setMatrixAt(pi, this.dummy.matrix)
+          col.setHex(hex)
+          this.porterPileMesh.setColorAt(pi, col)
+          pi++
+        }
+      }
+      lay(matUnits, -1.45, 0x8a6a3a) // materials crates (brown) to the left of the shed
+      lay(foodUnits, 0.45, 0xcbb486) // food sacks (tan) to the right
+    }
+    this.porterPileMesh.count = pi
+    this.porterPileMesh.instanceMatrix.needsUpdate = true
+    if (this.porterPileMesh.instanceColor) this.porterPileMesh.instanceColor.needsUpdate = true
+    // ---- carts: porter handcarts running the roads near the sheds, only while staffed (never over water) ----
+    const status = porterStatus(s)
+    const want = status.working ? Math.min(28, status.porters) : 0
+    while (this.porterCarts.length < want) {
+      const shed = sheds[this.porterCarts.length % sheds.length]!
+      this.porterCarts.push({ x: shed.x, y: shed.y, tx: shed.x, ty: shed.y, spd: 0.6 + Math.random() * 0.5 })
+    }
+    if (this.porterCarts.length > want) this.porterCarts.length = want
+    const now = performance.now()
+    const dt = this.lastPorterT ? Math.min(0.05, (now - this.lastPorterT) / 1000) : 1 / 60
+    this.lastPorterT = now
+    let ci = 0
+    for (const cart of this.porterCarts) {
+      let dx = cart.tx - cart.x, dy = cart.ty - cart.y, d = Math.hypot(dx, dy)
+      if (d < 0.4) {
+        const next = this.pickPedTarget(cart.x, cart.y, t.landing.x, t.landing.y) // a nearby road cell — pickPedTarget keeps to the pavement, never water
+        cart.tx = next.x; cart.ty = next.y
+        dx = cart.tx - cart.x; dy = cart.ty - cart.y; d = Math.hypot(dx, dy)
+      }
+      if (d > 1e-3) { const move = Math.min(d, cart.spd * dt); cart.x += (dx / d) * move; cart.y += (dy / d) * move }
+      const heading = Math.atan2(dy, dx)
+      const wy = Math.max(0, t.worldY(Math.round(cart.x), Math.round(cart.y)))
+      this.dummy.position.set(this.wx(cart.x), wy + 0.05, this.wz(cart.y))
+      this.dummy.rotation.set(0, -heading, 0)
+      this.dummy.scale.set(1, 1, 1)
+      this.dummy.updateMatrix()
+      this.porterCartMesh.setMatrixAt(ci, this.dummy.matrix)
+      ci++
+    }
+    this.porterCartMesh.count = ci
+    this.porterCartMesh.instanceMatrix.needsUpdate = true
   }
 
   private updateCinematic() {
