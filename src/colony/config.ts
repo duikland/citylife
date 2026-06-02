@@ -979,6 +979,21 @@ export const COLONY = {
     gallerySpireBonus: 0.25, // appeal lift while the Horizon Spire (033) stands finished (a marquee draw)
     galleryProsperityBonus: 0.15, // appeal lift at full Prosperity (040) standing (renown brings more skiffs)
     galleryAppealCeiling: 1.4, // the take never scales beyond this however renowned
+    // Porter Sheds (spec 073): the first EMBODIMENT mechanic — a staffed shed by the road whose porters visibly carry goods between
+    // buildings, with goods rendered as piles that grow and shrink. It invents no new good and changes no balance number; it is pure
+    // visual life. Inert with no shed. Costs materials + components + tools + a reel (cart harness) to build, 2 porters to run.
+    matPorter: 10, // materials to build
+    compPorter: 4, // components to build
+    toolPorter: 2, // tool-kits to build (handcarts + shoulder-poles)
+    reelPorter: 1, // a reel for the cart lashings + harness (Mara Venn's spec)
+    crewPorter: 3, // builders reserved for the construction job
+    porterCost: 320, // treasury to build
+    porterWorkers: 2, // run crew (the porters); unstaffed the carts stand idle
+    porterRadius: 8, // cells; a shed's porters serve buildings within this reach
+    portersPerShed: 2, // visible carriers a staffed shed puts on the roads
+    pilePerMaterials: 8, // one visible materials crate per this much stock (the pile quantisation, spec VISUAL-STANDARD)
+    pilePerFood: 8, // one visible food sack per this much stock
+    pileMaxUnits: 14, // cap on visible units per good per shed so a full store is a clear heap, not a tower
     pollutionPerIndustrial: 3,
   },
 

@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar' | 'hallofnames' | 'netdock' | 'sanitation' | 'watchnook' | 'rationvar' | 'dryrack' | 'registry' | 'planter' | 'stall' | 'firewatch' | 'reclaimer' | 'festboard' | 'cellar' | 'bathhouse' | 'library' | 'gallery'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar' | 'hallofnames' | 'netdock' | 'sanitation' | 'watchnook' | 'rationvar' | 'dryrack' | 'registry' | 'planter' | 'stall' | 'firewatch' | 'reclaimer' | 'festboard' | 'cellar' | 'bathhouse' | 'library' | 'gallery' | 'porter'
 
 export interface Parcel {
   id: number
@@ -128,6 +128,7 @@ const CELLAR_COLOR = 0x7d6b86 // dusky violet-grey — the Fungus Cellar (dark d
 const BATHHOUSE_COLOR = 0x5fa9c4 // steam-blue — the Steam Bathhouse (hot water + hygiene on the cistern line)
 const LIBRARY_COLOR = 0xc9a24b // parchment-gold — the Folio Library (the colony's own books, lent at home)
 const GALLERY_COLOR = 0xd98c3a // lookout-amber — the Skydeck Gallery (the mooring-deck viewing hall)
+const PORTER_COLOR = 0x7a5a3a // timber-brown — the Porter Shed (carts + goods move from here)
 const SANITATION_COLOR = 0x6f8f6a // drain-green — the Sanitation Post (clears household waste before it sickens the colony)
 const WATCHNOOK_COLOR = 0xb0a04a // lamp-brass — the Watch Nook (keeps petty theft off a rich colony's coffers)
 const key = (x: number, y: number) => x + ',' + y
@@ -521,6 +522,10 @@ function designLibrary(state: ColonyState): Artifact {
 function designGallery(state: ColonyState): Artifact {
   // Spec 072 — Skydeck Gallery; a staffed trade hall on the mooring deck that sells the view, earning visitor coin scaled by the colony's renown.
   return { id: state.buildIds++, kind: 'gallery', color: GALLERY_COLOR, height: 1.1, residents: 0, jobs: COLONY.build.galleryWorkers, powerLoad: COLONY.build.galleryPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.galleryCost, materialsCost: COLONY.build.matGallery, crew: COLONY.build.crewGallery, materialsGen: 0, componentsCost: COLONY.build.compGallery, toolsCost: COLONY.build.toolGallery }
+}
+function designPorter(state: ColonyState): Artifact {
+  // Spec 073 — Porter Shed; a staffed logistics shed by the road whose porters carry goods VISIBLY between buildings, and at which the colony's goods pile up to be seen. Costs a reel for the cart harness.
+  return { id: state.buildIds++, kind: 'porter', color: PORTER_COLOR, height: 0.8, residents: 0, jobs: COLONY.build.porterWorkers, powerLoad: 0, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.porterCost, materialsCost: COLONY.build.matPorter, crew: COLONY.build.crewPorter, materialsGen: 0, componentsCost: COLONY.build.compPorter, toolsCost: COLONY.build.toolPorter, reelsCost: COLONY.build.reelPorter }
 }
 function designSanitationPost(state: ColonyState): Artifact {
   // Spec 058 — Sanitation Post; staffed drain-keepers who clear household waste before it sickens the colony.
@@ -1214,6 +1219,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 12 && countKind(state, 'payoffice') > 0 && ((state.linen ?? 0) > COLONY.build.stallReserve + 10 || (state.folios ?? 0) > COLONY.build.stallReserve + 10) && countKind(state, 'stall') < Math.max(1, Math.ceil(state.colonists / COLONY.build.stallServedCap)) && state.components >= COLONY.build.compStall && state.materials >= COLONY.build.matStall && (state.tools ?? 0) >= COLONY.build.toolStall && (state.linen ?? 0) >= COLONY.build.linenStall) return designStall(state)
   // Spec 072 — a renowned, liveable colony with coin to spare raises a Skydeck Gallery on the mooring deck, turning its beauty into visitor coin.
   if (state.colonists > 18 && countKind(state, 'gallery') < 1 && colonyLiveability(state) > 0.45 && state.components >= COLONY.build.compGallery && state.materials >= COLONY.build.matGallery && (state.tools ?? 0) >= COLONY.build.toolGallery && state.treasury > COLONY.build.galleryCost) return designGallery(state)
+  // Spec 073 — a working colony with goods to move and roads to move them on raises a Porter Shed (one per ~40 colonists) so the economy can finally be SEEN — carts on the streets, goods in piles.
+  if (state.colonists > 16 && state.roads.length > 0 && countKind(state, 'porter') < Math.max(1, Math.ceil(state.colonists / 40)) && state.components >= COLONY.build.compPorter && state.materials >= COLONY.build.matPorter && (state.tools ?? 0) >= COLONY.build.toolPorter && (state.reels ?? 0) >= COLONY.build.reelPorter) return designPorter(state)
   // Spec 067 — a colony that keeps a calendar, books, a market and a varied table raises a Festival Board so the people get a yearly Highsun Lantern Supper to look forward to.
   if (state.colonists > 16 && countKind(state, 'festboard') < 1 && countKind(state, 'calendar') > 0 && countKind(state, 'registry') > 0 && countKind(state, 'stall') > 0 && countKind(state, 'rationvar') > 0 && state.components >= COLONY.build.compFestBoard && state.materials >= COLONY.build.matFestBoard && (state.tools ?? 0) >= COLONY.build.toolFestBoard && (state.linen ?? 0) >= COLONY.build.linenFestBoard && (state.folios ?? 0) >= COLONY.build.folioFestBoard) return designFestBoard(state)
   // Spec 039 — a mature colony raises a Comptroller's Office so the treasury can ride a hard stretch on managed debt.
@@ -1333,7 +1340,7 @@ const SECTOR_OF: Record<BuildKind, Sector> = {
   greenhouse: 'food', depot: 'food', water: 'food', cistern: 'food', seedloft: 'food', netdock: 'food', cellar: 'food',
   clinic: 'services', theatre: 'services', market: 'services', shrine: 'services', survey: 'services', commercial: 'services', school: 'services', sanitation: 'services', rationvar: 'services', bathhouse: 'services', library: 'services',
   mine: 'industry', workshop: 'industry', foundry: 'industry', skimmer: 'industry', weavery: 'industry', industrial: 'industry', folio: 'industry', toolcrib: 'industry', dryrack: 'industry',
-  transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics', turbine: 'logistics', surveycamp: 'logistics', reclaimer: 'logistics',
+  transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics', turbine: 'logistics', surveycamp: 'logistics', reclaimer: 'logistics', porter: 'logistics',
   bellhouse: 'safety', feverwatch: 'safety', ward: 'safety', stormwatch: 'safety', scrubber: 'safety', watchnook: 'safety', firewatch: 'safety',
   exchange: 'trade', import: 'trade', stall: 'trade', gallery: 'trade',
   levy: 'civic', payoffice: 'civic', liaison: 'civic', academy: 'civic', mast: 'civic', hall: 'civic', feast: 'civic', comptroller: 'civic', roster: 'civic', census: 'civic', habitat: 'civic', calendar: 'civic', hallofnames: 'civic', registry: 'civic', planter: 'civic', festboard: 'civic',
@@ -3324,6 +3331,15 @@ export function galleryStatus(state: ColonyState): { galleries: number; open: bo
   const staffing = sectorStaffing(state, 'trade')
   const coin = COLONY.build.galleryVisitorCoin * galleryAppeal(state) * staffing * galleries
   return { galleries, open: staffing > 0 && coin > 0, coinPerDay: Math.round(coin) }
+}
+
+/** Spec 073 — a Porter Shed is WORKING only while staffed by the Logistics sector; its porters and the carts on the roads exist only
+ *  then. It changes no economy number — it is pure visual life — so this readout just tells the renderer + HUD how many carts to run. */
+export function porterStatus(state: ColonyState): { sheds: number; working: boolean; porters: number } {
+  const sheds = countKind(state, 'porter')
+  if (sheds === 0) return { sheds: 0, working: false, porters: 0 }
+  const working = sectorStaffing(state, 'logistics') > 0
+  return { sheds, working, porters: working ? sheds * COLONY.build.portersPerShed : 0 }
 }
 
 export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {

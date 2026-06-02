@@ -14,7 +14,7 @@ import type { ColonySim, SeedStructure } from '../sim'
 import type { HouseSpec } from '../house'
 import { gridOrigin } from '../grid'
 import { cellZone, ZONE_COLOR, VIBE_COLOR, type Plot } from '../cityPlan'
-import { homeLiveability, surveyAvailable, liveabilityTint } from '../build'
+import { homeLiveability, surveyAvailable, liveabilityTint, porterStatus } from '../build'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
 export type CameraPreset = 'street' | 'district' | 'planet'
@@ -47,6 +47,12 @@ export class PlanetRenderer {
   // Sized plot foundations + the spoke roads that serve them from the colony core (the planned-settlement layer).
   private plotPadGroup = new THREE.Group()
   private lastPadSig = ''
+  // Spec 073 — Porter Sheds: the economy embodied. Goods pile up as crates/sacks at each shed (growing + shrinking with the live
+  // stock), and porter handcarts run the roads while the shed is staffed. Never on water.
+  private porterPileMesh!: THREE.InstancedMesh
+  private porterCartMesh!: THREE.InstancedMesh
+  private porterCarts: { x: number; y: number; tx: number; ty: number; spd: number }[] = []
+  private lastPorterT = 0
   private bldgMesh!: THREE.InstancedMesh
   private crewMesh!: THREE.InstancedMesh
   private streetPostMesh!: THREE.InstancedMesh
@@ -537,6 +543,22 @@ export class PlanetRenderer {
     this.scene.add(this.pedMesh)
     this.initPedestrians()
 
+    // Spec 073 — goods piled at the Porter Sheds (crates + sacks), and the porter handcarts on the roads.
+    const crateGeo = new THREE.BoxGeometry(0.34, 0.34, 0.34)
+    crateGeo.translate(0, 0.17, 0)
+    this.porterPileMesh = new THREE.InstancedMesh(crateGeo, new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, flatShading: true }), 320)
+    this.porterPileMesh.count = 0
+    this.porterPileMesh.castShadow = true
+    this.porterPileMesh.frustumCulled = false
+    this.scene.add(this.porterPileMesh)
+    const cartGeo = new THREE.BoxGeometry(0.42, 0.22, 0.3)
+    cartGeo.translate(0, 0.14, 0)
+    this.porterCartMesh = new THREE.InstancedMesh(cartGeo, new THREE.MeshStandardMaterial({ color: 0x9a7a4a, roughness: 0.6, metalness: 0.1 }), 28)
+    this.porterCartMesh.count = 0
+    this.porterCartMesh.castShadow = true
+    this.porterCartMesh.frustumCulled = false
+    this.scene.add(this.porterCartMesh)
+
     // street lights at grid intersections
     const lightCap = 360
     const postGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.9, 5)
@@ -1024,6 +1046,7 @@ export class PlanetRenderer {
     this.updateDayNight()
     this.updateColonyLayer()
     this.updatePedestrians()
+    this.updatePorters() // spec 073 — goods piled at the sheds + porter carts on the roads
     if (this.beaconMat) {
       const blink = Math.max(0, Math.sin((performance.now() / 1000) * 2.4))
       this.beaconMat.emissiveIntensity = 0.35 + blink * blink * 2.6
@@ -1134,6 +1157,78 @@ export class PlanetRenderer {
       this.pedMesh.setMatrixAt(i, this.dummy.matrix)
     }
     this.pedMesh.instanceMatrix.needsUpdate = true
+  }
+
+  /** Spec 073 — the Porter Sheds made visible: goods pile up as crates (materials) + sacks (food) beside each shed, growing and
+   *  shrinking with the LIVE stock, and porter handcarts run the road network while a shed is staffed. Never on water. Inert with no shed. */
+  private updatePorters() {
+    if (!this.porterPileMesh || !this.porterCartMesh) return
+    const s = this.sim.state
+    const t = s.terrain
+    const sheds = s.buildings.filter((b) => b.artifact.kind === 'porter')
+    if (sheds.length === 0) {
+      if (this.porterPileMesh.count !== 0) { this.porterPileMesh.count = 0; this.porterPileMesh.instanceMatrix.needsUpdate = true }
+      if (this.porterCartMesh.count !== 0) { this.porterCartMesh.count = 0; this.porterCartMesh.instanceMatrix.needsUpdate = true }
+      this.porterCarts = []
+      return
+    }
+    // ---- piles: crates of materials + sacks of food at each shed, quantised to the live stock (grow + shrink) ----
+    const col = new THREE.Color()
+    const matUnits = Math.min(COLONY.build.pileMaxUnits, Math.floor((s.materials ?? 0) / COLONY.build.pilePerMaterials))
+    const foodUnits = Math.min(COLONY.build.pileMaxUnits, Math.floor((s.food ?? 0) / COLONY.build.pilePerFood))
+    let pi = 0
+    for (const shed of sheds) {
+      const baseY = Math.max(0, t.worldY(shed.x, shed.y)) + 0.02
+      const lay = (units: number, ox: number, hex: number) => {
+        for (let u = 0; u < units && pi < 320; u++) {
+          const gx = u % 3, gz = (u / 3) | 0
+          this.dummy.position.set(this.wx(shed.x) + ox + gx * 0.36, baseY, this.wz(shed.y) + 0.7 + gz * 0.36)
+          this.dummy.rotation.set(0, 0, 0)
+          this.dummy.scale.set(1, 1, 1)
+          this.dummy.updateMatrix()
+          this.porterPileMesh.setMatrixAt(pi, this.dummy.matrix)
+          col.setHex(hex)
+          this.porterPileMesh.setColorAt(pi, col)
+          pi++
+        }
+      }
+      lay(matUnits, -1.45, 0x8a6a3a) // materials crates (brown) to the left of the shed
+      lay(foodUnits, 0.45, 0xcbb486) // food sacks (tan) to the right
+    }
+    this.porterPileMesh.count = pi
+    this.porterPileMesh.instanceMatrix.needsUpdate = true
+    if (this.porterPileMesh.instanceColor) this.porterPileMesh.instanceColor.needsUpdate = true
+    // ---- carts: porter handcarts running the roads near the sheds, only while staffed (never over water) ----
+    const status = porterStatus(s)
+    const want = status.working ? Math.min(28, status.porters) : 0
+    while (this.porterCarts.length < want) {
+      const shed = sheds[this.porterCarts.length % sheds.length]!
+      this.porterCarts.push({ x: shed.x, y: shed.y, tx: shed.x, ty: shed.y, spd: 0.6 + Math.random() * 0.5 })
+    }
+    if (this.porterCarts.length > want) this.porterCarts.length = want
+    const now = performance.now()
+    const dt = this.lastPorterT ? Math.min(0.05, (now - this.lastPorterT) / 1000) : 1 / 60
+    this.lastPorterT = now
+    let ci = 0
+    for (const cart of this.porterCarts) {
+      let dx = cart.tx - cart.x, dy = cart.ty - cart.y, d = Math.hypot(dx, dy)
+      if (d < 0.4) {
+        const next = this.pickPedTarget(cart.x, cart.y, t.landing.x, t.landing.y) // a nearby road cell — pickPedTarget keeps to the pavement, never water
+        cart.tx = next.x; cart.ty = next.y
+        dx = cart.tx - cart.x; dy = cart.ty - cart.y; d = Math.hypot(dx, dy)
+      }
+      if (d > 1e-3) { const move = Math.min(d, cart.spd * dt); cart.x += (dx / d) * move; cart.y += (dy / d) * move }
+      const heading = Math.atan2(dy, dx)
+      const wy = Math.max(0, t.worldY(Math.round(cart.x), Math.round(cart.y)))
+      this.dummy.position.set(this.wx(cart.x), wy + 0.05, this.wz(cart.y))
+      this.dummy.rotation.set(0, -heading, 0)
+      this.dummy.scale.set(1, 1, 1)
+      this.dummy.updateMatrix()
+      this.porterCartMesh.setMatrixAt(ci, this.dummy.matrix)
+      ci++
+    }
+    this.porterCartMesh.count = ci
+    this.porterCartMesh.instanceMatrix.needsUpdate = true
   }
 
   private updateCinematic() {
