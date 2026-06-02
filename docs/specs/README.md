@@ -79,6 +79,17 @@ turn any of these into a spec; Review & Build can implement it):
   the water barrier. Direction: embody the stockpiles, then the flows, then the people, so every counter has
   a body on the island. **Roads + agents never cross open water** (ground physics).
 
+- **Land organisation + terrain-aware roads** (`docs/research/2026-06-02-land-organisation-and-roads.md`).
+  The old scattered named-plot pads + straight spoke roads were the wrong paradigm (Caesar-III "settler walks
+  to a human-marked far plot") and ran straight over hills and water — **retired**. The replacement, grounded
+  in GIS land-suitability + procedural-city research, is **planner-driven and roads-first**, in order:
+  **L1** a per-cell land-type METADATA layer (a weighted overlay of slope, distance-to-water, biome, elevation
+  → a 0–1 `suitability` + a `bestUse` class); **L2** a compact, **least-cost** road skeleton grown from the
+  core along the best land (water an obstacle, slope a cost — never a straight line, never over open water);
+  **L3** parcels enclosed by roads, **subdivided into lots** (retire the wilderness "vibe" plots — a plot is a
+  lot *inside* the settlement, placed by the planner); **L4** building massing on the lots. **Only the City
+  Planner organises land**, compactly, on good ground. This is the priority spatial backlog.
+
 ## Spec queue location
 
 The canonical queue lives **outside the repo** at `D:\infra\projects\citylife-specs\{proposed,built}\`

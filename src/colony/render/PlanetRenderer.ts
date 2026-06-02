@@ -704,10 +704,23 @@ export class PlanetRenderer {
   }
 
   /** Turn a HouseSpec (the AI's plan) into a one-off 3D house. */
-  /** The planned-settlement layer: a sized, leveled foundation pad for each named plot (the lot it occupies on flat,
-   *  rock-free ground), and a spoke road from the colony core out to it — so the marked plots are visible, sized, and
-   *  actually served by a road instead of being abstract points. Rebuilt only when the plan changes. */
-  private buildPlotPads(plots: Plot[]) {
+  /** RETIRED (see docs/research/2026-06-02-land-organisation-and-roads.md). The scattered named-plot pads + straight spoke
+   *  roads were the wrong paradigm — Caesar-III "settler walks to a human-marked far plot" — and the spokes ran straight over
+   *  terrain and water heedless of the land. The replacement is a land-suitability metadata layer + a planner-driven, compact,
+   *  least-cost road skeleton (roads-first, then parcels, then lots). Kept as a no-op so nothing renders until that lands. */
+  private buildPlotPads(_plots: Plot[]) {
+    if (this.plotPadGroup.children.length > 0) {
+      for (const ch of [...this.plotPadGroup.children]) {
+        this.plotPadGroup.remove(ch)
+        const m = ch as THREE.Mesh
+        if (m.geometry) m.geometry.dispose()
+        if (m.material) (m.material as THREE.Material).dispose()
+      }
+    }
+    this.lastPadSig = 'retired'
+    return
+    // eslint-disable-next-line no-unreachable
+    const plots = _plots
     const sig = plots.map((p) => `${p.id}:${p.w || 1}x${p.h || 1}`).join('|')
     if (sig === this.lastPadSig) return
     this.lastPadSig = sig
