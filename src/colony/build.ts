@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school'
 
 export interface Parcel {
   id: number
@@ -95,6 +95,7 @@ const IMPORT_COLOR = 0xc05a9a // import-magenta — the Skybridge Import Office 
 const SHRINE_COLOR = 0xb6a8e0 // soft violet — the Mooring Shrine (faith + solace for the homes)
 const COMPTROLLER_COLOR = 0x3f7d5a // ledger-green — the Comptroller's Office (the colony's debt desk)
 const ROSTER_COLOR = 0xc89b5a // roster-bronze — the Roster Office (civic labour administration)
+const SCHOOL_COLOR = 0xd98f5a // warm ochre — the Little Schoolroom (the colony's first letters)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -397,6 +398,10 @@ function designRoster(state: ColonyState): Artifact {
   // Spec 038 — Roster Office; civic labour administration that unlocks labour priority by sector under a shortage.
   return { id: state.buildIds++, kind: 'roster', color: ROSTER_COLOR, height: 1.3, residents: 0, jobs: COLONY.build.rosterWorkers, powerLoad: 0.3, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.rosterCost, materialsCost: COLONY.build.matRoster, crew: COLONY.build.crewRoster, materialsGen: 0, componentsCost: COLONY.build.compRoster }
 }
+function designSchool(state: ColonyState): Artifact {
+  // Spec 042 — Little Schoolroom; a small staffed home-service building that schools nearby homes (no goods, just teachers).
+  return { id: state.buildIds++, kind: 'school', color: SCHOOL_COLOR, height: 1.1, residents: 0, jobs: COLONY.build.schoolWorkers, powerLoad: 0.2, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.schoolCost, materialsCost: COLONY.build.matSchool, crew: COLONY.build.crewSchool, materialsGen: 0 }
+}
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
 function countKind(state: ColonyState, kind: BuildKind): number {
@@ -484,6 +489,22 @@ export function solaceCoverage(state: ColonyState): number {
 /** Spec 037 — Solace readout for the HUD: the consoled fraction (0..1) and how many shrines stand. */
 export function solaceStatus(state: ColonyState): { coverage: number; shrines: number } {
   return { coverage: solaceCoverage(state), shrines: countKind(state, 'shrine') }
+}
+
+/** Spec 042 — fraction of homes schooled by a staffed Little Schoolroom (0 with none, or while unstaffed). */
+export function educationFraction(state: ColonyState): number {
+  const habs = state.buildings.filter((b) => b.artifact.kind === 'habitat')
+  if (!habs.length || countKind(state, 'school') === 0) return 0
+  if ((state.totalJobs > 0 ? state.colonists / state.totalJobs : 0) <= 0) return 0 // unstaffed → the room sits dark, teaches no one
+  const schools = state.buildings.filter((b) => b.artifact.kind === 'school')
+  let served = 0
+  for (const h of habs) if (schools.some((s) => Math.hypot(s.x - h.x, s.y - h.y) <= COLONY.build.schoolRadius)) served++
+  return served / habs.length
+}
+
+/** Spec 042 — Education readout for the HUD: the schooled fraction (0..1) and how many schoolrooms stand. */
+export function educationStatus(state: ColonyState): { coverage: number; schools: number } {
+  return { coverage: educationFraction(state), schools: countKind(state, 'school') }
 }
 
 /** Spec 011 — is a building of `kind` within `radius` of this home? (per-home service coverage). */
@@ -613,6 +634,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (countKind(state, 'habitat') > 0 && cultureFraction(state) < 0.9 && state.components >= COLONY.build.compTheatre && countKind(state, 'theatre') < Math.ceil(countKind(state, 'habitat') / 8)) return designTheatre(state)
   // Spec 037 — comfort the homes: an established colony with components on hand raises a Mooring Shrine to carry Solace.
   if (state.colonists > 8 && countKind(state, 'habitat') > 0 && solaceCoverage(state) < 0.9 && state.components >= COLONY.build.compShrine && countKind(state, 'shrine') < Math.ceil(countKind(state, 'habitat') / COLONY.build.shrineHomes)) return designShrine(state)
+  // Spec 042 — teach the homes: an established colony with materials on hand raises a Little Schoolroom for Education.
+  if (state.colonists > 8 && countKind(state, 'habitat') > 0 && educationFraction(state) < 0.9 && state.materials >= COLONY.build.matSchool && countKind(state, 'school') < Math.ceil(countKind(state, 'habitat') / COLONY.build.schoolHomes)) return designSchool(state)
   // Spec 019 — clear the air: smoggy homes + components on hand → plant an Air Scrubber Garden.
   if (pollutedFraction(state) > 0.1 && state.components >= COLONY.build.compScrubber && countKind(state, 'scrubber') < Math.ceil(countKind(state, 'habitat') / 6)) return designScrubber(state)
   // Spec 011 — once the colony is established, raise a Civic Pulse Survey Office to unlock the liveability map.
@@ -740,7 +763,7 @@ export function claimLot(state: ColonyState, rng: RNG): { x: number; y: number }
 export type Sector = 'food' | 'services' | 'industry' | 'logistics' | 'safety' | 'trade' | 'civic'
 const SECTOR_OF: Record<BuildKind, Sector> = {
   greenhouse: 'food', depot: 'food', water: 'food',
-  clinic: 'services', theatre: 'services', market: 'services', shrine: 'services', survey: 'services', commercial: 'services',
+  clinic: 'services', theatre: 'services', market: 'services', shrine: 'services', survey: 'services', commercial: 'services', school: 'services',
   mine: 'industry', workshop: 'industry', foundry: 'industry', skimmer: 'industry', weavery: 'industry', industrial: 'industry',
   transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics',
   bellhouse: 'safety', feverwatch: 'safety', ward: 'safety', stormwatch: 'safety', scrubber: 'safety',
@@ -1477,7 +1500,7 @@ function academyStep(state: ColonyState, dtMin: number): void {
   if (academies === 0) return
   const staffing = sectorStaffing(state, 'civic') // spec 038 — the Academy is Civic-sector labour
   if (staffing <= 0) return
-  state.skilled = Math.min(state.colonists, state.skilled + academies * COLONY.build.academyTrainPerDay * staffing * (dtMin / (24 * 60)))
+  state.skilled = Math.min(state.colonists, state.skilled + academies * COLONY.build.academyTrainPerDay * staffing * (1 + COLONY.build.educationAcademyBonus * educationFraction(state)) * (dtMin / (24 * 60))) // spec 042 — a schooled populace learns the advanced trades faster
 }
 
 /** Spec 003 — staffed workshops consume materials and produce components (2:1); halt when materials run out. */
@@ -1713,7 +1736,7 @@ function immigration(state: ColonyState, dtMin: number): void {
   // Spec 010 — culture draws settlers: a cultured colony is more desirable.
   // Spec 010/014 — culture draws settlers; a theatre with no reels (spec 014) runs dark, halving its pull.
   const cultureFactor = 1 + COLONY.build.cultureDesirabilityBonus * cultureFraction(state) * cultureFuelFactor(state)
-  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) * (1 - (state.outbreak ?? 0) * COLONY.build.feverEmigrationWeight) * (1 + COLONY.build.waresDesirabilityBonus * housewaresFraction(state)) * (1 - (state.unrest ?? 0) * COLONY.build.unrestDesirabilityWeight) * wageDesirabilityFactor(state) * (feasting(state) ? 1 + COLONY.build.feastDesirabilityBonus : 1) * standingDesirabilityFactor(state) * (spireComplete(state) ? COLONY.build.spireImmigrationBonus : 1) * (foundersHallActive(state) ? COLONY.build.foundersDesirabilityBonus : 1) * (1 + COLONY.build.solaceDesirabilityBonus * solaceCoverage(state)) * (arrearsStrain(state) ? COLONY.build.arrearsStrainDesirabilityFactor : 1) // spec 025/026/027/028/029/030/032/033/035/037/039 — levy, outbreak, stocked homes, unrest, wages, a feast, Kookerverse standing, the Spire, named founders, a consoled colony, and a colony deep in arrears all pull on who comes and stays
+  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) * (1 - (state.outbreak ?? 0) * COLONY.build.feverEmigrationWeight) * (1 + COLONY.build.waresDesirabilityBonus * housewaresFraction(state)) * (1 - (state.unrest ?? 0) * COLONY.build.unrestDesirabilityWeight) * wageDesirabilityFactor(state) * (feasting(state) ? 1 + COLONY.build.feastDesirabilityBonus : 1) * standingDesirabilityFactor(state) * (spireComplete(state) ? COLONY.build.spireImmigrationBonus : 1) * (foundersHallActive(state) ? COLONY.build.foundersDesirabilityBonus : 1) * (1 + COLONY.build.solaceDesirabilityBonus * solaceCoverage(state)) * (arrearsStrain(state) ? COLONY.build.arrearsStrainDesirabilityFactor : 1) * (1 + COLONY.build.educationDesirabilityBonus * educationFraction(state)) // spec 025/026/027/028/029/030/032/033/035/037/039/042 — levy, outbreak, stocked homes, unrest, wages, a feast, Kookerverse standing, the Spire, named founders, a consoled colony, a colony deep in arrears, and a schooled colony all pull on who comes and stays
   if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * perDay)
 }
 

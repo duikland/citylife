@@ -518,6 +518,16 @@ export const COLONY = {
     departureArrearsDistress: 0.5, // distress floor contributed by Treasury Arrears strain alone (missed wages)
     departureHouseholdSize: 4, // colonists that leave each time the threshold is crossed
     exodusStandingHit: 0.04, // one-off Kookerverse standing dip when a household departs (the wider world notices)
+    // Little Schoolroom (spec 042): a small staffed home-service building that schools nearby homes — a new Education
+    // coverage that lifts desirability and lets the Skillhouse Academy train skilled workers faster. Inert with no staffed school.
+    matSchool: 18,
+    crewSchool: 4,
+    schoolCost: 1400,
+    schoolWorkers: 3,
+    schoolRadius: 8, // cells; habitats within this of a staffed school are schooled
+    schoolHomes: 8, // build ~1 school per this many homes
+    educationDesirabilityBonus: 0.1, // up to +10% immigration at full education coverage
+    educationAcademyBonus: 0.5, // the Academy trains up to +50% faster at full education coverage
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

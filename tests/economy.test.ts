@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -2761,5 +2761,75 @@ describe('Spec 041 — Departure Pressure: the colony can lose people, not just 
     for (let i = 0; i < 30; i++) stepBuild(s, sim.rng, 60)
     expect(s.departurePressure).toBeCloseTo(0, 6)
     expect(s.colonists).toBe(12) // nobody leaves a colony with no homes to empty
+  })
+})
+
+describe('Spec 042 — The Little Schoolroom: the colony learns its letters', () => {
+  const mk = (kind: 'school' | 'habitat' | 'academy' | 'mine', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('schools homes only from a built, staffed schoolroom', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    s.buildings.push(mk('habitat', lx, ly, { residents: 6 }))
+    s.buildings.push(mk('habitat', lx + 1, ly, { residents: 6 }))
+    s.colonists = 8
+    s.totalJobs = 3
+    expect(educationFraction(s)).toBe(0) // no school
+    s.buildings.push(mk('school', lx, ly + 1, { jobs: 3 }))
+    expect(educationFraction(s)).toBeCloseTo(1, 5) // both homes within reach of a staffed school
+    s.colonists = 0
+    expect(educationFraction(s)).toBe(0) // a room, but no teachers
+  })
+
+  it('a schooled colony draws settlers a little faster', () => {
+    const run = (withSchool: boolean) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+      s.buildings.push(mk('habitat', lx, ly, { residents: 60 }))
+      s.buildings.push(mk('mine', lx + 1, ly, { jobs: 6 })) // fully employed → no idle confound
+      if (withSchool) s.buildings.push(mk('school', lx, ly, { jobs: 3 }))
+      s.colonists = 6
+      s.totalJobs = 6
+      s.power.batteryWh = s.power.batteryCapWh
+      s.power.solarW = 5
+      const c0 = s.colonists
+      for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+      return s.colonists - c0
+    }
+    expect(run(true)).toBeGreaterThan(run(false))
+  })
+
+  it('a schooled colony trains skilled workers faster', () => {
+    const run = (withSchool: boolean) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+      s.buildings.push(mk('habitat', lx, ly, { residents: 20 }))
+      s.buildings.push(mk('academy', lx + 1, ly, { jobs: 4 }))
+      if (withSchool) s.buildings.push(mk('school', lx, ly, { jobs: 3 }))
+      s.colonists = 20
+      s.totalJobs = 6
+      s.skilled = 0
+      for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+      return s.skilled
+    }
+    expect(run(true)).toBeGreaterThan(run(false)) // a literate populace learns the advanced trades quicker
+  })
+
+  it('with no school, education is zero and the colony is unchanged (inert)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('habitat', s.terrain.landing.x, s.terrain.landing.y, { residents: 6 }))
+    s.colonists = 8
+    s.totalJobs = 3
+    expect(educationFraction(s)).toBe(0)
+    expect(educationStatus(s).schools).toBe(0)
   })
 })
