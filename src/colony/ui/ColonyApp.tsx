@@ -178,6 +178,7 @@ export function ColonyApp() {
         {ui.colony.reels > 0 && <div className="row"><span>Reels</span><b style={{ color: '#9a8fe0' }}>{ui.colony.reels}</b></div>}
         {ui.colony.fibre > 0 && <div className="row"><span>Fibre</span><b style={{ color: '#9ec0a0' }} title="Skyflax fibre — gathered from the rims by Flax Skimmer Docks, woven into linen by Weaveries.">{ui.colony.fibre}</b></div>}
         {ui.colony.linen > 0 && <div className="row"><span>Linen</span><b style={{ color: '#d8c8a0' }} title="Linen bolts — the top housing tier needs it, and clinics use it as bandage cloth (more during a fever).">{ui.colony.linen}</b></div>}
+        {ui.colony.folios > 0 && <div className="row"><span>Folios</span><b style={{ color: '#e6c462' }} title="Skybound folios — the colony's signature finished export, bound from 1 reel + 1 linen by Folio Houses and sold by the Exchange well above either input.">{ui.colony.folios}</b></div>}
         {ui.colony.skilled > 0 && <div className="row"><span>Skilled</span><b style={{ color: '#5fd0c0' }} title="Skilled workers trained by Skillhouse Academies — the advanced trades run faster with them">{ui.colony.skilled}</b></div>}
         <div className="row"><span>Homes</span><b>{`T1×${ui.colony.tiers[0]} · T2×${ui.colony.tiers[1]} · T3×${ui.colony.tiers[2]}`}</b></div>
         <div className="row"><span>Buildings</span><b>{ui.colony.buildings}</b></div>

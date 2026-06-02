@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio'
 
 export interface Parcel {
   id: number
@@ -97,6 +97,7 @@ const COMPTROLLER_COLOR = 0x3f7d5a // ledger-green — the Comptroller's Office 
 const ROSTER_COLOR = 0xc89b5a // roster-bronze — the Roster Office (civic labour administration)
 const SCHOOL_COLOR = 0xd98f5a // warm ochre — the Little Schoolroom (the colony's first letters)
 const CENSUS_COLOR = 0x4a90c2 // census-blue — the Census Hall (the colony's one gauge of prosperity)
+const FOLIO_COLOR = 0xb8862b // gilt-gold — the Folio House (binds the signature finished export)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -120,6 +121,7 @@ export function initBuild(state: ColonyState): void {
   state.skilled = 0 // spec 020 — skilled workers, trained by academies
   state.fibre = 0 // spec 031 — skyflax fibre, gathered by Skimmer Docks
   state.linen = 0 // spec 031 — linen bolts, woven by Weaveries
+  state.folios = 0 // spec 044 — skybound folios, bound by Folio Houses
   state.standing = COLONY.build.standingStart // spec 032 — neutral Kookerverse Standing
   state.request = null // spec 032 — no open Civic Request
   state.requestCooldown = 0 // spec 032
@@ -406,6 +408,10 @@ function designSchool(state: ColonyState): Artifact {
 function designCensus(state: ColonyState): Artifact {
   // Spec 040 — Census Hall; a staffed civic hall that reads the whole colony into one Prosperity rank.
   return { id: state.buildIds++, kind: 'census', color: CENSUS_COLOR, height: 1.5, residents: 0, jobs: COLONY.build.censusWorkers, powerLoad: 0.3, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.censusCost, materialsCost: COLONY.build.matCensus, crew: COLONY.build.crewCensus, materialsGen: 0, componentsCost: COLONY.build.compCensus }
+}
+function designFolio(state: ColonyState): Artifact {
+  // Spec 044 — Folio House; binds 1 reel + 1 linen into 1 skybound folio, the colony's signature finished export.
+  return { id: state.buildIds++, kind: 'folio', color: FOLIO_COLOR, height: 1.2, residents: 0, jobs: COLONY.build.folioWorkers, powerLoad: 0.6, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.folioCost, materialsCost: COLONY.build.matFolio, crew: COLONY.build.crewFolio, materialsGen: 0, componentsCost: COLONY.build.compFolio }
 }
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
@@ -699,6 +705,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 12 && state.materials > COLONY.build.materialsSurplus && (state.fibre ?? 0) < COLONY.build.fibreLowThreshold && countKind(state, 'skimmer') < COLONY.build.maxSkimmer) return designSkimmer(state)
   // Spec 031 — weave the surplus: with fibre plentiful, raise a Weavery (up to one per dock) to make linen.
   if (countKind(state, 'skimmer') > 0 && (state.fibre ?? 0) > COLONY.build.fibreSurplus && countKind(state, 'weavery') < countKind(state, 'skimmer')) return designWeavery(state)
+  // Spec 044 — bind the two chains: with reels + linen plentiful and an Exchange to sell through, raise a Folio House.
+  if (state.colonists > 12 && countKind(state, 'folio') < 1 && countKind(state, 'exchange') > 0 && state.reels > 40 && (state.linen ?? 0) > 30 && state.components >= COLONY.build.compFolio) return designFolio(state)
   // Spec 020 — train the advanced trades: workshops/foundries up but skilled workers short → raise a Skillhouse Academy.
   if (countKind(state, 'workshop') + countKind(state, 'foundry') > 0 && state.skilled < (countKind(state, 'workshop') + countKind(state, 'foundry')) * COLONY.build.skilledPerAdvanced && state.components >= COLONY.build.compAcademy && countKind(state, 'academy') < 2) return designAcademy(state)
   // Spec 016 — once the colony is a real town, raise a Broadcast Mast so the Kookerverse Courier can speak.
@@ -817,7 +825,7 @@ export type Sector = 'food' | 'services' | 'industry' | 'logistics' | 'safety' |
 const SECTOR_OF: Record<BuildKind, Sector> = {
   greenhouse: 'food', depot: 'food', water: 'food',
   clinic: 'services', theatre: 'services', market: 'services', shrine: 'services', survey: 'services', commercial: 'services', school: 'services',
-  mine: 'industry', workshop: 'industry', foundry: 'industry', skimmer: 'industry', weavery: 'industry', industrial: 'industry',
+  mine: 'industry', workshop: 'industry', foundry: 'industry', skimmer: 'industry', weavery: 'industry', industrial: 'industry', folio: 'industry',
   transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics',
   bellhouse: 'safety', feverwatch: 'safety', ward: 'safety', stormwatch: 'safety', scrubber: 'safety',
   exchange: 'trade', import: 'trade',
@@ -947,7 +955,7 @@ function maintenanceUncovered(state: ColonyState): boolean {
 }
 
 /** Spec 023 — per-resource storage cap = the founders' hold + what each Storehouse Platform adds. */
-export function storageCaps(state: ColonyState): { materials: number; components: number; food: number; reels: number; fibre: number; linen: number } {
+export function storageCaps(state: ColonyState): { materials: number; components: number; food: number; reels: number; fibre: number; linen: number; folios: number } {
   const n = countKind(state, 'storehouse')
   return {
     materials: COLONY.build.storeBaseMaterials + n * COLONY.build.storePerMaterials,
@@ -956,6 +964,7 @@ export function storageCaps(state: ColonyState): { materials: number; components
     reels: COLONY.build.storeBaseReels + n * COLONY.build.storePerReels,
     fibre: COLONY.build.storeBaseFibre + n * COLONY.build.storePerFibre, // spec 031
     linen: COLONY.build.storeBaseLinen + n * COLONY.build.storePerLinen, // spec 031
+    folios: COLONY.build.storeBaseFolios + n * COLONY.build.storePerFolios, // spec 044
   }
 }
 
@@ -968,6 +977,7 @@ function clampStorage(state: ColonyState): void {
   if (state.reels > cap.reels) state.reels = cap.reels
   if ((state.fibre ?? 0) > cap.fibre) state.fibre = cap.fibre // spec 031
   if ((state.linen ?? 0) > cap.linen) state.linen = cap.linen // spec 031
+  if ((state.folios ?? 0) > cap.folios) state.folios = cap.folios // spec 044
 }
 
 /** Spec 023 — storage readout for the HUD: fullest stockpile (0..1), whether it's overflowing, and which. */
@@ -980,6 +990,7 @@ export function storageStatus(state: ColonyState): { fill: number; full: boolean
     ['reels', state.reels, cap.reels],
     ['fibre', state.fibre ?? 0, cap.fibre], // spec 031
     ['linen', state.linen ?? 0, cap.linen], // spec 031
+    ['folios', state.folios ?? 0, cap.folios], // spec 044
   ]
   let fill = 0
   let tightest = 'materials'
@@ -1616,6 +1627,27 @@ function produceLinen(state: ColonyState, dtMin: number): void {
   }
 }
 
+/** Spec 044 — staffed Folio Houses bind reels + linen (1:1) into skybound folios, the colony's signature finished export. */
+function produceFolios(state: ColonyState, dtMin: number): void {
+  const eff = sectorStaffing(state, 'industry') * healthFactor(state) * powerFactor(state) * transitFactor(state) * feverFactor(state) * orderFactor(state) // sick, brownout, congested, fevered, restless or sector-deprioritised binderies bind less
+  if (eff <= 0) return
+  const day = 24 * 60
+  const cap = storageCaps(state).folios
+  for (const b of state.buildings) {
+    if (b.artifact.kind !== 'folio' || b.incident) continue
+    const headroom = Math.max(0, cap - (state.folios ?? 0))
+    if (headroom <= 0) break // folio storage full
+    const mf = maintFactor(b)
+    const want = COLONY.build.foliosPerDay * eff * mf * (dtMin / day)
+    // limited by reels AND linen (1 each) and storage headroom — stalls, never fails, when an input runs dry
+    const made = Math.min(want, state.reels, state.linen ?? 0, headroom)
+    if (made <= 0) continue
+    state.reels -= made
+    state.linen = (state.linen ?? 0) - made
+    state.folios = (state.folios ?? 0) + made
+  }
+}
+
 /** Spec 004/006 — total housing: the founders' dropship + each habitat's capacity at its CURRENT tier. */
 export function housingCapacity(state: ColonyState): number {
   let cap = COLONY.seed.colonists
@@ -1962,6 +1994,12 @@ function tradeStep(state: ColonyState, dtMin: number): void {
     state.reels -= reelSell
     state.treasury += reelSell * COLONY.build.reelPrice
   }
+  // Spec 044 — skybound folios are the colony's signature finished export, sold at a premium above reels.
+  const folioSell = Math.min(Math.max(0, (state.folios ?? 0) - COLONY.build.folioReserve), exchanges * COLONY.build.folioCapPerDay * staffing * frac)
+  if (folioSell > 0) {
+    state.folios = (state.folios ?? 0) - folioSell
+    state.treasury += folioSell * COLONY.build.folioPrice
+  }
 }
 
 /** Spec 012 — current export income rate ($/day) the Exchanges would earn at this surplus + staffing (HUD). */
@@ -1973,7 +2011,8 @@ export function tradeExportRate(state: ColonyState): number {
   const compSell = Math.min(Math.max(0, state.components - COLONY.build.tradeComponentReserve), exchanges * COLONY.build.tradeComponentCapPerDay * staffing)
   const foodSell = Math.min(Math.max(0, state.food - COLONY.build.tradeFoodReserve), exchanges * COLONY.build.tradeFoodCapPerDay * staffing)
   const reelSell = Math.min(Math.max(0, state.reels - COLONY.build.reelReserve), exchanges * COLONY.build.reelCapPerDay * staffing)
-  return compSell * COLONY.build.tradeComponentPrice + foodSell * COLONY.build.tradeFoodPrice + reelSell * COLONY.build.reelPrice
+  const folioSell = Math.min(Math.max(0, (state.folios ?? 0) - COLONY.build.folioReserve), exchanges * COLONY.build.folioCapPerDay * staffing) // spec 044
+  return compSell * COLONY.build.tradeComponentPrice + foodSell * COLONY.build.tradeFoodPrice + reelSell * COLONY.build.reelPrice + folioSell * COLONY.build.folioPrice
 }
 
 export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
@@ -1991,6 +2030,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   produceComponents(state, dtMin)
   produceReels(state, dtMin)
   produceLinen(state, dtMin) // spec 031 — weave fibre into linen (the second refinery)
+  produceFolios(state, dtMin) // spec 044 — bind reels + linen into skybound folios (the top-of-chain export)
   serviceUpkeep(state, dtMin)
   foodStep(state, dtMin)
   housingStep(state, dtMin)

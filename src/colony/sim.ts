@@ -42,6 +42,7 @@ export interface ColonyState {
   skilled: number // spec 020 — skilled workers trained by Skillhouse Academies; the advanced trades need them
   fibre: number // spec 031 — skyflax fibre, the second raw resource, gathered from the rims by Skimmer Docks
   linen: number // spec 031 — linen bolts, woven from fibre by Weaveries; the top tier + clinics need it
+  folios: number // spec 044 — skybound folios, the colony's signature finished export, bound from reels + linen by Folio Houses
   parcels: Parcel[]
   jobs: ConstructionJob[]
   buildings: ColonyBuilding[]
@@ -129,6 +130,7 @@ export class ColonySim {
       skilled: 0, // spec 020 — trained by academies
       fibre: 0, // spec 031 — gathered by Flax Skimmer Docks
       linen: 0, // spec 031 — woven by Weaveries
+      folios: 0, // spec 044 — bound by Folio Houses from reels + linen
       parcels: [],
       jobs: [],
       buildings: [],

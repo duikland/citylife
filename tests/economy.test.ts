@@ -2906,3 +2906,74 @@ describe('Spec 040 — The Census Hall: a colony-wide Prosperity Rank', () => {
     expect(prosperityScore(s)).toBe(0)
   })
 })
+
+describe('Spec 044 — Skybound Folios: the colony signature finished export', () => {
+  const mk = (kind: 'folio' | 'exchange', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('a staffed Folio House binds reels + linen 1:1 into folios', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 12
+    s.totalJobs = 4
+    s.buildings.push(mk('folio', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 4 }))
+    s.reels = 50
+    s.linen = 50
+    s.folios = 0
+    const r0 = s.reels, l0 = s.linen
+    for (let i = 0; i < 50; i++) stepBuild(s, sim.rng, 10)
+    expect(s.folios).toBeGreaterThan(0) // bound the signature good
+    expect(s.reels).toBeLessThan(r0) // drew down reels
+    expect(s.linen).toBeLessThan(l0) // and linen
+    expect(r0 - s.reels).toBeCloseTo(s.folios, 4) // 1 reel per folio
+    expect(l0 - (s.linen ?? 0)).toBeCloseTo(s.folios, 4) // 1 linen per folio
+  })
+
+  it('the Exchange sells folios at a premium above reels', () => {
+    expect(COLONY.build.folioPrice).toBeGreaterThan(COLONY.build.reelPrice)
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 12
+    s.totalJobs = 4
+    s.buildings.push(mk('exchange', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 2 }))
+    s.folios = 50
+    s.reels = 0
+    s.components = 0
+    s.food = 0
+    s.treasury = 0
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 10)
+    expect(s.folios).toBeLessThan(50) // exported through the Exchange
+    expect(s.treasury).toBeGreaterThan(0) // earned the premium
+  })
+
+  it('a Folio House binds nothing without both reels and linen (stalls, never fails)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 12
+    s.totalJobs = 4
+    s.buildings.push(mk('folio', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 4 }))
+    s.reels = 50
+    s.linen = 0 // the second input is missing
+    s.folios = 0
+    for (let i = 0; i < 50; i++) stepBuild(s, sim.rng, 10)
+    expect(s.folios).toBe(0) // stalled
+    expect(s.reels).toBe(50) // nothing consumed
+  })
+
+  it('with no Folio House, folios stay at zero (inert)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 12
+    s.totalJobs = 4
+    s.reels = 50
+    s.linen = 50
+    s.folios = 0
+    for (let i = 0; i < 50; i++) stepBuild(s, sim.rng, 10)
+    expect(s.folios).toBe(0) // no bindery → no folios
+    expect(s.reels).toBe(50) // reels untouched by folio production
+  })
+})

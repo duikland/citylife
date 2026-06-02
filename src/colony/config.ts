@@ -544,6 +544,19 @@ export const COLONY = {
     prospSolvencyWeight: 0.15,
     prosperityImmigrationBonus: 0.2, // immigration lift = this × max(0, score - floor) while a Census Hall stands
     prosperityBonusFloor: 0.6, // no immigration lift below this prosperity
+    // Skybound Folios (spec 044): the colony's signature finished export. A staffed Folio House binds 1 reel + 1 linen into
+    // 1 folio, which the Exchange sells well above either input. A new stored good; inert with no Folio House.
+    matFolio: 18,
+    compFolio: 6,
+    crewFolio: 6,
+    folioCost: 2600,
+    folioWorkers: 4,
+    foliosPerDay: 3, // folios a fully-staffed Folio House binds per day (slow, exacting work)
+    folioPrice: 320, // $ per folio on the Exchange — well above reels (120) or linen
+    folioReserve: 5, // keep at least this many folios before any are exported
+    folioCapPerDay: 8, // folios an Exchange can ship per day
+    storeBaseFolios: 60, // base folio storage; raised by Storehouse Platforms (023)
+    storePerFolios: 60,
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,
