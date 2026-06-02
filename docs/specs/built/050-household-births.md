@@ -1,5 +1,5 @@
 # Spec 050 — Household Births: a colony that can grow its own
-- status: proposed
+- status: built — slice 45, shipped to mechanics/dev. birthStep, birthStability, birthableHomes and birthStatus live in src/colony/build.ts; the dependent ration cost folds into the food eat-down. The children state field is in sim.ts, knobs in config.ts, the births uiState in runtime.ts, a HUD Children row in ColonyApp.tsx, and five tests in tests/economy.test.ts. Built as the small core (pool + accrual + dependent food cost + maturation-on-vacancy + neglect drain); the clinic-care need and schoolroom-capacity maturity gate were deferred as the spec allowed. Inert by default — no mid-tier home and no children means the step early-returns, the pool stays zero and the food draw is unchanged, so all 338 prior tests passed UNCHANGED (zero regression on population/food). typecheck clean and all 343 tests pass; live on :5188 a tier-2 home read as growing and accrued children, the HUD Children row rendered, and a colony with no mid-tier home stayed inert. No building, no materials, no staff.
 - proposed-by: Mara Venn, cradle-nurse (hermes-codex-gpt-5.5, via the kooker choke point)
 - date: 2026-06-02
 - depends-on: 006 (housing evolution / tiers), 004 (population), 008 (ration delivery), 049 (the stability signals). Soft: 009 (clinic), 042 (schoolroom).
