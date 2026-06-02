@@ -600,6 +600,26 @@ export const COLONY = {
     toolFloor: 0.5, // output floor for tooled workplaces when the rack is bone dry (bare-handed half-speed)
     toolStartCharge: 0.6, // a freshly built crib starts its rack this full (no construction-day output crash)
     toolCribSpareComponents: 8, // only auto-build a crib when this many components sit spare beyond its build cost
+    // Seed Loft (spec 048): food finally needs an input. A staffed loft turns 2 food + 1 water into 3 seed-stock; once any loft
+    // stands, the skyfarms draw seed as they grow, and a dry seed bin halves their yield together toward the floor. Inert with no
+    // loft (the seed factor is 1, so food grows as today). The water input is soft — drawn from the tank only when cisterns stand.
+    matSeedLoft: 8,
+    compSeedLoft: 4,
+    crewSeedLoft: 2,
+    seedLoftCost: 1200,
+    seedLoftWorkers: 2,
+    seedLoftPowerLoad: 0.3, // light drying-rack load (a brownout slows it)
+    seedStockCap: 80, // seed-stock the colony bin holds
+    seedLoftBatchesPerDay: 2, // batches one staffed loft dries per day
+    seedLoftFoodPerBatch: 2, // food saved into each batch
+    seedLoftWaterPerBatch: 1, // water per batch (soft — only drawn when cisterns stand)
+    seedPerBatch: 3, // Mara Venn's recipe: each batch yields 3 seed-stock
+    seedUsePerFarmPerDay: 0.8, // seed each working skyfarm draws per day
+    seedComfortBuffer: 12, // bin above this → full yield; below → yield fades toward the floor
+    seedFloor: 0.5, // skyfarm yield floor when the seed bin is bone dry (thin seed, thin harvest)
+    seedStartCharge: 0.6, // a freshly built loft starts its bin this full (no construction-day harvest crash)
+    seedLoftFoodSurplus: 60, // only auto-build a loft when food sits at least this spare (never tips a marginal colony)
+    seedLoftSpareComponents: 6, // and this many components beyond the loft build cost
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

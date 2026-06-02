@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft'
 
 export interface Parcel {
   id: number
@@ -101,6 +101,7 @@ const FOLIO_COLOR = 0xb8862b // gilt-gold — the Folio House (binds the signatu
 const TURBINE_COLOR = 0x8fb8d0 // pale steel-blue — the Wind-Shear Turbine Mast (power that scales with the colony)
 const CISTERN_COLOR = 0x3f7fb0 // deep cistern-blue — the Mist Condenser Cistern (water made real)
 const TOOLCRIB_COLOR = 0xb8823c // worked-bronze — the Tool Crib (components become working tool-kits)
+const SEEDLOFT_COLOR = 0x7fae57 // seed-green — the Seed Loft (saved harvest becomes seed-stock)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -127,6 +128,7 @@ export function initBuild(state: ColonyState): void {
   state.folios = 0 // spec 044 — skybound folios, bound by Folio Houses
   state.water = 0 // spec 046 — no stored water until a cistern stands
   state.tools = 0 // spec 047 — no tool-kits until a Tool Crib stands
+  state.seed = 0 // spec 048 — no seed-stock until a Seed Loft stands
   state.standing = COLONY.build.standingStart // spec 032 — neutral Kookerverse Standing
   state.request = null // spec 032 — no open Civic Request
   state.requestCooldown = 0 // spec 032
@@ -430,6 +432,10 @@ function designToolCrib(state: ColonyState): Artifact {
   // Spec 047 — Tool Crib; a staffed bench that turns components into tool-kits for the whole extraction-and-production base.
   return { id: state.buildIds++, kind: 'toolcrib', color: TOOLCRIB_COLOR, height: 0.7, residents: 0, jobs: COLONY.build.toolCribWorkers, powerLoad: COLONY.build.toolCribPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.toolCribCost, materialsCost: COLONY.build.matToolCrib, crew: COLONY.build.crewToolCrib, materialsGen: 0, componentsCost: COLONY.build.compToolCrib }
 }
+function designSeedLoft(state: ColonyState): Artifact {
+  // Spec 048 — Seed Loft; a staffed loft that dries saved harvest (food + water) into seed-stock for the skyfarms.
+  return { id: state.buildIds++, kind: 'seedloft', color: SEEDLOFT_COLOR, height: 0.7, residents: 0, jobs: COLONY.build.seedLoftWorkers, powerLoad: COLONY.build.seedLoftPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.seedLoftCost, materialsCost: COLONY.build.matSeedLoft, crew: COLONY.build.crewSeedLoft, materialsGen: 0, componentsCost: COLONY.build.compSeedLoft }
+}
 
 /** Spec 045 — steady power the built, staffed Turbine Masts add to the grid (harvests wind day + night; understaffing cuts it). */
 export function turbinePower(state: ColonyState): number {
@@ -534,6 +540,53 @@ function toolStep(state: ColonyState, dtMin: number): void {
   const draw = tooledWorkplaceCount(state) * COLONY.build.toolUsePerWorkplacePerDay * staffing * frac
   tools -= draw
   state.tools = Math.max(0, Math.min(cap, tools))
+}
+
+/** Spec 048 — flat capacity of the colony's seed bin (the same whatever the loft count; only matters once a loft stands). */
+export function seedStockCap(_state: ColonyState): number {
+  return COLONY.build.seedStockCap
+}
+
+/** Spec 048 — seed-supply factor: 1 with no Seed Loft (food grows free as today); once a loft stands it scales with the bin —
+ *  full → 1, dry → the floor — so a drained seed bin drops every skyfarm's yield together. */
+export function seedSupplyFactor(state: ColonyState): number {
+  if (countKind(state, 'seedloft') === 0) return 1 // inert — no seed economy until the colony keeps its own seed
+  const t = Math.min(1, (state.seed ?? 0) / COLONY.build.seedComfortBuffer)
+  return COLONY.build.seedFloor + (1 - COLONY.build.seedFloor) * t
+}
+
+/** Spec 048 — Seed readout for the HUD: the bin, its capacity, the loft count, and whether the seed is running short. */
+export function seedStatus(state: ColonyState): { stored: number; cap: number; lofts: number; short: boolean } {
+  const lofts = countKind(state, 'seedloft')
+  return { stored: Math.round(state.seed ?? 0), cap: seedStockCap(state), lofts, short: lofts > 0 && (state.seed ?? 0) < COLONY.build.seedComfortBuffer }
+}
+
+/** Spec 048 — dry seed each step: staffed lofts save food (+ water when cisterns stand) into the bin; skyfarms draw it down. */
+function seedStep(state: ColonyState, dtMin: number): void {
+  if (countKind(state, 'seedloft') === 0) return // no loft → food grows as it always has (inert; the seed factor stays 1)
+  const frac = dtMin / (24 * 60)
+  const lofts = state.buildings.filter((b) => b.artifact.kind === 'seedloft').length
+  const staffing = state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0
+  const cap = seedStockCap(state)
+  let seed = state.seed ?? 0
+  // Production: each staffed, powered loft dries up to N batches/day of (2 food + 1 water) → 3 seed, never overfilling the bin.
+  const headroom = Math.max(0, cap - seed)
+  const wantBatches = lofts * COLONY.build.seedLoftBatchesPerDay * staffing * powerFactor(state) * frac // a brownout slows the racks
+  const cisterns = countKind(state, 'cistern') > 0 // soft water coupling: only draw the tank once stored water is real (046)
+  const byFood = state.food / COLONY.build.seedLoftFoodPerBatch
+  const byWater = cisterns ? (state.water ?? 0) / COLONY.build.seedLoftWaterPerBatch : Infinity
+  const byHeadroom = headroom / COLONY.build.seedPerBatch
+  const batches = Math.max(0, Math.min(wantBatches, byFood, byWater, byHeadroom))
+  if (batches > 0) {
+    state.food = Math.max(0, state.food - batches * COLONY.build.seedLoftFoodPerBatch)
+    if (cisterns) state.water = Math.max(0, (state.water ?? 0) - batches * COLONY.build.seedLoftWaterPerBatch)
+    seed += batches * COLONY.build.seedPerBatch
+  }
+  // Demand: every working skyfarm draws seed as it grows (clamped to the bin on hand).
+  const farms = state.buildings.filter((b) => b.artifact.kind === 'greenhouse' && !b.incident).length
+  const draw = farms * COLONY.build.seedUsePerFarmPerDay * staffing * frac
+  seed -= draw
+  state.seed = Math.max(0, Math.min(cap, seed))
 }
 
 export function wateredFraction(state: ColonyState): number {
@@ -842,6 +895,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 16 && !inBrownout(state) && countKind(state, 'habitat') > 0 && countKind(state, 'cistern') < Math.max(1, Math.ceil(countKind(state, 'habitat') / 60)) && state.components >= COLONY.build.compCistern) return designCistern(state)
   // Spec 047 — once an extraction base exists (a mine + a workshop) and components sit spare, raise a Tool Crib (one per ~6 tooled workplaces) to keep the hands in tools.
   if (state.colonists > 12 && !inBrownout(state) && countKind(state, 'mine') > 0 && countKind(state, 'workshop') > 0 && state.components >= COLONY.build.compToolCrib + COLONY.build.toolCribSpareComponents && countKind(state, 'toolcrib') < Math.max(1, Math.ceil(tooledWorkplaceCount(state) / 6))) return designToolCrib(state)
+  // Spec 048 — once the colony farms at scale and food sits comfortably spare, raise a Seed Loft (one per ~6 skyfarms) so the harvest stays seeded; the surplus gate keeps it from ever tipping a food-marginal colony.
+  if (state.colonists > 12 && !inBrownout(state) && countKind(state, 'greenhouse') > 0 && state.food > COLONY.build.seedLoftFoodSurplus && state.components >= COLONY.build.compSeedLoft + COLONY.build.seedLoftSpareComponents && countKind(state, 'seedloft') < Math.max(1, Math.ceil(countKind(state, 'greenhouse') / 6))) return designSeedLoft(state)
   // Spec 036 — once trade is established (an Exchange stands) and the bank is flush, raise an Import Office to buy shortages.
   if (state.colonists > 12 && countKind(state, 'import') < 1 && countKind(state, 'exchange') > 0 && state.components >= COLONY.build.compImportOffice && state.treasury > COLONY.build.importOfficeCost) return designImportOffice(state)
   // Spec 039 — a mature colony raises a Comptroller's Office so the treasury can ride a hard stretch on managed debt.
@@ -942,7 +997,7 @@ export function claimLot(state: ColonyState, rng: RNG): { x: number; y: number }
 /** Spec 038 — the colony's labour sectors; every workplace kind belongs to exactly one. */
 export type Sector = 'food' | 'services' | 'industry' | 'logistics' | 'safety' | 'trade' | 'civic'
 const SECTOR_OF: Record<BuildKind, Sector> = {
-  greenhouse: 'food', depot: 'food', water: 'food', cistern: 'food',
+  greenhouse: 'food', depot: 'food', water: 'food', cistern: 'food', seedloft: 'food',
   clinic: 'services', theatre: 'services', market: 'services', shrine: 'services', survey: 'services', commercial: 'services', school: 'services',
   mine: 'industry', workshop: 'industry', foundry: 'industry', skimmer: 'industry', weavery: 'industry', industrial: 'industry', folio: 'industry', toolcrib: 'industry',
   transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics', turbine: 'logistics',
@@ -1992,7 +2047,7 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
 /** Spec 007 — staffed greenhouses grow food (boosted near a Water Hub); colonists eat a little each day. */
 function foodStep(state: ColonyState, dtMin: number): void {
   const day = 24 * 60
-  const staffing = sectorStaffing(state, 'food') * healthFactor(state) * powerFactor(state) * transitFactor(state) * feverFactor(state) * orderFactor(state) * toolSupplyFactor(state) // spec 009/017/021/026/028/038/047 — sick, brownout, congested, fevered, restless, sector-deprioritised or tool-starved greenhouses grow less
+  const staffing = sectorStaffing(state, 'food') * healthFactor(state) * powerFactor(state) * transitFactor(state) * feverFactor(state) * orderFactor(state) * toolSupplyFactor(state) * seedSupplyFactor(state) // spec 009/017/021/026/028/038/047/048 — sick, brownout, congested, fevered, restless, sector-deprioritised, tool-starved or seed-starved greenhouses grow less
   let grown = 0
   for (const b of state.buildings) {
     if (b.artifact.kind !== 'greenhouse' || b.incident) continue // spec 024 — a blighted greenhouse grows nothing
@@ -2153,6 +2208,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   produceFolios(state, dtMin) // spec 044 — bind reels + linen into skybound folios (the top-of-chain export)
   waterStep(state, dtMin) // spec 046 — condense + draw stored water (runs before housing/immigration read wateredFraction)
   serviceUpkeep(state, dtMin)
+  seedStep(state, dtMin) // spec 048 — dry food (+ water) into seed-stock, then let skyfarms draw it, before foodStep reads seedSupplyFactor
   foodStep(state, dtMin)
   housingStep(state, dtMin)
   immigration(state, dtMin)
@@ -2179,6 +2235,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
       }
       if (a.kind === 'cistern') state.water = Math.min(waterTankCap(state), (state.water ?? 0) + COLONY.build.cisternTankCap * COLONY.build.cisternStartCharge) // spec 046 — a freshly built cistern starts its tank charged (no construction-day water crash)
       if (a.kind === 'toolcrib') state.tools = Math.min(toolStockCap(state), (state.tools ?? 0) + COLONY.build.toolStockCap * COLONY.build.toolStartCharge) // spec 047 — a freshly built crib starts its rack charged (no construction-day output crash)
+      if (a.kind === 'seedloft') state.seed = Math.min(seedStockCap(state), (state.seed ?? 0) + COLONY.build.seedStockCap * COLONY.build.seedStartCharge) // spec 048 — a freshly built loft starts its bin charged (no construction-day harvest crash)
       state.jobs.splice(i, 1)
     }
   }

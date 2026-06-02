@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -3201,5 +3201,98 @@ describe('Spec 047 — The Tool Crib: bare hands do not mine forever', () => {
     expect(toolSupplyFactor(s)).toBe(1) // never industrialised tools → no penalty ever
     expect(s.tools).toBe(0) // no crib → no tool-kits ever accrue
     expect(toolStatus(s).cribs).toBe(0)
+  })
+})
+
+describe('Spec 048 — The Seed Loft: food should not grow from bare deck-plating', () => {
+  const mk = (kind: 'seedloft' | 'greenhouse' | 'cistern', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('food is full yield with no loft, and scales with the bin once a loft stands', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    expect(seedSupplyFactor(s)).toBe(1) // no loft → inert, food grows free as today
+    s.buildings.push(mk('seedloft', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 2 }))
+    s.seed = 0 // bone dry bin
+    expect(seedSupplyFactor(s)).toBeCloseTo(COLONY.build.seedFloor, 5) // dry → the half-harvest floor
+    s.seed = COLONY.build.seedComfortBuffer // a full buffer
+    expect(seedSupplyFactor(s)).toBeCloseTo(1, 5) // healthy → no penalty (exactly as today)
+  })
+
+  it('a staffed loft dries food into seed-stock, capped at the bin', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 12
+    s.totalJobs = 4
+    s.powerGen = 100 // keep the grid up so the racks run
+    s.power.batteryWh = s.power.batteryCapWh
+    s.buildings.push(mk('seedloft', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 2 }))
+    s.seed = 0
+    s.food = 300 // plenty of harvest to save (no skyfarms → no seed demand)
+    for (let i = 0; i < 600; i++) stepBuild(s, sim.rng, 60)
+    expect(s.seed).toBeGreaterThan(0) // dried food into seed-stock
+    expect(s.seed).toBeLessThanOrEqual(seedStockCap(s)) // never overfills the bin
+    expect(s.seed).toBeGreaterThan(COLONY.build.seedStockCap * 0.8) // a long run fills it near the cap
+    expect(s.food).toBeLessThan(300) // it spent food to do it
+    expect(seedStatus(s).lofts).toBe(1)
+  })
+
+  it('a freshly built loft starts its bin charged (no construction-day harvest crash)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    s.colonists = 12
+    s.totalJobs = 4
+    s.seed = 0
+    const a = Object.assign({ id: 1, kind: 'seedloft', color: 0, height: 1, residents: 0, jobs: 2, powerLoad: 0, powerGen: 0, buildTimeMin: 60, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 })
+    s.jobs.push({ id: 999, x: lx + 2, y: ly, artifact: a, progress: 0, path: [] })
+    stepBuild(s, sim.rng, 60) // 60 min build time → completes this step
+    expect(seedStatus(s).lofts).toBe(1) // the loft now stands
+    expect(s.seed).toBeCloseTo(COLONY.build.seedStockCap * COLONY.build.seedStartCharge, 5) // bin starts ~60% charged
+  })
+
+  it('a dry bin cuts skyfarm yield toward the floor; a full bin leaves it unchanged', () => {
+    const runFarms = (mode: 'noloft' | 'full' | 'dry') => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+      for (let g = 0; g < 20; g++) s.buildings.push(mk('greenhouse', lx + (g % 10), ly + 4 + Math.floor(g / 10), { jobs: COLONY.build.greenhouseWorkers })) // 20 skyfarms, none near a Water Hub (uniform boost = 1)
+      if (mode !== 'noloft') s.buildings.push(mk('seedloft', lx, ly, { jobs: 2 }))
+      s.colonists = 44 // labour saturates the food sector at full in all three modes
+      s.totalJobs = 42
+      s.powerGen = 100 // no brownout
+      s.power.batteryWh = s.power.batteryCapWh
+      s.food = 0
+      if (mode === 'full') s.seed = seedStockCap(s) // bin full → seed factor 1 (the loft only tops off the small amount the farms draw)
+      if (mode === 'dry') s.seed = 0 // bin empty → one loft cannot out-dry twenty farms, so it stays at the floor
+      for (let i = 0; i < 6; i++) stepBuild(s, sim.rng, 60)
+      return s.food
+    }
+    const base = runFarms('noloft'), full = runFarms('full'), dry = runFarms('dry')
+    expect(base).toBeGreaterThan(0)
+    expect(full).toBeGreaterThan(base * 0.85) // healthy seed → harvest barely below no-loft (only the loft's small fixed food draw)
+    expect(dry).toBeLessThan(base * 0.6) // a dry bin drags the harvest down toward the half floor
+    expect(dry).toBeGreaterThan(0) // but never zero — the floor keeps the loop recoverable
+    expect(full).toBeGreaterThan(dry) // and a full bin always out-yields a dry one
+  })
+
+  it('with no loft, seed-stock never accrues and the factor stays 1 (inert)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    for (let g = 0; g < 3; g++) s.buildings.push(mk('greenhouse', lx + g, ly + 4, { jobs: COLONY.build.greenhouseWorkers }))
+    s.colonists = 20
+    s.totalJobs = 6
+    s.powerGen = 100
+    s.food = 50
+    s.seed = 0
+    for (let i = 0; i < 30; i++) stepBuild(s, sim.rng, 60)
+    expect(seedSupplyFactor(s)).toBe(1) // never kept its own seed → no penalty ever
+    expect(s.seed).toBe(0) // no loft → no seed-stock ever accrues
+    expect(seedStatus(s).lofts).toBe(0)
   })
 })
