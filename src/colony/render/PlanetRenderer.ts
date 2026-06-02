@@ -53,6 +53,9 @@ export class PlanetRenderer {
   private porterCartMesh!: THREE.InstancedMesh
   private porterCarts: { x: number; y: number; tx: number; ty: number; spd: number }[] = []
   private lastPorterT = 0
+  // A head so the ambient figures read as little PEOPLE, not pills. The visible crowd is capped to the real colonist count
+  // (they are the colony's actual people, not a decorative droid army) — the named-Hermes-citizen binding is the next step.
+  private pedHeadMesh!: THREE.InstancedMesh
   private bldgMesh!: THREE.InstancedMesh
   private crewMesh!: THREE.InstancedMesh
   private streetPostMesh!: THREE.InstancedMesh
@@ -541,6 +544,14 @@ export class PlanetRenderer {
     this.pedMesh.castShadow = true
     this.pedMesh.frustumCulled = false
     this.scene.add(this.pedMesh)
+    // a head atop each body so the figures read as people (same instance transform, head baked above the body)
+    const pedHeadGeo = new THREE.SphereGeometry(0.1, 8, 6)
+    pedHeadGeo.translate(0, 0.72, 0)
+    this.pedHeadMesh = new THREE.InstancedMesh(pedHeadGeo, new THREE.MeshStandardMaterial({ color: 0xe0b48a, roughness: 0.85 }), 28)
+    this.pedHeadMesh.count = 0
+    this.pedHeadMesh.castShadow = true
+    this.pedHeadMesh.frustumCulled = false
+    this.scene.add(this.pedHeadMesh)
     this.initPedestrians()
 
     // Spec 073 — goods piled at the Porter Sheds (crates + sacks), and the porter handcarts on the roads.
@@ -1110,7 +1121,8 @@ export class PlanetRenderer {
     return { x: px, y: py }
   }
 
-  /** Seed ~16 wandering pedestrians on land within walking distance of the landing site. */
+  /** Seed a POOL of figures on land near the landing; how many are actually shown tracks the real colonist count (see
+   *  updatePedestrians), so the crowd is the colony's own people — not a fixed decorative droid army. */
   private initPedestrians() {
     const t = this.sim.state.terrain
     const lx = t.landing.x, ly = t.landing.y
@@ -1118,7 +1130,7 @@ export class PlanetRenderer {
     const col = new THREE.Color()
     this.peds = []
     let guard = 0
-    while (this.peds.length < 16 && guard++ < 500) {
+    while (this.peds.length < 28 && guard++ < 800) {
       const a = Math.random() * Math.PI * 2
       const r = 2 + Math.random() * 14
       const x = lx + Math.cos(a) * r
@@ -1134,7 +1146,8 @@ export class PlanetRenderer {
     if (this.pedMesh.instanceColor) this.pedMesh.instanceColor.needsUpdate = true
   }
 
-  /** Per-frame: stroll each pedestrian toward a nearby land target, picking a new one on arrival. */
+  /** Per-frame: stroll each visible pedestrian toward a nearby land target. The visible count tracks the REAL colonist
+   *  population (capped to the pool), so the streets are as busy as the colony actually is — these are its people. */
   private updatePedestrians() {
     if (!this.pedMesh || this.peds.length === 0) return
     const t = this.sim.state.terrain
@@ -1142,7 +1155,8 @@ export class PlanetRenderer {
     const now = performance.now()
     const dt = this.lastPedT ? Math.min(0.05, (now - this.lastPedT) / 1000) : 1 / 60
     this.lastPedT = now
-    for (let i = 0; i < this.peds.length; i++) {
+    const want = Math.max(0, Math.min(this.peds.length, Math.round(this.sim.state.colonists))) // one figure per real colonist
+    for (let i = 0; i < want; i++) {
       const p = this.peds[i]!
       let dx = p.tx - p.x, dy = p.ty - p.y
       let d = Math.hypot(dx, dy)
@@ -1168,8 +1182,12 @@ export class PlanetRenderer {
       this.dummy.scale.set(1, 1, 1)
       this.dummy.updateMatrix()
       this.pedMesh.setMatrixAt(i, this.dummy.matrix)
+      this.pedHeadMesh.setMatrixAt(i, this.dummy.matrix) // the head rides the same transform, baked above the body
     }
+    this.pedMesh.count = want
     this.pedMesh.instanceMatrix.needsUpdate = true
+    this.pedHeadMesh.count = want
+    this.pedHeadMesh.instanceMatrix.needsUpdate = true
   }
 
   /** Spec 073 — the Porter Sheds made visible: goods pile up as crates (materials) + sacks (food) beside each shed, growing and

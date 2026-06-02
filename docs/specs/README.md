@@ -90,6 +90,18 @@ turn any of these into a spec; Review & Build can implement it):
   lot *inside* the settlement, placed by the planner); **L4** building massing on the lots. **Only the City
   Planner organises land**, compactly, on good ground. This is the priority spatial backlog.
 
+- **The people ARE the citizens** (`docs/research/2026-06-02-the-people-are-the-citizens.md`). The figures on
+  the streets were anonymous decorative droids, and more of them than there were colonists. They should be the
+  colony's real, named Hermes citizens, living visible lives — the same voices that *design* the world. Done:
+  the visible crowd now tracks the real colonist count and the figures have heads (read as people). Priority
+  people-system backlog, in order: **P2** name each figure from the roster (founders + settlers + Hermes
+  proposers) — figure N is *Mara Venn*, clickable to her card; **P3** new settlers pitch a **tent** (T0) on
+  their lot that grows to a house, unique tent templates ("starting off in a tent"); **P4** agency — colonists
+  walk to their lot, pitch the tent, take up work, with a first job loop (fell trees → forest thins (scarcity) →
+  replant → needs seeds, spec 048) and needs (rest/food/joy) gating output, the RimWorld/Dwarf-Fortress model;
+  **P5** per-USER persistence — save the colony (people, homes, forest, stores) against the user account via the
+  kooker backend, not just localStorage, so each operator's world is theirs and endures.
+
 ## Spec queue location
 
 The canonical queue lives **outside the repo** at `D:\infra\projects\citylife-specs\{proposed,built}\`
