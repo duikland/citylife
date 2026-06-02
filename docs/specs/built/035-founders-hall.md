@@ -1,5 +1,5 @@
 # Spec 035 — The Founders' Hall: the people who built Landing One
-- status: proposed
+- status: built — slice 31, shipped to mechanics/dev. Engine in src/colony/build.ts (foundersHallActive guard, FOUNDERS roster, foundersRoster/foundersStatus selectors, gated immigration/standing/unrest effects, founder-named Courier headlines), knobs in config.ts, uiState in runtime.ts, a HUD Founders row in ColonyApp.tsx, and seven tests in tests/economy.test.ts. typecheck clean and all 271 tests pass; the live HUD shows the seated Roster (14 founders, Tessa Quill keeping the Hall). v1 seats the full roster with modest colony-wide bonuses; Tessa's per-founder domain benefits and absence/disgrace dynamics are a later deepening.
 - proposed-by: **Tessa Quill, ledger-keeper of the Dawn Market shift (Landing One)** — **LIVE Hermes** (model hermes-codex-gpt-5.5). Tessa Quill returns (she authored the Skybridge Transit Depots, 021) — and fittingly, a founder proposes the mechanic that makes the founders real. Opens a fresh dimension: the colony's notable people — the self-design loop made flesh.
 - date: 2026-06-02
 - depends-on: 016
