@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar' | 'hallofnames' | 'netdock' | 'sanitation'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar' | 'hallofnames' | 'netdock' | 'sanitation' | 'watchnook'
 
 export interface Parcel {
   id: number
@@ -109,6 +109,7 @@ const CALENDAR_COLOR = 0xd9c089 // parchment-gold — the Calendar Office (the c
 const HALLOFNAMES_COLOR = 0x9a8fb0 // dusk-violet — the Hall of Names (the colony remembers its elders)
 const NETDOCK_COLOR = 0x4fb0a6 // cloudsea-teal — the Cloudsea Net Dock (nets rimfish, the colony's second food)
 const SANITATION_COLOR = 0x6f8f6a // drain-green — the Sanitation Post (clears household waste before it sickens the colony)
+const WATCHNOOK_COLOR = 0xb0a04a // lamp-brass — the Watch Nook (keeps petty theft off a rich colony's coffers)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -473,6 +474,10 @@ function designNetDock(state: ColonyState): Artifact {
 function designSanitationPost(state: ColonyState): Artifact {
   // Spec 058 — Sanitation Post; staffed drain-keepers who clear household waste before it sickens the colony.
   return { id: state.buildIds++, kind: 'sanitation', color: SANITATION_COLOR, height: 0.7, residents: 0, jobs: COLONY.build.sanitationWorkers, powerLoad: COLONY.build.sanitationPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.sanitationCost, materialsCost: COLONY.build.matSanitation, crew: COLONY.build.crewSanitation, materialsGen: 0, componentsCost: COLONY.build.compSanitation }
+}
+function designWatchNook(state: ColonyState): Artifact {
+  // Spec 059 — Watch Nook; staffed watchkeepers whose lamps keep petty theft off a rich colony's coffers.
+  return { id: state.buildIds++, kind: 'watchnook', color: WATCHNOOK_COLOR, height: 0.7, residents: 0, jobs: COLONY.build.watchNookWorkers, powerLoad: COLONY.build.watchNookPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.watchNookCost, materialsCost: COLONY.build.matWatchNook, crew: COLONY.build.crewWatchNook, materialsGen: 0, componentsCost: COLONY.build.compWatchNook }
 }
 
 /** Spec 045 — steady power the built, staffed Turbine Masts add to the grid (harvests wind day + night; understaffing cuts it). */
@@ -945,6 +950,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 16 && !inBrownout(state) && countKind(state, 'greenhouse') > 0 && countKind(state, 'netdock') < Math.max(1, Math.ceil(countKind(state, 'greenhouse') / 3)) && state.components >= COLONY.build.compNetDock && state.materials >= COLONY.build.matNetDock + COLONY.build.rimfishSurplus) return designNetDock(state)
   // Spec 058 — once the homes are many and the waste is climbing toward the harmless line, raise a Sanitation Post (one per ~wasteOccupancyRef homes) to mind the drains.
   if (state.colonists > 14 && (state.waste ?? 0) > COLONY.build.wasteHarmlessBelow * 0.7 && countKind(state, 'sanitation') < Math.max(1, Math.ceil(countKind(state, 'habitat') / COLONY.build.wasteOccupancyRef)) && state.components >= COLONY.build.compSanitation && state.materials >= COLONY.build.matSanitation) return designSanitationPost(state)
+  // Spec 059 — a rich, populous colony with coffers worth guarding raises a Watch Nook (up to two) to stop petty theft of the treasury.
+  if (state.colonists >= COLONY.build.theftPopFloor && state.treasury > COLONY.build.theftTreasuryFloor * 1.2 && countKind(state, 'watchnook') < 2 && state.components >= COLONY.build.compWatchNook && state.materials >= COLONY.build.matWatchNook) return designWatchNook(state)
   // Spec 036 — once trade is established (an Exchange stands) and the bank is flush, raise an Import Office to buy shortages.
   if (state.colonists > 12 && countKind(state, 'import') < 1 && countKind(state, 'exchange') > 0 && state.components >= COLONY.build.compImportOffice && state.treasury > COLONY.build.importOfficeCost) return designImportOffice(state)
   // Spec 039 — a mature colony raises a Comptroller's Office so the treasury can ride a hard stretch on managed debt.
@@ -1049,7 +1056,7 @@ const SECTOR_OF: Record<BuildKind, Sector> = {
   clinic: 'services', theatre: 'services', market: 'services', shrine: 'services', survey: 'services', commercial: 'services', school: 'services', sanitation: 'services',
   mine: 'industry', workshop: 'industry', foundry: 'industry', skimmer: 'industry', weavery: 'industry', industrial: 'industry', folio: 'industry', toolcrib: 'industry',
   transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics', turbine: 'logistics', surveycamp: 'logistics',
-  bellhouse: 'safety', feverwatch: 'safety', ward: 'safety', stormwatch: 'safety', scrubber: 'safety',
+  bellhouse: 'safety', feverwatch: 'safety', ward: 'safety', stormwatch: 'safety', scrubber: 'safety', watchnook: 'safety',
   exchange: 'trade', import: 'trade',
   levy: 'civic', payoffice: 'civic', liaison: 'civic', academy: 'civic', mast: 'civic', hall: 'civic', feast: 'civic', comptroller: 'civic', roster: 'civic', census: 'civic', habitat: 'civic', calendar: 'civic', hallofnames: 'civic',
 }
@@ -1888,6 +1895,38 @@ export function wasteStatus(state: ColonyState): { level: number; posts: number;
   return { level: Math.round(w * 100), posts: countKind(state, 'sanitation'), harmful: w >= COLONY.build.wasteHarmlessBelow, fevered: w >= COLONY.build.wasteFeverThreshold }
 }
 
+/** Spec 059 — how many Watch Nooks are effectively guarding (built and the colony has labour to keep them); two ends theft. */
+function staffedWatchNooks(state: ColonyState): number {
+  const staffed = state.totalJobs > 0 ? state.colonists / state.totalJobs : 0
+  return staffed > 0 ? countKind(state, 'watchnook') : 0
+}
+
+/** Spec 059 — true when petty theft is currently active: the colony is both rich and populous, not in a crisis, and not fully guarded. */
+function theftActive(state: ColonyState): boolean {
+  if ((state.treasury ?? 0) <= COLONY.build.theftTreasuryFloor || state.colonists < COLONY.build.theftPopFloor) return false // poor or small → nothing worth taking
+  if (inBrownout(state) || frontStatus(state).incoming || (state.food ?? 0) <= 0) return false // a storm/shortage — thieves lie low
+  return 1 - COLONY.build.watchSuppressionPerPost * staffedWatchNooks(state) > 0
+}
+
+/** Spec 059 — Security readout for the HUD: whether theft is active, the small daily loss, and the Watch Nook count. */
+export function securityStatus(state: ColonyState): { active: boolean; lossPerDay: number; nooks: number; guarded: boolean } {
+  const nooks = countKind(state, 'watchnook')
+  const active = theftActive(state)
+  const watchFactor = Math.max(0, 1 - COLONY.build.watchSuppressionPerPost * staffedWatchNooks(state))
+  const lossPerDay = active ? Math.min((state.treasury ?? 0) * COLONY.build.theftRatePerDay, COLONY.build.theftCapPerDay) * watchFactor : 0
+  return { active, lossPerDay: Math.round(lossPerDay * 100) / 100, nooks, guarded: staffedWatchNooks(state) > 0 }
+}
+
+/** Spec 059 — petty theft skims a slow, capped trickle off the treasury of a rich, populous, unguarded colony. Inert below the
+ *  floors and in any crisis; a staffed Watch Nook cuts it (two end it); and it is clamped so it can never push the treasury below 0. */
+function theftStep(state: ColonyState, dtMin: number): void {
+  if (!theftActive(state)) return
+  const watchFactor = Math.max(0, 1 - COLONY.build.watchSuppressionPerPost * staffedWatchNooks(state))
+  const frac = dtMin / (24 * 60)
+  const theft = Math.min((state.treasury ?? 0) * COLONY.build.theftRatePerDay, COLONY.build.theftCapPerDay) * watchFactor * frac
+  state.treasury = Math.max(0, (state.treasury ?? 0) - theft) // never creates debt
+}
+
 /** Spec 058 — household waste each step: occupied homes make a slow trickle (more at higher tiers and in warm seasons), staffed
  *  Sanitation Posts clear it, and unhandled filth above the fever line gently feeds the outbreak. Capped to [0,1]; inert with no
  *  homes, and harmless (no effect anywhere) below wasteHarmlessBelow — so a young colony and short test runs are untouched. */
@@ -2581,6 +2620,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   calendarStep(state) // spec 053 — mark the turning of the colony's years; a staffed Calendar Office gives a Founders' Day lift
   ledgerStep(state) // spec 055 — on the year-turn, a long-settled colony sees a gentle, capped natural turnover (inert below the onset span)
   tradeStep(state, dtMin)
+  theftStep(state, dtMin) // spec 059 — a rich, populous, unguarded colony bleeds a slow, capped trickle of treasury to petty theft (inert below the floors and in any crisis)
   importStep(state, dtMin) // spec 036 — the buying side: spend treasury to land the order good (capped by storage headroom below)
   clampStorage(state) // spec 023 — finite storage: production past a cap is lost (after all goods are produced/sold)
   for (let i = state.jobs.length - 1; i >= 0; i--) {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, birthStatus, effectiveBuildRadius, footprintStatus, veinFactor, veinStatus, calendarStatus, calendarStep, seasonOf, seasonFactor, seasonStatus, solarSeasonOf, solarSeasonFactor, ledgerStep, ledgerStatus, rimfishStatus, wasteStep, wasteDesirabilityFactor, wasteStatus, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, birthStatus, effectiveBuildRadius, footprintStatus, veinFactor, veinStatus, calendarStatus, calendarStep, seasonOf, seasonFactor, seasonStatus, solarSeasonOf, solarSeasonFactor, ledgerStep, ledgerStatus, rimfishStatus, wasteStep, wasteDesirabilityFactor, wasteStatus, securityStatus, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -4109,5 +4109,88 @@ describe('Spec 058 — Household Waste: a colony that does not handle its filth 
     expect(s.waste).toBeLessThanOrEqual(1)
     expect(s.waste).toBeGreaterThanOrEqual(0)
     expect(s.outbreak ?? 0).toBeLessThanOrEqual(1) // the fever it breeds is bounded
+  })
+})
+
+describe('Spec 059 — The Watch Nook: a rich colony keeps honest lamps burning', () => {
+  const mk = (kind: 'watchnook', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('a poor or small colony loses nothing to theft (inert below the floors)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.food = 100; s.powerGen = 100; s.power.batteryWh = s.power.batteryCapWh
+    s.colonists = 30; s.treasury = 400 // rich enough in people but the coffers are below the floor
+    expect(securityStatus(s).active).toBe(false)
+    s.colonists = 10; s.treasury = 1000 // rich coffers but too few people to tempt theft
+    expect(securityStatus(s).active).toBe(false)
+  })
+
+  it('a rich, populous, unguarded colony bleeds a little treasury over time', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 30
+    s.treasury = 1000
+    s.food = 100
+    s.powerGen = 100
+    s.power.batteryWh = s.power.batteryCapWh
+    s.unrest = 0
+    expect(securityStatus(s).active).toBe(true)
+    const t0 = s.treasury
+    for (let i = 0; i < 200; i++) stepBuild(s, sim.rng, 60)
+    expect(s.treasury).toBeLessThan(t0) // skimmed by petty theft
+  })
+
+  it('theft can never push the treasury below zero (never creates debt)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 30
+    s.treasury = 501 // just over the floor
+    s.food = 100
+    s.powerGen = 100
+    s.power.batteryWh = s.power.batteryCapWh
+    s.unrest = 0
+    for (let i = 0; i < 2000; i++) stepBuild(s, sim.rng, 60)
+    expect(s.treasury).toBeGreaterThanOrEqual(0) // theft never makes debt
+    expect(s.treasury).toBeLessThanOrEqual(501) // ...it only ever took coin
+  })
+
+  it('a staffed Watch Nook cuts theft, and two stop it entirely', () => {
+    const stolen = (nooks: number) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+      s.colonists = 30
+      s.totalJobs = 4 // staffed
+      s.treasury = 1000
+      s.food = 100
+      s.powerGen = 100
+      s.power.batteryWh = s.power.batteryCapWh
+      s.unrest = 0
+      for (let n = 0; n < nooks; n++) s.buildings.push(mk('watchnook', lx + n, ly, { jobs: 2 }))
+      const t0 = s.treasury
+      for (let i = 0; i < 300; i++) stepBuild(s, sim.rng, 60)
+      return t0 - s.treasury
+    }
+    expect(stolen(0)).toBeGreaterThan(stolen(1)) // one Nook cuts the bleed
+    expect(stolen(2)).toBe(0) // two stop it entirely
+  })
+
+  it('thieves lie low in a crisis — a shortage pauses theft', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 30
+    s.treasury = 1000
+    s.powerGen = 100
+    s.power.batteryWh = s.power.batteryCapWh
+    s.unrest = 0
+    s.food = 0 // an empty larder — the colony is watching the stores, not the coffers
+    expect(securityStatus(s).active).toBe(false)
+    s.food = 100 // larder restored
+    expect(securityStatus(s).active).toBe(true) // ...and the petty theft resumes
   })
 })

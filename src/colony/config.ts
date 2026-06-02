@@ -743,6 +743,19 @@ export const COLONY = {
     wasteTierWeight: 0.15, // higher mean housing tier makes a little more refuse
     wasteWarmSeason: 1.2, // waste ripens faster in Bloom/Highsun (only when a calendar is kept)
     wasteColdSeason: 0.85, // ...and slower in Grey/Frost
+    // The Watch Nook (spec 059): a rich, populous, unguarded colony bleeds a slow trickle of treasury to petty theft. Inert below the
+    // floors and in any crisis; capped; clamped so it can never create debt; and a staffed Watch Nook (two) cuts it (to zero).
+    matWatchNook: 12,
+    compWatchNook: 2,
+    crewWatchNook: 2,
+    watchNookCost: 1000,
+    watchNookWorkers: 2, // the watchkeepers
+    watchNookPowerLoad: 0.2,
+    theftTreasuryFloor: 500, // no theft until the treasury holds more than this (a poor colony has nothing worth taking)
+    theftPopFloor: 25, // ...and at least this many colonists (a small colony watches itself)
+    theftRatePerDay: 0.00017, // fraction of the treasury skimmed per day when unguarded (~1.5% per ~90-day season)
+    theftCapPerDay: 0.28, // hard daily ceiling on theft (~25 per season) so even a vast hoard loses little
+    watchSuppressionPerPost: 0.8, // each staffed Watch Nook cuts theft by this (1 Nook → x0.2, 2 → x0)
     pollutionPerIndustrial: 3,
   },
 
