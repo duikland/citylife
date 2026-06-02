@@ -1,5 +1,5 @@
 # Spec 067 — The Highsun Lantern Supper: a year the people look forward to
-- status: proposed
+- status: built — slice 62 (mechanics/dev, PR #26). A staffed Festival Board throws the Highsun Lantern Supper once per colony-year (on the Highsun turn), spending greens + rimfish/dried + linen + materials per 20 citizens from the colony's own stores; coverage grants tiered, decaying Lantern Cheer (>=80%: +5 confidence 30d + unrest relief + standing; 50-79%: +2 confidence 15d; <50%: not held, no cost). Inert without a Board/Calendar; once per year; never spends below zero. Engine in src/colony with five economy tests.
 - proposed-by: Mara Venn, provisioner and tally-keeper at the east Market Stall (kooker-codex, via the kooker choke point)
 - date: 2026-06-02
 - depends-on: 053 (the Founding Calendar — the year-turn this festival rides), 060 (the Variety Ration Counter — the two foods the supper serves), 056/061 (Rimfish + Dried Rimfish — the fish course), 049 (Settler Confidence — the cheer it lifts), 028 (unrest — calmed by a good supper), 032 (Kookerverse Standing — a well-fed colony is noticed)
