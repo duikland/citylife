@@ -127,6 +127,7 @@ export function initBuild(state: ColonyState): void {
   state.frontTimer = COLONY.build.frontFirstDelayDays * 24 * 60 // spec 034 — the calm before the first Cloudsea Front
   state.importOrder = null // spec 036 — no standing import order until the council sets one
   state.rosterMode = 'balanced' // spec 038 — even labour split until the council sets a priority mode
+  state.departurePressure = 0 // spec 041 — no one is leaving a fresh colony
   state.parcels = []
   state.jobs = []
   state.buildings = []
@@ -546,6 +547,8 @@ export function colonyHeadlines(state: ColonyState): string[] {
   if (countKind(state, 'theatre') > 0 && state.reels <= 0) h.push('The reels run dry; the Holo-Theatres dim until the foundry catches up.')
   else if (state.reels > 0) h.push("The foundry's reels gleam — luxury bound for the Skybridge.")
   h.push(`Population ${Math.round(state.colonists)}, and the border stays busy.`)
+  // Spec 041 — when the colony is shedding people, the Courier names it plainly.
+  { const d = departureStatus(state); if (d.atRisk) h.push(`Households are leaving the failing decks — ${d.cause} drives them to the moorings.`) }
   h.push(`${state.buildings.length} structures stand on the island tonight.`)
   if (state.treasury > 0) h.push(`The Exchange is paying: the treasury holds $${Math.round(state.treasury).toLocaleString()}.`)
   // the council's voices — each citizen and what they raised
@@ -1635,6 +1638,61 @@ function housingStep(state: ColonyState, dtMin: number): void {
   }
 }
 
+/** Spec 041 — how badly the colony is failing its people right now (0 = served, 1 = wholly failed). Reads existing
+ *  signals: liveability below the floor (thirst, hunger, sickness, no culture/wares) plus Treasury-Arrears strain. */
+export function colonyDistress(state: ColonyState): number {
+  if (countKind(state, 'habitat') === 0) return 0 // no homes → no one to fail
+  const floor = COLONY.build.departureLiveabilityFloor
+  const live = colonyLiveability(state)
+  let d = floor > 0 ? Math.max(0, (floor - live) / floor) : 0 // ramps from 0 at the floor to 1 at zero liveability
+  if (arrearsStrain(state)) d = Math.max(d, COLONY.build.departureArrearsDistress) // missed wages bite on their own
+  return Math.min(1, d)
+}
+
+/** Spec 041 — the dominant reason a colony is shedding people, for the Courier headline + HUD. */
+export function departureCause(state: ColonyState): string {
+  const terms: [string, number][] = [
+    ['thirst', 1 - wateredFraction(state)],
+    ['hunger', 1 - provisionedFraction(state)],
+    ['sickness', 1 - healthFraction(state)],
+    ['unrest', state.unrest ?? 0],
+    ['unpaid wages', arrearsStrain(state) ? 1 : 0],
+  ]
+  let best = terms[0]!
+  for (const t of terms) if (t[1] > best[1]) best = t
+  return best[0]
+}
+
+/** Spec 041 — emigration: sustained failure makes households pack up and leave. Pressure rises only while distress
+ *  persists (over days) and drains fast once homes are served, so brief shortages never punish. At the threshold a
+ *  household departs — population falls toward the founding crew and a one-off standing dip marks the exodus. */
+function departureStep(state: ColonyState, dtMin: number): void {
+  const frac = dtMin / (24 * 60)
+  let p = state.departurePressure ?? 0
+  const distress = colonyDistress(state)
+  if (countKind(state, 'habitat') === 0 || state.colonists <= COLONY.seed.colonists) {
+    state.departurePressure = Math.max(0, p - COLONY.build.departureDrainPerDay * frac) // nothing to lose → bleed off
+    return
+  }
+  if (distress > 0) p += COLONY.build.departureRisePerDay * distress * frac // failed homes fray, slowly
+  else p -= COLONY.build.departureDrainPerDay * frac // served homes settle
+  if (p >= 1) {
+    // a household takes the next mooring out
+    const leave = Math.min(COLONY.build.departureHouseholdSize, state.colonists - COLONY.seed.colonists)
+    state.colonists = Math.max(COLONY.seed.colonists, state.colonists - leave)
+    state.standing = Math.max(0, (state.standing ?? 0.5) - COLONY.build.exodusStandingHit) // the wider world notices an exodus
+    p -= 1 // one threshold spent; sustained failure sheds more
+  }
+  state.departurePressure = Math.max(0, Math.min(1.5, p))
+}
+
+/** Spec 041 — departures readout for the HUD: the pressure (0..1), whether households are at risk of leaving, and why. */
+export function departureStatus(state: ColonyState): { pressure: number; atRisk: boolean; cause: string } {
+  const pressure = state.departurePressure ?? 0
+  const atRisk = pressure > 0.5 && colonyDistress(state) > 0
+  return { pressure, atRisk, cause: departureCause(state) }
+}
+
 /** Spec 004 — settlers immigrate to fill vacant housing while the colony is liveable; if power is
  *  fully dead they drift away, down to the founding crew. */
 function immigration(state: ColonyState, dtMin: number): void {
@@ -1860,6 +1918,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   foodStep(state, dtMin)
   housingStep(state, dtMin)
   immigration(state, dtMin)
+  departureStep(state, dtMin) // spec 041 — sustained failure sheds households; runs right after immigration so the net is arrivals minus departures
   tradeStep(state, dtMin)
   importStep(state, dtMin) // spec 036 — the buying side: spend treasury to land the order good (capped by storage headroom below)
   clampStorage(state) // spec 023 — finite storage: production past a cap is lost (after all goods are produced/sold)

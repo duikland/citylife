@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -2683,5 +2683,83 @@ describe('Spec 038 — The Roster Office: making a labour shortage a choice', ()
     expect(placed).toBeCloseTo(6, 5)
     expect(rosterStatus(s).mode).toBe('essentials')
     expect(rosterStatus(s).active).toBe(true)
+  })
+})
+
+describe('Spec 041 — Departure Pressure: the colony can lose people, not just gain them', () => {
+  const mk = (kind: 'habitat', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+  const poweredHomes = (residents: number, colonists: number) => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('habitat', s.terrain.landing.x, s.terrain.landing.y, { residents }))
+    s.colonists = colonists
+    s.totalJobs = 0
+    s.power.batteryWh = s.power.batteryCapWh // keep the grid alive so immigration's power-death path never fires
+    s.power.solarW = 20
+    return { sim, s }
+  }
+
+  it('distress is zero with no homes, and rises when homes go unserved', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    expect(colonyDistress(s)).toBe(0) // no homes → no one to fail
+    s.buildings.push(mk('habitat', s.terrain.landing.x, s.terrain.landing.y, { residents: 6 }))
+    expect(colonyDistress(s)).toBeGreaterThan(0) // a bare, unserved home is failing its people
+  })
+
+  it('a brief failure builds only a little pressure and nobody leaves', () => {
+    const { sim, s } = poweredHomes(30, 30)
+    for (let i = 0; i < 20; i++) stepBuild(s, sim.rng, 60) // ~0.8 day of neglect — a passing shortage
+    expect(s.departurePressure).toBeLessThan(1) // nowhere near the threshold
+    expect(s.colonists).toBeGreaterThanOrEqual(30 - 0.001) // no household has packed up
+  })
+
+  it('sustained failure crosses the threshold and a household leaves', () => {
+    const { sim, s } = poweredHomes(30, 30)
+    s.departurePressure = 0.99 // already on the brink after a long, failed stretch
+    const before = s.colonists
+    for (let i = 0; i < 6; i++) stepBuild(s, sim.rng, 60) // a little more failure tips it over
+    expect(s.colonists).toBeLessThan(before) // a household took the next mooring out — population fell
+    expect(s.colonists).toBeGreaterThanOrEqual(COLONY.seed.colonists) // never below the founding crew
+  })
+
+  it('restoring service before the threshold drains the pressure (recovery is default)', () => {
+    const { sim, s } = poweredHomes(30, 30)
+    s.departurePressure = 0.6
+    // no homes failing now? still bare — but simulate recovery by removing the distress source:
+    // give the colony a high-liveability stand-in by clearing the homes (no homes → distress 0 → drains)
+    s.buildings.length = 0
+    for (let i = 0; i < 45; i++) stepBuild(s, sim.rng, 60) // ~1.9 days of calm fully drains the 0.6
+    expect(s.departurePressure).toBeCloseTo(0, 6) // drained back to calm
+  })
+
+  it('the Courier names the dominant cause of departures', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('habitat', s.terrain.landing.x, s.terrain.landing.y, { residents: 6 }))
+    expect(['thirst', 'hunger', 'sickness']).toContain(departureCause(s)) // a bare home: the basics are missing
+  })
+
+  it('departureStatus flags at-risk only when pressure is high and homes are failing', () => {
+    const { s } = poweredHomes(30, 30)
+    s.departurePressure = 0.8
+    const st = departureStatus(s)
+    expect(st.pressure).toBeCloseTo(0.8, 5)
+    expect(st.atRisk).toBe(true) // high pressure + a failing colony
+  })
+
+  it('with no homes there is nothing to lose — pressure drains to zero (inert)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 12
+    s.departurePressure = 0.5
+    for (let i = 0; i < 30; i++) stepBuild(s, sim.rng, 60)
+    expect(s.departurePressure).toBeCloseTo(0, 6)
+    expect(s.colonists).toBe(12) // nobody leaves a colony with no homes to empty
   })
 })

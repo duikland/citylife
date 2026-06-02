@@ -509,6 +509,15 @@ export const COLONY = {
     rosterCost: 2000,
     rosterWorkers: 3,
     rosterMaintCompPerDay: 0.5,
+    // Departure Pressure (spec 041): the flip side of immigration. A colony-wide pressure rises only when liveability stays
+    // below the floor (or the colony is deep in arrears) for days, and drains fast when homes are served again. At the
+    // threshold a household leaves — population falls toward the founding seed and standing dips. Inert while homes are served.
+    departureLiveabilityFloor: 0.4, // distress only builds while colony liveability is below this
+    departureRisePerDay: 0.15, // pressure gained per day at full distress (so ~7 days of total failure before anyone leaves)
+    departureDrainPerDay: 0.4, // pressure shed per day once homes are decently served (recovery is the default)
+    departureArrearsDistress: 0.5, // distress floor contributed by Treasury Arrears strain alone (missed wages)
+    departureHouseholdSize: 4, // colonists that leave each time the threshold is crossed
+    exodusStandingHit: 0.04, // one-off Kookerverse standing dip when a household departs (the wider world notices)
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,
