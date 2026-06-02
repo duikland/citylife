@@ -933,6 +933,22 @@ export const COLONY = {
     cellarDryFloor: 0.5, // a dry damp-line (empty tanks) slows the beds to this fraction
     storeBaseDuskcap: 80, // storage cap (spec 023) for duskcap
     storePerDuskcap: 80,
+    // The Steam Bathhouse (spec 069): a staffed health worksite on the cistern line that draws stored water to give the colony a
+    // hygiene level (0..1). Hygiene is preventive — it slows how fast fever risk builds (up to bathHygieneRelief at full hygiene), so a
+    // clean colony takes fewer and milder fevers than a grimy one. Above all it is a water-demand sink (gives the cisterns + the
+    // greywater reclaimer a customer that is not a greenhouse). Inert with no Bathhouse: hygiene stays 0 and the fever math is unchanged.
+    matBath: 35, // materials to build
+    compBath: 8, // components to build
+    toolBath: 1, // tool-kits to build (boiler fittings + pipe runs, spec 047)
+    crewBath: 4, // builders reserved for the construction job
+    bathCost: 720, // treasury to build
+    bathWorkers: 3, // run crew (attendants + a boiler-hand); understaffed washes proportionally fewer
+    bathPowerLoad: 0.3, // a light grid load to heat the water
+    bathServes: 50, // colonists one Bathhouse keeps clean (coverage = baths*bathServes / colonists, capped at 1)
+    bathWaterPerDay: 3, // stored water a Bathhouse draws per day (spec 046 demand sink)
+    bathHygieneRelief: 0.4, // at full hygiene the fever-risk buildup runs this much slower (40 percent)
+    bathDryFloor: 0.25, // a dry bathhouse (empty tanks) only reaches this hygiene fraction
+    bathPowerFloor: 0.5, // even a brownout leaves the boilers throwing this fraction of heat
     pollutionPerIndustrial: 3,
   },
 

@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar' | 'hallofnames' | 'netdock' | 'sanitation' | 'watchnook' | 'rationvar' | 'dryrack' | 'registry' | 'planter' | 'stall' | 'firewatch' | 'reclaimer' | 'festboard' | 'cellar'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar' | 'hallofnames' | 'netdock' | 'sanitation' | 'watchnook' | 'rationvar' | 'dryrack' | 'registry' | 'planter' | 'stall' | 'firewatch' | 'reclaimer' | 'festboard' | 'cellar' | 'bathhouse'
 
 export interface Parcel {
   id: number
@@ -125,6 +125,7 @@ const FIREWATCH_COLOR = 0xd2473a // alarm red — the Fire-Watch Post (bucket ba
 const RECLAIMER_COLOR = 0x3f8fa0 // teal utility — the Greywater Reclaimer (settling drums + pump)
 const FESTBOARD_COLOR = 0xe2a93f // warm lantern-gold — the Festival Board (noticeboard + lantern hooks)
 const CELLAR_COLOR = 0x7d6b86 // dusky violet-grey — the Fungus Cellar (dark damp grow-beds)
+const BATHHOUSE_COLOR = 0x5fa9c4 // steam-blue — the Steam Bathhouse (hot water + hygiene on the cistern line)
 const SANITATION_COLOR = 0x6f8f6a // drain-green — the Sanitation Post (clears household waste before it sickens the colony)
 const WATCHNOOK_COLOR = 0xb0a04a // lamp-brass — the Watch Nook (keeps petty theft off a rich colony's coffers)
 const key = (x: number, y: number) => x + ',' + y
@@ -165,6 +166,7 @@ export function initBuild(state: ColonyState): void {
   state.rimfish = 0 // spec 056 — no rimfish until a Cloudsea Net Dock stands
   state.driedFish = 0 // spec 061 — no dried rimfish until a Rimfish Drying Rack stands
   state.duskcap = 0 // spec 068 — no duskcap until a Fungus Cellar stands
+  state.hygiene = 0 // spec 069 — no hygiene until a Steam Bathhouse stands
   state.fireCooldown = 0 // spec 065 — no fire timing until a Fire-Watch stands
   state.lastFestivalYear = 0 // spec 067 — no Highsun Supper before a Festival Board stands
   state.festivalCheer = 0 // spec 067
@@ -505,6 +507,10 @@ function designNetDock(state: ColonyState): Artifact {
 function designCellar(state: ColonyState): Artifact {
   // Spec 068 — Fungus Cellar; a staffed Food worksite on the dark decks that grows duskcap (the third food) — non-seasonal, low-water, power-resilient.
   return { id: state.buildIds++, kind: 'cellar', color: CELLAR_COLOR, height: 0.5, residents: 0, jobs: COLONY.build.cellarWorkers, powerLoad: COLONY.build.cellarPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.cellarCost, materialsCost: COLONY.build.matCellar, crew: COLONY.build.crewCellar, materialsGen: 0, componentsCost: COLONY.build.compCellar, toolsCost: COLONY.build.toolCellar, duskcapGen: COLONY.build.duskcapPerDay }
+}
+function designBathhouse(state: ColonyState): Artifact {
+  // Spec 069 — Steam Bathhouse; a staffed health worksite on the cistern line that draws stored water to keep the colony clean (hygiene), slowing how fast a fever takes hold. Inert until built; needs a crew to run.
+  return { id: state.buildIds++, kind: 'bathhouse', color: BATHHOUSE_COLOR, height: 0.8, residents: 0, jobs: COLONY.build.bathWorkers, powerLoad: COLONY.build.bathPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.bathCost, materialsCost: COLONY.build.matBath, crew: COLONY.build.crewBath, materialsGen: 0, componentsCost: COLONY.build.compBath, toolsCost: COLONY.build.toolBath }
 }
 function designSanitationPost(state: ColonyState): Artifact {
   // Spec 058 — Sanitation Post; staffed drain-keepers who clear household waste before it sickens the colony.
@@ -1191,6 +1197,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 14 && countKind(state, 'census') > 0 && countKind(state, 'payoffice') > 0 && countKind(state, 'registry') < Math.max(1, Math.ceil(state.colonists / COLONY.build.registryCapacity)) && state.components >= COLONY.build.compRegistry && state.materials >= COLONY.build.matRegistry && (state.tools ?? 0) >= COLONY.build.toolRegistry && (state.folios ?? 0) >= COLONY.build.folioRegistry) return designRegistry(state)
   // Spec 063 — a watered, established colony beautifies its neighbourhoods: raise a Planter Square (one per ~4 homes) once a Cistern keeps the tanks and tool-kits are on hand.
   if (state.colonists > 14 && countKind(state, 'habitat') > 0 && countKind(state, 'cistern') > 0 && countKind(state, 'planter') < Math.max(1, Math.ceil(countKind(state, 'habitat') / 4)) && state.components >= COLONY.build.compPlanter && state.materials >= COLONY.build.matPlanter && (state.tools ?? 0) >= COLONY.build.toolPlanter) return designPlanter(state)
+  // Spec 069 — a watered, established colony builds for cleanliness: raise a Steam Bathhouse (one per ~bathServes colonists) once a Cistern keeps water and tool-kits are on hand, so hygiene keeps the fever down.
+  if (state.colonists > 16 && countKind(state, 'cistern') > 0 && (state.water ?? 0) > 0 && countKind(state, 'bathhouse') < Math.max(1, Math.ceil(state.colonists / COLONY.build.bathServes)) && state.components >= COLONY.build.compBath && state.materials >= COLONY.build.matBath && (state.tools ?? 0) >= COLONY.build.toolBath) return designBathhouse(state)
   // Spec 026 — answer an outbreak: when fever climbs past the build line and no post contains it → raise a Fever Watch Post.
   if (state.outbreak > COLONY.build.feverBuildThreshold && state.components >= COLONY.build.compFeverWatch && countKind(state, 'feverwatch') < COLONY.build.maxFeverWatch) return designFeverWatch(state)
   // Spec 028 — keep the peace: when unrest climbs past the build line and no post patrols → raise a Ward Post.
@@ -1294,7 +1302,7 @@ export function claimLot(state: ColonyState, rng: RNG): { x: number; y: number }
 export type Sector = 'food' | 'services' | 'industry' | 'logistics' | 'safety' | 'trade' | 'civic'
 const SECTOR_OF: Record<BuildKind, Sector> = {
   greenhouse: 'food', depot: 'food', water: 'food', cistern: 'food', seedloft: 'food', netdock: 'food', cellar: 'food',
-  clinic: 'services', theatre: 'services', market: 'services', shrine: 'services', survey: 'services', commercial: 'services', school: 'services', sanitation: 'services', rationvar: 'services',
+  clinic: 'services', theatre: 'services', market: 'services', shrine: 'services', survey: 'services', commercial: 'services', school: 'services', sanitation: 'services', rationvar: 'services', bathhouse: 'services',
   mine: 'industry', workshop: 'industry', foundry: 'industry', skimmer: 'industry', weavery: 'industry', industrial: 'industry', folio: 'industry', toolcrib: 'industry', dryrack: 'industry',
   transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics', turbine: 'logistics', surveycamp: 'logistics', reclaimer: 'logistics',
   bellhouse: 'safety', feverwatch: 'safety', ward: 'safety', stormwatch: 'safety', scrubber: 'safety', watchnook: 'safety', firewatch: 'safety',
@@ -1758,7 +1766,7 @@ function feverStep(state: ColonyState, dtMin: number): void {
   if (feverWatchActive(state)) {
     o -= COLONY.build.feverContainPerDay * frac // contained — the curve bends down
   } else {
-    o += COLONY.build.feverSpreadPerDay * feverPressure(state) * frac // spreads while the colony stays sick
+    o += COLONY.build.feverSpreadPerDay * feverPressure(state) * (1 - COLONY.build.bathHygieneRelief * hygieneLevel(state)) * frac // spreads while the colony stays sick; spec 069 — a clean colony (hygiene) slows how fast it takes hold (multiplier is 1 with no Bathhouse)
     o -= COLONY.build.feverRecoverPerDay * frac // some natural recovery
   }
   state.outbreak = Math.max(0, Math.min(COLONY.build.feverMax, o))
@@ -1775,6 +1783,35 @@ function feverFactor(state: ColonyState): number {
 /** Spec 026 — outbreak readout for the HUD: the share unwell (0..1) and whether a Fever Watch is containing it. */
 export function feverStatus(state: ColonyState): { outbreak: number; contained: boolean } {
   return { outbreak: state.outbreak ?? 0, contained: feverWatchActive(state) }
+}
+
+/** Spec 069 — the colony's hygiene (0..1) from its Steam Bathhouses: coverage against the head-count, how well the baths are
+ *  staffed (the services sector), whether they actually have water, and a little power to heat it. Any one of those at zero drives
+ *  hygiene toward 0. Exactly 0 with no Bathhouse, so the fever math (026) is unchanged until one stands. */
+export function hygieneLevel(state: ColonyState): number {
+  const baths = countKind(state, 'bathhouse')
+  if (baths === 0) return 0
+  const coverage = Math.min(1, (baths * COLONY.build.bathServes) / Math.max(1, state.colonists))
+  const staffing = sectorStaffing(state, 'services')
+  const watered = (state.water ?? 0) > 0 ? 1 : COLONY.build.bathDryFloor // a dry bathhouse barely washes
+  const power = Math.max(COLONY.build.bathPowerFloor, powerFactor(state)) // the boilers still throw some heat in a brownout
+  return Math.max(0, Math.min(1, coverage * staffing * watered * power))
+}
+
+/** Spec 069 — settle the day's hygiene and draw the baths' water. The water draw is the demand sink that finally gives the cisterns
+ *  (046) and the greywater reclaimer (066) a customer that is not a greenhouse. Runs before feverStep so the outbreak reads it. Inert
+ *  with no Bathhouse (hygiene held at 0, no draw). */
+export function bathStep(state: ColonyState, dtMin: number): void {
+  const baths = countKind(state, 'bathhouse')
+  if (baths === 0) { state.hygiene = 0; return }
+  state.hygiene = hygieneLevel(state)
+  const frac = dtMin / (24 * 60)
+  state.water = Math.max(0, (state.water ?? 0) - COLONY.build.bathWaterPerDay * baths * frac) // the bathhouse draw on the tanks
+}
+
+/** Spec 069 — Bathhouse readout for the HUD: the hygiene level (0..1) and the bath count. */
+export function bathhouseStatus(state: ColonyState): { hygiene: number; baths: number } {
+  return { hygiene: hygieneLevel(state), baths: countKind(state, 'bathhouse') }
 }
 
 /** Spec 028 — a Ward Post keeps order only while a built, staffed post stands. */
@@ -3201,6 +3238,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   maintenanceStep(state, dtMin) // spec 022 — accrue/repair wear first so producers read current condition
   incidentStep(state, dtMin) // spec 024 — crises strike, get answered, or hit their consequence (paused buildings won't produce below)
   fireStep(state, dtMin) // spec 065 — Deck Fires: a Fire-Watch district accrues fire risk, ignites, suppresses or spreads + destroys (inert with no Post)
+  bathStep(state, dtMin) // spec 069 — settle the day's hygiene + draw the baths' water before the fever reads it (inert with no Bathhouse)
   feverStep(state, dtMin) // spec 026 — the outbreak spreads or is contained; producers below read the current fever
   unrestStep(state, dtMin) // spec 028 — unrest rises or is calmed; producers + income below read the current order
   feastStep(state, dtMin) // spec 030 — count down an active feast, or auto-throw one for a wealthy, restless colony

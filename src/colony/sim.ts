@@ -62,6 +62,7 @@ export interface ColonyState {
   dietStanding?: number // spec 060 — 0..1 Varied Diet standing; 1 while a counter is operating on two foods, fades over varietyHoldDays when not
   driedFish: number // spec 061 — dried rimfish, a shelf-stable food banked from surplus fresh rimfish by Drying Racks; eaten after fresh fish; 0 until a rack stands
   duskcap?: number // spec 068 — duskcap, a hardy third food grown by Fungus Cellars on the dark decks; eaten as a third protein course; 0 until a Cellar stands
+  hygiene?: number // spec 069 — the colony's hygiene (0..1) from its Steam Bathhouses; slows how fast fever takes hold; 0 until a Bathhouse stands
   registryPenalty?: number // spec 062 — Prosperity-Rank steps subtracted for chronic unemployment while a staffed Labour Registry stands (0/1/2); sticky until cleared
   unempHighDays?: number // spec 062 — consecutive days unemployment has sat above the high line (drives the -1)
   unempSevereDays?: number // spec 062 — consecutive days unemployment has sat above the severe line (drives the -2)
