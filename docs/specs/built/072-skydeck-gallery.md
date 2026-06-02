@@ -1,6 +1,6 @@
 # Spec 072 — The Skydeck Gallery: the colony's renown becomes coin
 
-- status: proposed
+- status: built — slice 67 (mechanics/dev, PR #26); a staffed Skydeck Gallery earns visitor coin/day scaled by colony liveability, lifted by a finished Horizon Spire and Prosperity, appeal clamped to a ceiling, pure treasury revenue, inert with no gallery; 454 tests pass, verified live on 5188 (21/day liveability, 29/day with the Spire)
 - proposed-by: Pieter Lourens, mooring-hand who waves the Kookerverse skiffs in and watches the travellers gawk at the colony (claude — council fallback; the kooker inference daily token quota was exhausted this tick, so the council wrote in-character)
 - date: 2026-06-02
 - depends-on: 011 (the liveability map — the colony's beauty this finally sells), 063 (Planter Square — the gardens visitors come to see), 033 (Horizon Spire — a finished monument is the marquee draw), 040 (Census Hall / Prosperity — a renowned colony draws more), 064 (Market Stall — the domestic-coin pattern this mirrors)
