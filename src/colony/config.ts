@@ -566,6 +566,23 @@ export const COLONY = {
     turbineWorkers: 4,
     turbineOutputW: 4, // steady peak watts a fully-staffed mast adds to the grid (~ one solar peak of 4.5)
     maxTurbines: 6,
+    // Mist Condenser Cistern (spec 046): makes water a real stored resource. A staffed cistern condenses cloud-mist into the
+    // tank (consuming grid power); once any cistern stands, Water Hubs draw the tank, and a dry tank weakens coverage + adds
+    // fever/unrest. Inert with no cistern (the supply factor is 1, so water stays the free coverage it is today).
+    matCistern: 18,
+    compCistern: 4,
+    crewCistern: 4,
+    cisternCost: 1800,
+    cisternWorkers: 3,
+    cisternTankCap: 100, // water units one cistern's tank holds
+    cisternFillPerDay: 50, // water a fully-staffed cistern condenses per day (comfortably supplies a colony)
+    cisternPowerLoad: 0.8, // heavy grid draw per cistern (competes on the brownout grid)
+    waterDrawPerHomePerDay: 0.5, // water each home draws from the tank per day
+    waterComfortBuffer: 12, // tank above this → full water coverage; below → coverage fades toward the floor
+    waterSupplyFloor: 0.3, // water coverage floor when the tank is bone dry (homes scrape by)
+    dryTankFeverPerDay: 0.04, // daily fever pressure while the tank is dry and cisterns stand
+    dryTankUnrestPerDay: 0.05, // daily unrest pressure while the tank is dry
+    cisternStartCharge: 0.6, // a freshly built cistern starts its tank this full (no construction-day water crash)
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

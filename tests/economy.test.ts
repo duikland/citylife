@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -3024,5 +3024,87 @@ describe('Spec 045 — The Wind-Shear Turbine Mast: power that scales', () => {
     s.totalJobs = 10
     expect(turbinePower(s)).toBe(0)
     expect(inBrownout(s)).toBe(true) // no turbine → still in brownout, exactly as before
+  })
+})
+
+describe('Spec 046 — Stored Water: the sky can deny the tanks', () => {
+  const mk = (kind: 'cistern' | 'water' | 'habitat', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('water is full coverage with no cistern, and scales with the tank once one stands', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    expect(waterSupplyFactor(s)).toBe(1) // no cistern → inert, water is free coverage
+    s.buildings.push(mk('cistern', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 3 }))
+    s.water = 0 // bone dry
+    expect(waterSupplyFactor(s)).toBeCloseTo(COLONY.build.waterSupplyFloor, 5)
+    s.water = COLONY.build.waterComfortBuffer // a full buffer
+    expect(waterSupplyFactor(s)).toBeCloseTo(1, 5)
+  })
+
+  it('a staffed cistern condenses water into the tank', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 12
+    s.totalJobs = 4
+    s.buildings.push(mk('cistern', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 3 }))
+    s.water = 0
+    s.power.batteryWh = s.power.batteryCapWh // keep the grid up so the condensers run
+    for (let i = 0; i < 50; i++) stepBuild(s, sim.rng, 10) // no homes → no draw, just fill
+    expect(s.water).toBeGreaterThan(0) // condensed water into the tank
+    expect(waterStatus(s).cisterns).toBe(1)
+  })
+
+  it('a dry tank weakens water coverage; a full tank leaves it unchanged', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    s.buildings.push(mk('habitat', lx, ly, { residents: 6 }))
+    s.buildings.push(mk('water', lx, ly, {})) // a Water Hub at the home → spatial coverage 1
+    s.colonists = 8
+    s.totalJobs = 3
+    expect(wateredFraction(s)).toBeCloseTo(1, 5) // no cistern → spatial coverage only (full)
+    s.buildings.push(mk('cistern', lx + 2, ly, { jobs: 3 }))
+    s.water = COLONY.build.waterComfortBuffer // full tank
+    expect(wateredFraction(s)).toBeCloseTo(1, 5) // full → unchanged
+    s.water = 0 // dry tank
+    expect(wateredFraction(s)).toBeCloseTo(COLONY.build.waterSupplyFloor, 5) // weakened to the floor
+  })
+
+  it('a dry tank breeds more fever than a full one', () => {
+    const run = (full: boolean) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+      s.buildings.push(mk('habitat', lx, ly, { residents: 6 }))
+      s.buildings.push(mk('cistern', lx + 2, ly, { jobs: 3 }))
+      s.colonists = 6
+      s.totalJobs = 30 // understaffed: the cistern can barely fill
+      s.power.batteryWh = s.power.batteryCapWh
+      s.water = full ? COLONY.build.cisternTankCap : 0
+      s.outbreak = 0
+      for (let i = 0; i < 40; i++) stepBuild(s, sim.rng, 10)
+      return s.outbreak ?? 0
+    }
+    expect(run(false)).toBeGreaterThan(run(true)) // a dry tank sickens the colony; a full one does not
+  })
+
+  it('with no cistern, water is the free infinite coverage it has always been (inert)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    s.buildings.push(mk('habitat', lx, ly, { residents: 6 }))
+    s.buildings.push(mk('water', lx, ly, {}))
+    s.colonists = 8
+    s.totalJobs = 3
+    s.water = 0
+    for (let i = 0; i < 30; i++) stepBuild(s, sim.rng, 10)
+    expect(wateredFraction(s)).toBeCloseTo(1, 5) // unchanged — full spatial coverage, no tank dependence
+    expect(s.water).toBe(0) // no cistern → no stored water ever accrues
+    expect(waterStatus(s).cisterns).toBe(0)
   })
 })

@@ -43,6 +43,7 @@ export interface ColonyState {
   fibre: number // spec 031 — skyflax fibre, the second raw resource, gathered from the rims by Skimmer Docks
   linen: number // spec 031 — linen bolts, woven from fibre by Weaveries; the top tier + clinics need it
   folios: number // spec 044 — skybound folios, the colony's signature finished export, bound from reels + linen by Folio Houses
+  water: number // spec 046 — stored water units (Mist Condenser Cisterns fill the tank; Water Hubs draw it); 0 until a cistern stands
   parcels: Parcel[]
   jobs: ConstructionJob[]
   buildings: ColonyBuilding[]
@@ -131,6 +132,7 @@ export class ColonySim {
       fibre: 0, // spec 031 — gathered by Flax Skimmer Docks
       linen: 0, // spec 031 — woven by Weaveries
       folios: 0, // spec 044 — bound by Folio Houses from reels + linen
+      water: 0, // spec 046 — no stored water until a Mist Condenser Cistern stands
       parcels: [],
       jobs: [],
       buildings: [],

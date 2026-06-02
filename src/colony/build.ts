@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern'
 
 export interface Parcel {
   id: number
@@ -99,6 +99,7 @@ const SCHOOL_COLOR = 0xd98f5a // warm ochre — the Little Schoolroom (the colon
 const CENSUS_COLOR = 0x4a90c2 // census-blue — the Census Hall (the colony's one gauge of prosperity)
 const FOLIO_COLOR = 0xb8862b // gilt-gold — the Folio House (binds the signature finished export)
 const TURBINE_COLOR = 0x8fb8d0 // pale steel-blue — the Wind-Shear Turbine Mast (power that scales with the colony)
+const CISTERN_COLOR = 0x3f7fb0 // deep cistern-blue — the Mist Condenser Cistern (water made real)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -123,6 +124,7 @@ export function initBuild(state: ColonyState): void {
   state.fibre = 0 // spec 031 — skyflax fibre, gathered by Skimmer Docks
   state.linen = 0 // spec 031 — linen bolts, woven by Weaveries
   state.folios = 0 // spec 044 — skybound folios, bound by Folio Houses
+  state.water = 0 // spec 046 — no stored water until a cistern stands
   state.standing = COLONY.build.standingStart // spec 032 — neutral Kookerverse Standing
   state.request = null // spec 032 — no open Civic Request
   state.requestCooldown = 0 // spec 032
@@ -418,6 +420,10 @@ function designTurbine(state: ColonyState): Artifact {
   // Spec 045 — Wind-Shear Turbine Mast; a staffed high-output generator (its power is computed live by turbinePower).
   return { id: state.buildIds++, kind: 'turbine', color: TURBINE_COLOR, height: 1.8, residents: 0, jobs: COLONY.build.turbineWorkers, powerLoad: 0, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.turbineCost, materialsCost: COLONY.build.matTurbine, crew: COLONY.build.crewTurbine, materialsGen: 0, componentsCost: COLONY.build.compTurbine }
 }
+function designCistern(state: ColonyState): Artifact {
+  // Spec 046 — Mist Condenser Cistern; a staffed condenser that fills the colony's water tank (heavy grid draw).
+  return { id: state.buildIds++, kind: 'cistern', color: CISTERN_COLOR, height: 0.9, residents: 0, jobs: COLONY.build.cisternWorkers, powerLoad: COLONY.build.cisternPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.cisternCost, materialsCost: COLONY.build.matCistern, crew: COLONY.build.crewCistern, materialsGen: 0, componentsCost: COLONY.build.compCistern }
+}
 
 /** Spec 045 — steady power the built, staffed Turbine Masts add to the grid (harvests wind day + night; understaffing cuts it). */
 export function turbinePower(state: ColonyState): number {
@@ -436,6 +442,43 @@ function countKind(state: ColonyState, kind: BuildKind): number {
 }
 
 /** Spec 005 — fraction of habitats within range of a Water Hub (1 when there are no habitats yet). */
+/** Spec 046 — total water-tank capacity (the cisterns' combined tanks; 0 with none). */
+export function waterTankCap(state: ColonyState): number {
+  return state.buildings.filter((b) => b.artifact.kind === 'cistern').length * COLONY.build.cisternTankCap
+}
+
+/** Spec 046 — water-coverage supply factor: 1 with no cistern (water is free coverage as today); once cisterns stand it
+ *  scales with the tank — full → 1, dry → the floor — so a dry tank weakens the Water Hubs' reach. */
+export function waterSupplyFactor(state: ColonyState): number {
+  if (countKind(state, 'cistern') === 0) return 1 // inert — water is the free infinite coverage it has always been
+  const t = Math.min(1, (state.water ?? 0) / COLONY.build.waterComfortBuffer)
+  return COLONY.build.waterSupplyFloor + (1 - COLONY.build.waterSupplyFloor) * t
+}
+
+/** Spec 046 — Water readout for the HUD: the tank, its capacity, the cistern count, and whether it is running dry. */
+export function waterStatus(state: ColonyState): { stored: number; cap: number; cisterns: number; dry: boolean } {
+  const cisterns = countKind(state, 'cistern')
+  return { stored: Math.round(state.water ?? 0), cap: waterTankCap(state), cisterns, dry: cisterns > 0 && (state.water ?? 0) < COLONY.build.waterComfortBuffer }
+}
+
+/** Spec 046 — condense + draw water each step: staffed cisterns fill the tank (cut by brownout); homes draw it down. */
+function waterStep(state: ColonyState, dtMin: number): void {
+  if (countKind(state, 'cistern') === 0) return // no cistern → water stays the free coverage it is today (inert)
+  const frac = dtMin / (24 * 60)
+  const staffing = state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0
+  const cisterns = state.buildings.filter((b) => b.artifact.kind === 'cistern').length
+  const fill = cisterns * COLONY.build.cisternFillPerDay * staffing * powerFactor(state) * frac // a brownout slows the heavy condensers
+  const homes = state.buildings.filter((b) => b.artifact.kind === 'habitat').length
+  const draw = homes * COLONY.build.waterDrawPerHomePerDay * frac
+  state.water = Math.max(0, Math.min(waterTankCap(state), (state.water ?? 0) + fill - draw))
+  // Spec 046 — a dry tank breeds sickness + disorder, scaled by how much water coverage is lost (none while the tank is full).
+  if (homes > 0 && (state.water ?? 0) < COLONY.build.waterComfortBuffer) {
+    const lost = 1 - waterSupplyFactor(state)
+    state.outbreak = Math.min(1, (state.outbreak ?? 0) + COLONY.build.dryTankFeverPerDay * lost * frac)
+    state.unrest = Math.min(COLONY.build.unrestMax, (state.unrest ?? 0) + COLONY.build.dryTankUnrestPerDay * lost * frac)
+  }
+}
+
 export function wateredFraction(state: ColonyState): number {
   const habs = state.buildings.filter((b) => b.artifact.kind === 'habitat')
   if (habs.length === 0) return 1
@@ -443,7 +486,7 @@ export function wateredFraction(state: ColonyState): number {
   if (hubs.length === 0) return 0
   let served = 0
   for (const h of habs) if (hubs.some((w) => Math.hypot(w.x - h.x, w.y - h.y) <= COLONY.build.waterHubRadius)) served++
-  return served / habs.length
+  return (served / habs.length) * waterSupplyFactor(state) // spec 046 — once cisterns stand, a dry tank weakens the Hubs' reach
 }
 
 /** Spec 007 — is (x,y) within range of a Water Hub? (greenhouses get an irrigation boost). */
@@ -738,6 +781,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 14 && countKind(state, 'hall') < 1 && state.components >= COLONY.build.compHall) return designHall(state)
   // Spec 040 — take the colony's measure: a mature colony with components on hand raises a Census Hall to read its Prosperity.
   if (state.colonists > 14 && countKind(state, 'census') < 1 && state.components >= COLONY.build.compCensus) return designCensus(state)
+  // Spec 046 — make water real: a large, well-powered colony raises a Mist Condenser Cistern (one per ~60 homes) to fill the tanks.
+  if (state.colonists > 16 && !inBrownout(state) && countKind(state, 'habitat') > 0 && countKind(state, 'cistern') < Math.max(1, Math.ceil(countKind(state, 'habitat') / 60)) && state.components >= COLONY.build.compCistern) return designCistern(state)
   // Spec 036 — once trade is established (an Exchange stands) and the bank is flush, raise an Import Office to buy shortages.
   if (state.colonists > 12 && countKind(state, 'import') < 1 && countKind(state, 'exchange') > 0 && state.components >= COLONY.build.compImportOffice && state.treasury > COLONY.build.importOfficeCost) return designImportOffice(state)
   // Spec 039 — a mature colony raises a Comptroller's Office so the treasury can ride a hard stretch on managed debt.
@@ -838,7 +883,7 @@ export function claimLot(state: ColonyState, rng: RNG): { x: number; y: number }
 /** Spec 038 — the colony's labour sectors; every workplace kind belongs to exactly one. */
 export type Sector = 'food' | 'services' | 'industry' | 'logistics' | 'safety' | 'trade' | 'civic'
 const SECTOR_OF: Record<BuildKind, Sector> = {
-  greenhouse: 'food', depot: 'food', water: 'food',
+  greenhouse: 'food', depot: 'food', water: 'food', cistern: 'food',
   clinic: 'services', theatre: 'services', market: 'services', shrine: 'services', survey: 'services', commercial: 'services', school: 'services',
   mine: 'industry', workshop: 'industry', foundry: 'industry', skimmer: 'industry', weavery: 'industry', industrial: 'industry', folio: 'industry',
   transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics', turbine: 'logistics',
@@ -2046,6 +2091,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   produceReels(state, dtMin)
   produceLinen(state, dtMin) // spec 031 — weave fibre into linen (the second refinery)
   produceFolios(state, dtMin) // spec 044 — bind reels + linen into skybound folios (the top-of-chain export)
+  waterStep(state, dtMin) // spec 046 — condense + draw stored water (runs before housing/immigration read wateredFraction)
   serviceUpkeep(state, dtMin)
   foodStep(state, dtMin)
   housingStep(state, dtMin)
@@ -2071,6 +2117,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
         state.buildingLoad += a.powerLoad
         if (a.kind === 'industrial') state.pollution += COLONY.build.pollutionPerIndustrial
       }
+      if (a.kind === 'cistern') state.water = Math.min(waterTankCap(state), (state.water ?? 0) + COLONY.build.cisternTankCap * COLONY.build.cisternStartCharge) // spec 046 — a freshly built cistern starts its tank charged (no construction-day water crash)
       state.jobs.splice(i, 1)
     }
   }
