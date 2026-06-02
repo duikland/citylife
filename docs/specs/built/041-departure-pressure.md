@@ -1,5 +1,5 @@
 # Spec 041 — Departure Pressure: the colony can lose people, not just gain them
-- status: proposed
+- status: built — slice 36, shipped to mechanics/dev. Engine in src/colony/build.ts (colonyDistress reading liveability + arrears, departureCause, the departureStep that rises under sustained failure and drains when served, a household leaving at the threshold with a standing dip, departureStatus, and a Courier departure headline), the departurePressure state field in sim.ts, knobs in config.ts, uiState in runtime.ts, a HUD Departures row in ColonyApp.tsx, and seven tests in tests/economy.test.ts. v1 is a single colony-wide pressure (per-home tracking + named exact departure counts are a later deepening). typecheck clean and all 303 tests pass (the slow multi-day accrual kept the 296 prior tests + smoke green); live on :5188 a failed colony at the brink shed a household (30 to 26), nicked standing 0.50 to 0.46, reset the pressure, and the HUD read Departures 70% leaving — thirst.
 - proposed-by: **Oren Pell, returning founder and quay tallyman of Landing One** — **LIVE Hermes** (model hermes-codex-gpt-5.5). Oren Pell joins the roster of system-authors and names the missing half of the population loop: the colony knows how to welcome people, but not how to lose their trust.
 - date: 2026-06-02
 - depends-on: 004, 006, 028
