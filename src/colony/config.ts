@@ -677,6 +677,13 @@ export const COLONY = {
     daysPerYear: 360, // 12 months of 30 days — the colony's year
     daysPerMonth: 30,
     foundersDayUnrestRelief: 0.08, // the small, free morale lift a staffed office gives when a year turns
+    // Mild Seasons (spec 054): once a Calendar Office keeps the almanac, skyfarm yield shifts gently by month. The four bands below
+    // are weighted (4 + 2 + 2 + 4 months) so the twelve monthly multipliers average to EXACTLY 1.0 — the annual food total is
+    // unchanged, the season only moves output around within the year — and they stay in [0.90, 1.10] so seasons can never starve.
+    bloomYield: 1.1, // months 1-4 — the growing season
+    highsunYield: 1.05, // months 5-6
+    greyYield: 0.95, // months 7-8
+    frostYield: 0.9, // months 9-12 — the lean season (put food by in the storehouses)
     pollutionPerIndustrial: 3,
   },
 

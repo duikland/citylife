@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, birthStatus, effectiveBuildRadius, footprintStatus, veinFactor, veinStatus, calendarStatus, calendarStep, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, birthStatus, effectiveBuildRadius, footprintStatus, veinFactor, veinStatus, calendarStatus, calendarStep, seasonOf, seasonFactor, seasonStatus, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -3733,5 +3733,68 @@ describe('Spec 053 — The Founding Calendar: the colony learns to count its yea
     calendarStep(s)
     expect(s.unrest).toBe(0.5) // unstaffed → no lift
     expect(s.lastFoundersYear).toBe(1) // but the year is still accounted (unmarked)
+  })
+})
+
+describe('Spec 054 — Mild Seasons: the almanac makes the year turn', () => {
+  const mk = (kind: 'calendar' | 'greenhouse' | 'water', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('with no Calendar Office there are no seasons — the factor is 1 in every month (inert)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.clock.day = COLONY.build.daysPerYear * 0 + COLONY.build.daysPerMonth * 8 // month 9 — would be Frost with a calendar
+    expect(seasonFactor(s)).toBe(1)
+    expect(seasonStatus(s).active).toBe(false)
+  })
+
+  it('with a Calendar Office, the season factor follows the month bands', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('calendar', s.terrain.landing.x + 4, s.terrain.landing.y, { jobs: 1 }))
+    const at = (day: number) => { s.clock.day = day; return seasonFactor(s) }
+    expect(at(0)).toBe(COLONY.build.bloomYield)   // month 1 — Bloom
+    expect(at(COLONY.build.daysPerMonth * 3)).toBe(COLONY.build.bloomYield)   // month 4 — Bloom
+    expect(at(COLONY.build.daysPerMonth * 4)).toBe(COLONY.build.highsunYield) // month 5 — Highsun
+    expect(at(COLONY.build.daysPerMonth * 6)).toBe(COLONY.build.greyYield)    // month 7 — Grey
+    expect(at(COLONY.build.daysPerMonth * 8)).toBe(COLONY.build.frostYield)   // month 9 — Frost
+    expect(at(COLONY.build.daysPerMonth * 11)).toBe(COLONY.build.frostYield)  // month 12 — Frost
+  })
+
+  it('the twelve monthly multipliers average to exactly 1.0 (no net change to the yearly food total)', () => {
+    let sum = 0
+    for (let m = 1; m <= 12; m++) sum += seasonOf(m).multiplier
+    expect(sum / 12).toBeCloseTo(1, 10)
+  })
+
+  it('a skyfarm in a Bloom month out-produces the same farm in a Frost month', () => {
+    const grown = (day: number) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+      s.buildings.push(mk('calendar', lx, ly, { jobs: 1 }))
+      for (let g = 0; g < 5; g++) s.buildings.push(mk('greenhouse', lx + g, ly + 4, { jobs: COLONY.build.greenhouseWorkers }))
+      s.colonists = 20
+      s.totalJobs = 12
+      s.powerGen = 100
+      s.power.batteryWh = s.power.batteryCapWh
+      s.food = 0
+      s.clock.day = day // frozen across the run (stepBuild does not advance the clock)
+      for (let i = 0; i < 6; i++) stepBuild(s, sim.rng, 60)
+      return s.food
+    }
+    expect(grown(0)).toBeGreaterThan(grown(COLONY.build.daysPerMonth * 8)) // Bloom (+10%) out-grows Frost (-10%)
+  })
+
+  it('the season factor is always bounded to [0.90, 1.10] — it can never starve the colony', () => {
+    for (let m = 1; m <= 12; m++) {
+      const mult = seasonOf(m).multiplier
+      expect(mult).toBeGreaterThanOrEqual(0.9)
+      expect(mult).toBeLessThanOrEqual(1.1)
+    }
   })
 })

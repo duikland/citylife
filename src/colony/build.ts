@@ -2193,6 +2193,28 @@ export function calendarStep(state: ColonyState): void {
   state.lastFoundersYear = year // account the year whether or not it was marked (no catch-up celebrations)
 }
 
+/** Spec 054 — the season for a calendar month (1..12) and its skyfarm-yield multiplier. The 4+2+2+4 month weights make the twelve
+ *  multipliers average to exactly 1.0, so the annual food total is unchanged — the season only moves output around within the year. */
+export function seasonOf(month: number): { name: string; multiplier: number } {
+  if (month <= 4) return { name: 'Bloom', multiplier: COLONY.build.bloomYield }
+  if (month <= 6) return { name: 'Highsun', multiplier: COLONY.build.highsunYield }
+  if (month <= 8) return { name: 'Grey', multiplier: COLONY.build.greyYield }
+  return { name: 'Frost', multiplier: COLONY.build.frostYield }
+}
+
+/** Spec 054 — the seasonal skyfarm-yield multiplier: 1 with no Calendar Office (no almanac, no seasons — inert), otherwise the
+ *  current month's band, bounded to [0.90, 1.10] so a lean season can never starve the colony. */
+export function seasonFactor(state: ColonyState): number {
+  if (countKind(state, 'calendar') === 0) return 1 // inert until the colony keeps a calendar (053)
+  return seasonOf(calendarStatus(state).month).multiplier
+}
+
+/** Spec 054 — Season readout for the HUD: the current season name, its percent modifier, and whether seasons are active (a Calendar Office stands). */
+export function seasonStatus(state: ColonyState): { name: string; modifier: number; active: boolean } {
+  const s = seasonOf(calendarStatus(state).month)
+  return { name: s.name, modifier: Math.round((s.multiplier - 1) * 100), active: countKind(state, 'calendar') > 0 }
+}
+
 /** Spec 005 — services (water hubs) consume a trickle of components to run. */
 function serviceUpkeep(state: ColonyState, dtMin: number): void {
   let upkeep = 0 // components (water/depot/clinic/theatre)
@@ -2241,7 +2263,7 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
 /** Spec 007 — staffed greenhouses grow food (boosted near a Water Hub); colonists eat a little each day. */
 function foodStep(state: ColonyState, dtMin: number): void {
   const day = 24 * 60
-  const staffing = sectorStaffing(state, 'food') * healthFactor(state) * powerFactor(state) * transitFactor(state) * feverFactor(state) * orderFactor(state) * toolSupplyFactor(state) * seedSupplyFactor(state) // spec 009/017/021/026/028/038/047/048 — sick, brownout, congested, fevered, restless, sector-deprioritised, tool-starved or seed-starved greenhouses grow less
+  const staffing = sectorStaffing(state, 'food') * healthFactor(state) * powerFactor(state) * transitFactor(state) * feverFactor(state) * orderFactor(state) * toolSupplyFactor(state) * seedSupplyFactor(state) * seasonFactor(state) // spec 009/017/021/026/028/038/047/048/054 — sick, brownout, congested, fevered, restless, sector-deprioritised, tool-starved, seed-starved or out-of-season greenhouses grow less (seasons inert without a Calendar Office)
   let grown = 0
   for (const b of state.buildings) {
     if (b.artifact.kind !== 'greenhouse' || b.incident) continue // spec 024 — a blighted greenhouse grows nothing
