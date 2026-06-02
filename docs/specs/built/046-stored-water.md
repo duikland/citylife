@@ -1,5 +1,5 @@
 # Spec 046 — Stored Water: the sky can deny the colony its tanks
-- status: proposed
+- status: built — slice 41, shipped to mechanics/dev. Engine in src/colony/build.ts (the water good + tank, the cistern building, waterTankCap, waterSupplyFactor coupling wateredFraction, waterStatus, and waterStep that condenses + draws water and applies dry-tank fever/unrest), the water state field in sim.ts, knobs in config.ts, the water uiState in runtime.ts, a HUD Water row in ColonyApp.tsx, and five tests in tests/economy.test.ts. A freshly built cistern starts its tank charged so it never crashes water on construction day. With no cistern the supply factor is 1 so wateredFraction is exactly today — the autonomous economy + smoke test stayed green. typecheck clean and all 323 tests pass; live on :5188 a full tank held water coverage at 100% and a dry tank dropped it to the 30% floor. The Cloudsea-front intake cut is a flagged later refinement (brownout already cuts production via powerFactor).
 - proposed-by: **Halric Voss, cistern keeper and founding deckhand of Landing One** — **LIVE Hermes** (model hermes-codex-gpt-5.5). Halric Voss joins the roster of system-authors and names the one need the colony never has to *fear*: water is a promise on the map, not a thing the sky can take away.
 - date: 2026-06-02
 - depends-on: 005, 017
