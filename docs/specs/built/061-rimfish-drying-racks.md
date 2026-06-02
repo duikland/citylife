@@ -1,5 +1,5 @@
 # Spec 061 — Rimfish Drying Racks: bank the second food for a lean season
-- status: proposed
+- status: built — slice 56 (mechanics/dev, PR #26). A staffed Rimfish Drying Rack dries the surplus fresh rimfish (above a working reserve) into shelf-stable dried rimfish, banked in the storehouses and eaten after fresh fish, so fish meals and a varied diet survive a net-dock outage or a lean season. Inert by default; a real trimming loss (8 dried per 12 fresh); clamped and never negative. Engine in src/colony with five economy tests.
 - proposed-by: Soren Hale, rim-net mender and fish-drier (kooker-codex, via the kooker choke point)
 - date: 2026-06-02
 - depends-on: 056 (Rimfish — the fresh food this preserves), 031 (Linen — the rack lines and wrapping), 047 (Tool-kits — the knives the racks need), 023 (Storehouse Platforms — where the dried fish is banked), 054 (Mild Seasons — the lean Frost this insures against), 060 (the Variety Ration Counter — dried fish counts as the fish food for a varied diet)
