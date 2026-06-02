@@ -1996,7 +1996,47 @@ function immigration(state: ColonyState, dtMin: number): void {
   // Spec 010/014 — culture draws settlers; a theatre with no reels (spec 014) runs dark, halving its pull.
   const cultureFactor = 1 + COLONY.build.cultureDesirabilityBonus * cultureFraction(state) * cultureFuelFactor(state)
   const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) * (1 - (state.outbreak ?? 0) * COLONY.build.feverEmigrationWeight) * (1 + COLONY.build.waresDesirabilityBonus * housewaresFraction(state)) * (1 - (state.unrest ?? 0) * COLONY.build.unrestDesirabilityWeight) * wageDesirabilityFactor(state) * (feasting(state) ? 1 + COLONY.build.feastDesirabilityBonus : 1) * standingDesirabilityFactor(state) * (spireComplete(state) ? COLONY.build.spireImmigrationBonus : 1) * (foundersHallActive(state) ? COLONY.build.foundersDesirabilityBonus : 1) * (1 + COLONY.build.solaceDesirabilityBonus * solaceCoverage(state)) * (arrearsStrain(state) ? COLONY.build.arrearsStrainDesirabilityFactor : 1) * (1 + COLONY.build.educationDesirabilityBonus * educationFraction(state)) * prosperityDesirabilityFactor(state) // spec 025/026/027/028/029/030/032/033/035/037/039/042/040 — levy, outbreak, stocked homes, unrest, wages, a feast, Kookerverse standing, the Spire, named founders, a consoled colony, a colony deep in arrears, a schooled colony, and a high-Prosperity colony all pull on who comes and stays
-  if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * perDay)
+  if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * confidenceImmigrationFactor(state) * perDay) // spec 049 — arrivals also follow the colony's Settler Confidence (a healthy colony sits at the plateau, so this is 1; deep distress slows it, terrible distress halts it)
+}
+
+/** Spec 049 — Settler Confidence in [0,1]: how willing free colonists are to risk coming, read from the colony's visible
+ *  conditions. Survival shortfalls (hunger, thirst) weigh light — a frontier still draws people, and water/food already gate
+ *  immigration through desirability — while civic failure (unrest, arrears, stingy wages) weighs heavy. Each signal is neutral
+ *  (no distress) when its subsystem is absent, so a young or minimal colony stays confident and immigrates exactly as today. */
+export function settlerConfidence(state: ColonyState): number {
+  const homes = countKind(state, 'habitat')
+  const fedReach = countKind(state, 'depot') > 0 ? provisionedFraction(state) : (state.food > 0 ? 1 : 0)
+  const hunger = homes > 0 ? Math.max(0, 1 - fedReach) : 0 // young colony with no homes → no hunger distress
+  const thirst = homes > 0 ? Math.max(0, 1 - wateredFraction(state)) : 0
+  const disorder = Math.min(1, Math.max(0, state.unrest ?? 0)) // spec 028
+  const insolvency = arrearsStrain(state) ? 1 : 0 // spec 039
+  const ws = wageStatus(state) // spec 029 — neutral with no Pay Office
+  const wageGap = ws.active ? (ws.rate === 'low' ? 1 : ws.rate === 'standard' ? 0.3 : 0) : 0
+  const c = 1
+    - COLONY.build.confHungerWeight * hunger
+    - COLONY.build.confThirstWeight * thirst
+    - COLONY.build.confUnrestWeight * disorder
+    - COLONY.build.confArrearsWeight * insolvency
+    - COLONY.build.confWageWeight * wageGap
+  return Math.max(0, Math.min(1, c))
+}
+
+/** Spec 049 — map Confidence to the immigration-rate multiplier: 1 at or above the plateau (unchanged from today), ramping down
+ *  to 0 at or below the stop threshold (immigration halts while beds sit empty), linear between. */
+export function confidenceImmigrationFactor(state: ColonyState): number {
+  const c = settlerConfidence(state)
+  const plateau = COLONY.build.confPlateau
+  const stop = COLONY.build.confStop
+  if (c >= plateau) return 1
+  if (c <= stop) return 0
+  return (c - stop) / (plateau - stop)
+}
+
+/** Spec 049 — Confidence readout for the HUD: the rating as a percentage, the live arrival multiplier, and whether arrivals are
+ *  merely slowed or fully halted. */
+export function confidenceStatus(state: ColonyState): { confidence: number; factor: number; slowed: boolean; halted: boolean } {
+  const factor = confidenceImmigrationFactor(state)
+  return { confidence: settlerConfidence(state), factor, slowed: factor < 1, halted: factor <= 0 }
 }
 
 /** Spec 005 — services (water hubs) consume a trickle of components to run. */

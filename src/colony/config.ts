@@ -620,6 +620,18 @@ export const COLONY = {
     seedStartCharge: 0.6, // a freshly built loft starts its bin this full (no construction-day harvest crash)
     seedLoftFoodSurplus: 60, // only auto-build a loft when food sits at least this spare (never tips a marginal colony)
     seedLoftSpareComponents: 6, // and this many components beyond the loft build cost
+    // Settler Confidence (spec 049): immigration follows the colony's visible reputation, not just its vacancies. A Confidence
+    // rating in [0,1] is read from distress signals; a healthy colony sits at the plateau (factor 1, arrivals as today), deep
+    // distress slows arrivals and terrible distress halts them. Survival shortfalls weigh LIGHT (a frontier still draws people, and
+    // water/food already gate immigration through desirability), while civic failure — unrest, arrears, stingy wages — weighs heavy
+    // and is what actually scares settlers off. Calibrated so any reasonably healthy colony stays at or above the plateau.
+    confHungerWeight: 0.1, // homes going unfed knock this much off Confidence
+    confThirstWeight: 0.1, // homes going unwatered knock this much off
+    confUnrestWeight: 0.35, // disorder is the heaviest deterrent
+    confArrearsWeight: 0.25, // a colony in debt strain looks risky
+    confWageWeight: 0.2, // a stingy Pay Office dents the colony's name
+    confPlateau: 0.7, // Confidence at or above this → full-speed immigration (exactly as today)
+    confStop: 0.25, // Confidence at or below this → immigration halts while beds sit empty
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

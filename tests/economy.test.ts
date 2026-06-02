@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -3294,5 +3294,86 @@ describe('Spec 048 — The Seed Loft: food should not grow from bare deck-platin
     expect(seedSupplyFactor(s)).toBe(1) // never kept its own seed → no penalty ever
     expect(s.seed).toBe(0) // no loft → no seed-stock ever accrues
     expect(seedStatus(s).lofts).toBe(0)
+  })
+})
+
+describe('Spec 049 — Settler Confidence: word travels faster than skyships', () => {
+  const mk = (kind: 'habitat' | 'water' | 'comptroller', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('a fed, watered, solvent, orderly colony sits at the plateau (immigration unchanged)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    s.buildings.push(mk('habitat', lx, ly, { residents: 12 }))
+    s.buildings.push(mk('water', lx, ly)) // a hub at the home → watered
+    s.food = 100 // fed
+    s.colonists = 8
+    expect(settlerConfidence(s)).toBeGreaterThanOrEqual(COLONY.build.confPlateau)
+    expect(confidenceImmigrationFactor(s)).toBe(1) // healthy → full-speed arrivals, exactly as today
+  })
+
+  it('a young or minimal colony stays confident even with no water or food yet (neutral when absent)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    s.buildings.push(mk('habitat', lx, ly, { residents: 9 })) // a frontier home, no Water Hub, no food, no Pay Office, no debt
+    s.food = 0
+    s.colonists = 2
+    // survival shortfalls weigh light, so a frontier colony with no civic distress is still above the plateau and immigrates as today
+    expect(settlerConfidence(s)).toBeGreaterThanOrEqual(COLONY.build.confPlateau)
+    expect(confidenceImmigrationFactor(s)).toBe(1)
+  })
+
+  it('disorder lowers Confidence and slows arrivals below the plateau', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    s.buildings.push(mk('habitat', lx, ly, { residents: 12 }))
+    s.buildings.push(mk('water', lx, ly))
+    s.food = 100
+    s.colonists = 8
+    expect(confidenceImmigrationFactor(s)).toBe(1) // calm → plateau
+    s.unrest = 0.95 // riots on the decks
+    expect(settlerConfidence(s)).toBeLessThan(COLONY.build.confPlateau) // word has soured
+    expect(confidenceImmigrationFactor(s)).toBeLessThan(1) // arrivals slow
+    expect(confidenceStatus(s).slowed).toBe(true)
+  })
+
+  it('stacked distress halts immigration entirely while beds sit empty', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    s.buildings.push(mk('habitat', lx, ly, { residents: 20 })) // capacity 22 — plenty of empty beds
+    s.buildings.push(mk('comptroller', lx + 2, ly)) // a Comptroller exists, so deep debt becomes arrears strain
+    s.colonists = 5
+    s.food = 0 // hunger
+    s.unrest = 1 // disorder
+    s.treasury = -1_000_000 // deep arrears (no Water Hub either → thirst)
+    expect(arrearsStrain(s)).toBe(true)
+    expect(housingCapacity(s)).toBeGreaterThan(s.colonists) // beds sit empty — vacancy alone would normally pull settlers in
+    expect(settlerConfidence(s)).toBeLessThanOrEqual(COLONY.build.confStop)
+    expect(confidenceImmigrationFactor(s)).toBe(0) // terrible → the arrival multiplier is zero, so immigration halts despite the empty beds
+    expect(confidenceStatus(s).halted).toBe(true)
+  })
+
+  it('Confidence and arrivals climb back when the colony is set right (recovery)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    s.buildings.push(mk('habitat', lx, ly, { residents: 12 }))
+    s.buildings.push(mk('water', lx, ly))
+    s.colonists = 8
+    s.food = 0
+    s.unrest = 1 // wrecked
+    expect(confidenceImmigrationFactor(s)).toBeLessThan(1)
+    s.food = 100 // rations restored
+    s.unrest = 0 // order restored
+    expect(settlerConfidence(s)).toBeGreaterThanOrEqual(COLONY.build.confPlateau)
+    expect(confidenceImmigrationFactor(s)).toBe(1) // back to full-speed arrivals — no hysteresis trap
   })
 })
