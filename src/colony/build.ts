@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch'
 
 export interface Parcel {
   id: number
@@ -80,6 +80,7 @@ const MAINTSHED_COLOR = 0x8d9aa6 // steel-grey maintenance shed (repair crews)
 const STOREHOUSE_COLOR = 0xb0a06a // khaki crate-stacked storehouse platform
 const BELLHOUSE_COLOR = 0xd2452f // emergency-red bellhouse (response crews)
 const LEVY_COLOR = 0x4caf8a // jade civic levy office (the ledger desk)
+const FEVERWATCH_COLOR = 0xe85d9c // pink-magenta fever watch post (public health)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -314,6 +315,10 @@ function designLevy(state: ColonyState): Artifact {
   // Spec 025 — Levy Office; a staffed civic desk that lets the council set the household levy rate.
   return { id: state.buildIds++, kind: 'levy', color: LEVY_COLOR, height: 1.2, residents: 0, jobs: COLONY.build.levyWorkers, powerLoad: 0.4, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.levyOfficeCost, materialsCost: COLONY.build.matLevy, crew: COLONY.build.crewLevy, materialsGen: 0, componentsCost: COLONY.build.compLevy, reelsCost: COLONY.build.reelLevy }
 }
+function designFeverWatch(state: ColonyState): Artifact {
+  // Spec 026 — Fever Watch Post; staffed medics + aides quarantine and contain an outbreak before it spreads.
+  return { id: state.buildIds++, kind: 'feverwatch', color: FEVERWATCH_COLOR, height: 1.0, residents: 0, jobs: COLONY.build.feverWatchWorkers, powerLoad: 0.4, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.feverWatchCost, materialsCost: COLONY.build.matFeverWatch, crew: COLONY.build.crewFeverWatch, materialsGen: 0, componentsCost: COLONY.build.compFeverWatch }
+}
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
 function countKind(state: ColonyState, kind: BuildKind): number {
@@ -515,6 +520,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 12 && countKind(state, 'mast') < 1 && state.components >= COLONY.build.compMast) return designMast(state)
   // Spec 025 — give money a lever: an established colony with reels on hand raises a Levy Office (the rate stays normal until the council sets it).
   if (state.colonists > 10 && countKind(state, 'levy') < 1 && state.components >= COLONY.build.compLevy && state.reels >= COLONY.build.reelLevy) return designLevy(state)
+  // Spec 026 — answer an outbreak: when fever climbs past the build line and no post contains it → raise a Fever Watch Post.
+  if (state.outbreak > COLONY.build.feverBuildThreshold && state.components >= COLONY.build.compFeverWatch && countKind(state, 'feverwatch') < COLONY.build.maxFeverWatch) return designFeverWatch(state)
   // Spec 022 — keep the machinery running: a working building worn past the build line with no shed in reach → raise a Maintenance Shed.
   if (maintenanceUncovered(state) && state.components >= COLONY.build.compMaintShed && countKind(state, 'maintshed') < Math.ceil(state.buildings.filter(isWorking).length / COLONY.build.maintShedCovers)) return designMaintShed(state)
   // Spec 023 — make room before the surplus spills: a stockpile near its cap + components on hand → raise a Storehouse Platform.
@@ -605,7 +612,7 @@ function produceMaterials(state: ColonyState, dtMin: number): void {
   for (const b of state.buildings) if (b.artifact.kind === 'mine' && !b.incident) gen += b.artifact.materialsGen * maintFactor(b) // spec 022/024 — a worn mine digs less; one mid-incident digs nothing
   if (gen <= 0) return
   const staffing = state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0
-  state.materials += gen * staffing * healthFactor(state) * powerFactor(state) * transitFactor(state) * (dtMin / (24 * 60)) // spec 009/017/021 — sick, brownout or congested mines dig less
+  state.materials += gen * staffing * healthFactor(state) * powerFactor(state) * transitFactor(state) * feverFactor(state) * (dtMin / (24 * 60)) // spec 009/017/021/026 — sick, brownout, congested or fevered mines dig less
 }
 
 /** Spec 020 — how well the advanced trades are staffed by skilled workers: full at the cap, 0.6 floor when untrained. */
@@ -837,6 +844,56 @@ export function levyStatus(state: ColonyState): { active: boolean; rate: 'low' |
   return { active: levyActive(state), rate: state.levyRate }
 }
 
+/** Spec 026 — the Fever Watch contains outbreaks only while a built, staffed post stands. */
+export function feverWatchActive(state: ColonyState): boolean {
+  if (countKind(state, 'feverwatch') === 0) return false
+  return (state.totalJobs > 0 ? state.colonists / state.totalJobs : 0) > 0
+}
+
+/** Spec 026 — fever pressure: the PRODUCT of low health coverage, crowding, and an environmental stressor
+ *  (smog or brownout). All three must be present — a well-served, uncrowded, clean colony has zero pressure. */
+function feverPressure(state: ColonyState): number {
+  const habs = state.buildings.filter((b) => b.artifact.kind === 'habitat').length
+  if (habs === 0) return 0
+  const lowHealth = 1 - healthFraction(state) // 0 when every home has a clinic, 1 when none do
+  if (lowHealth <= 0) return 0
+  const cap = housingCapacity(state)
+  const occupancy = cap > 0 ? state.colonists / cap : 0
+  const th = COLONY.build.feverCrowdThreshold
+  const crowding = occupancy <= th ? 0 : Math.min(1, (occupancy - th) / (1 - th)) // only a packed colony feeds the fever
+  if (crowding <= 0) return 0
+  const env = Math.max(pollutedFraction(state), inBrownout(state) ? 1 : 0) // smog OR a brownout
+  if (env <= 0) return 0
+  return lowHealth * crowding * env
+}
+
+/** Spec 026 — advance the outbreak: it spreads under sustained pressure, recovers when eased, and a staffed
+ *  Fever Watch Post drives it down hard (quarantine + response teams). */
+function feverStep(state: ColonyState, dtMin: number): void {
+  const frac = dtMin / (24 * 60)
+  let o = state.outbreak ?? 0
+  if (feverWatchActive(state)) {
+    o -= COLONY.build.feverContainPerDay * frac // contained — the curve bends down
+  } else {
+    o += COLONY.build.feverSpreadPerDay * feverPressure(state) * frac // spreads while the colony stays sick
+    o -= COLONY.build.feverRecoverPerDay * frac // some natural recovery
+  }
+  state.outbreak = Math.max(0, Math.min(COLONY.build.feverMax, o))
+}
+
+/** Spec 026 — production multiplier from the outbreak: sick crews are slow. Clinics (009) soften the severity. */
+function feverFactor(state: ColonyState): number {
+  const o = state.outbreak ?? 0
+  if (o <= 0) return 1
+  const severity = COLONY.build.feverPenalty * (1 - COLONY.build.feverClinicRelief * healthFraction(state))
+  return Math.max(COLONY.build.feverFloor, 1 - o * severity)
+}
+
+/** Spec 026 — outbreak readout for the HUD: the share unwell (0..1) and whether a Fever Watch is containing it. */
+export function feverStatus(state: ColonyState): { outbreak: number; contained: boolean } {
+  return { outbreak: state.outbreak ?? 0, contained: feverWatchActive(state) }
+}
+
 /** Spec 020 — staffed Skillhouse Academies train colonists into skilled workers, capped at the population. */
 function academyStep(state: ColonyState, dtMin: number): void {
   const academies = countKind(state, 'academy')
@@ -848,7 +905,7 @@ function academyStep(state: ColonyState, dtMin: number): void {
 
 /** Spec 003 — staffed workshops consume materials and produce components (2:1); halt when materials run out. */
 function produceComponents(state: ColonyState, dtMin: number): void {
-  const eff = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) * powerFactor(state) * skillFactor(state) * transitFactor(state) // spec 009/017/020/021 — sick, brownout, unskilled or congested workshops refine less
+  const eff = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) * powerFactor(state) * skillFactor(state) * transitFactor(state) * feverFactor(state) // spec 009/017/020/021/026 — sick, brownout, unskilled, congested or fevered workshops refine less
   if (eff <= 0) return
   const day = 24 * 60
   for (const b of state.buildings) {
@@ -865,7 +922,7 @@ function produceComponents(state: ColonyState, dtMin: number): void {
 
 /** Spec 013 — staffed reel foundries consume components and produce reels (2:1); halt when components run out. */
 function produceReels(state: ColonyState, dtMin: number): void {
-  const eff = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) * powerFactor(state) * skillFactor(state) * transitFactor(state) // spec 009/017/020/021 — sick, brownout, unskilled or congested foundries weave less
+  const eff = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) * powerFactor(state) * skillFactor(state) * transitFactor(state) * feverFactor(state) // spec 009/017/020/021/026 — sick, brownout, unskilled, congested or fevered foundries weave less
   if (eff <= 0) return
   const day = 24 * 60
   for (const b of state.buildings) {
@@ -974,7 +1031,7 @@ function immigration(state: ColonyState, dtMin: number): void {
   // Spec 010 — culture draws settlers: a cultured colony is more desirable.
   // Spec 010/014 — culture draws settlers; a theatre with no reels (spec 014) runs dark, halving its pull.
   const cultureFactor = 1 + COLONY.build.cultureDesirabilityBonus * cultureFraction(state) * cultureFuelFactor(state)
-  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) // spec 025 — a gentle levy draws settlers, a hard one repels them
+  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) * (1 - (state.outbreak ?? 0) * COLONY.build.feverEmigrationWeight) // spec 025/026 — a gentle levy draws settlers, an outbreak drives them off
   if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * perDay)
 }
 
@@ -997,6 +1054,7 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
     else if (b.artifact.kind === 'storehouse') upkeep += COLONY.build.storehouseMaintCompPerDay // spec 023 — logistics
     else if (b.artifact.kind === 'bellhouse') upkeep += COLONY.build.bellhouseMaintCompPerDay // spec 024 — foam/alarm upkeep
     else if (b.artifact.kind === 'levy') upkeep += COLONY.build.levyMaintCompPerDay // spec 025 — ledger supply
+    else if (b.artifact.kind === 'feverwatch') upkeep += COLONY.build.feverWatchMaintCompPerDay // spec 026 — medical supply
   }
   if (upkeep > 0) state.components = Math.max(0, state.components - upkeep * (dtMin / (24 * 60)))
   if (matUpkeep > 0) state.materials = Math.max(0, state.materials - matUpkeep * (dtMin / (24 * 60)))
@@ -1006,7 +1064,7 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
 /** Spec 007 — staffed greenhouses grow food (boosted near a Water Hub); colonists eat a little each day. */
 function foodStep(state: ColonyState, dtMin: number): void {
   const day = 24 * 60
-  const staffing = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) * powerFactor(state) * transitFactor(state) // spec 009/017/021 — sick, brownout or congested greenhouses grow less
+  const staffing = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) * powerFactor(state) * transitFactor(state) * feverFactor(state) // spec 009/017/021/026 — sick, brownout, congested or fevered greenhouses grow less
   let grown = 0
   for (const b of state.buildings) {
     if (b.artifact.kind !== 'greenhouse' || b.incident) continue // spec 024 — a blighted greenhouse grows nothing
@@ -1057,6 +1115,7 @@ export function tradeExportRate(state: ColonyState): number {
 export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   maintenanceStep(state, dtMin) // spec 022 — accrue/repair wear first so producers read current condition
   incidentStep(state, dtMin) // spec 024 — crises strike, get answered, or hit their consequence (paused buildings won't produce below)
+  feverStep(state, dtMin) // spec 026 — the outbreak spreads or is contained; producers below read the current fever
   produceMaterials(state, dtMin)
   academyStep(state, dtMin)
   produceComponents(state, dtMin)

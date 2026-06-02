@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -1244,6 +1244,101 @@ describe('Spec 025 — The Levy Office: the council sets a fiscal rate with a re
       return s.colonists - col0
     }
     expect(immigrationUnder('low')).toBeGreaterThan(immigrationUnder('high')) // gentle dues → more settlers
+  })
+})
+
+describe('Spec 026 — The Fever Watch: an outbreak that spreads, sickens, and is contained', () => {
+  const mk = (kind: 'habitat' | 'mine' | 'clinic' | 'feverwatch', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('the Fever Watch only contains while a post is built and staffed', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    expect(feverWatchActive(s)).toBe(false) // no post
+    s.buildings.push(mk('feverwatch', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 2 }))
+    s.totalJobs = 2
+    s.colonists = 0
+    expect(feverWatchActive(s)).toBe(false) // post, but nobody to crew it
+    s.colonists = 6
+    expect(feverWatchActive(s)).toBe(true) // built + staffed
+  })
+
+  it('a well-served colony never sees an outbreak (normal play is unaffected)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const L = s.terrain.landing
+    s.buildings.push(mk('habitat', L.x + 2, L.y, { residents: 9 }))
+    s.buildings.push(mk('clinic', L.x + 2, L.y, { jobs: 2 })) // covers the home → healthy
+    s.buildings.push(mk('mine', L.x + 5, L.y, { jobs: 6, materialsGen: 5 }))
+    s.colonists = 4
+    s.totalJobs = 8
+    for (let i = 0; i < 300; i++) stepBuild(s, sim.rng, 10)
+    expect(s.outbreak).toBe(0) // healthy homes → zero fever pressure, even as it fills
+    expect(feverStatus(s).outbreak).toBe(0)
+  })
+
+  it('a sick colony (injected outbreak) produces less than a healthy one', () => {
+    const run = (outbreak: number) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      s.buildings.push(mk('mine', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 6, materialsGen: 5 }))
+      s.colonists = 6
+      s.totalJobs = 6
+      s.materials = 5
+      s.outbreak = outbreak
+      const m0 = s.materials
+      for (let i = 0; i < 40; i++) stepBuild(s, sim.rng, 10)
+      return s.materials - m0
+    }
+    expect(run(0.6)).toBeLessThan(run(0)) // a fevered workforce digs less
+  })
+
+  it('a staffed Fever Watch Post contains an outbreak — it decays back down', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('feverwatch', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 2 }))
+    s.colonists = 6
+    s.totalJobs = 6
+    s.outbreak = 0.6
+    for (let i = 0; i < 200; i++) stepBuild(s, sim.rng, 10) // ~1.4 days of response work
+    expect(s.outbreak).toBeLessThan(0.1) // the curve bends back down
+  })
+
+  it('sustained bad conditions (crowded + smoggy + unhealthy) grow an outbreak from nothing', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const L = s.terrain.landing
+    s.buildings.push(mk('habitat', L.x + 2, L.y, { residents: 3 }))
+    s.buildings.push(mk('habitat', L.x + 3, L.y, { residents: 3 }))
+    s.buildings.push(mk('mine', L.x + 2, L.y + 1, { jobs: 6, materialsGen: 5 })) // smog over the homes, no scrubber
+    s.colonists = 8 // packed in (cap 2 + 3 + 3 = 8) and no clinic
+    s.totalJobs = 8
+    expect(s.outbreak).toBe(0)
+    for (let i = 0; i < 400; i++) stepBuild(s, sim.rng, 10) // ~2.8 days
+    expect(s.outbreak).toBeGreaterThan(0.1) // the fever takes hold and spreads
+  })
+
+  it('clinics soften an outbreak — a covered colony out-produces an uncovered one at the same fever', () => {
+    const run = (withClinic: boolean) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      const L = s.terrain.landing
+      s.buildings.push(mk('habitat', L.x + 2, L.y, { residents: 3 }))
+      s.buildings.push(mk('mine', L.x + 3, L.y, { jobs: 6, materialsGen: 5 }))
+      if (withClinic) s.buildings.push(mk('clinic', L.x + 2, L.y, { jobs: 2 }))
+      s.colonists = 6
+      s.totalJobs = 6
+      s.materials = 5
+      s.outbreak = 0.6
+      const m0 = s.materials
+      for (let i = 0; i < 20; i++) stepBuild(s, sim.rng, 10)
+      return s.materials - m0
+    }
+    expect(run(true)).toBeGreaterThan(run(false)) // a clinic lowers the severity → more mined
   })
 })
 

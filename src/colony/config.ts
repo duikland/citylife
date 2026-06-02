@@ -276,6 +276,27 @@ export const COLONY = {
     levyIncomeHigh: 1.5, // income multiplier at a high levy
     levyDesireLow: 1.25, // immigration desirability multiplier at a low levy (gentle dues draw settlers)
     levyDesireHigh: 0.7, // immigration desirability multiplier at a high levy (a squeeze repels them)
+    // Fever Watch (spec 026): the colony's first population-wide dynamic. An outbreak spreads while the colony is in
+    // compounding bad shape (low health AND crowding AND an environmental stressor — smog or brownout) and is
+    // contained by a staffed Fever Watch Post. Pressure is a PRODUCT of all three, so a well-kept colony never
+    // sees an outbreak and existing play is unaffected.
+    matFeverWatch: 12,
+    compFeverWatch: 6,
+    crewFeverWatch: 3,
+    feverWatchCost: 1900,
+    feverWatchWorkers: 2, // medics + watch aides
+    feverWatchMaintCompPerDay: 0.5, // medical supply
+    feverCrowdThreshold: 0.85, // housing occupancy above which crowding starts feeding the fever
+    feverSpreadPerDay: 0.4, // outbreak growth per day at full pressure (uncontained)
+    feverRecoverPerDay: 0.15, // natural recovery per day when pressure eases (no watch)
+    feverContainPerDay: 0.5, // recovery per day while a staffed Fever Watch Post is on it
+    feverMax: 0.8, // cap on the share of people unwell
+    feverPenalty: 0.6, // production penalty coefficient at a full outbreak (before clinic relief)
+    feverClinicRelief: 0.5, // clinics cut up to this fraction of the severity
+    feverFloor: 0.4, // production floor under a maxed, unmitigated outbreak
+    feverEmigrationWeight: 0.5, // how much a full outbreak drags immigration desirability down
+    feverBuildThreshold: 0.08, // raise a Fever Watch Post once the outbreak climbs past this
+    maxFeverWatch: 2,
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

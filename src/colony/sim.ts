@@ -50,6 +50,7 @@ export interface ColonyState {
   lastGrowMin: number
   housingTimer: number // spec 006 — accumulates sim-minutes; fires the upgrade/devolve pass on an interval
   levyRate: 'low' | 'normal' | 'high' // spec 025 — household levy the council sets; inert until a Levy Office stands
+  outbreak: number // spec 026 — 0..1 share of the population unwell; spreads in bad conditions, contained by a Fever Watch
   buildingLoad: number
   powerGen: number
   lastIncomeDay: number
@@ -121,6 +122,7 @@ export class ColonySim {
       lastGrowMin: 0,
       housingTimer: 0,
       levyRate: 'normal', // spec 025 — steady by default; the rate only bites once a Levy Office is built + staffed
+      outbreak: 0, // spec 026 — the colony starts healthy; an outbreak only grows from sustained bad conditions
       buildingLoad: 0,
       powerGen: 0,
       lastIncomeDay: 0,
