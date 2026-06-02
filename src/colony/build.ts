@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar'
 
 export interface Parcel {
   id: number
@@ -104,6 +104,7 @@ const CISTERN_COLOR = 0x3f7fb0 // deep cistern-blue — the Mist Condenser Ciste
 const TOOLCRIB_COLOR = 0xb8823c // worked-bronze — the Tool Crib (components become working tool-kits)
 const SEEDLOFT_COLOR = 0x7fae57 // seed-green — the Seed Loft (saved harvest becomes seed-stock)
 const SURVEYCAMP_COLOR = 0xc8a25a // surveyor-ochre — the Survey Camp (claims new ground for the colony)
+const CALENDAR_COLOR = 0xd9c089 // parchment-gold — the Calendar Office (the colony counts its years)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -134,6 +135,7 @@ export function initBuild(state: ColonyState): void {
   state.children = 0 // spec 050 — no dependents until a household births one
   state.claims = 0 // spec 051 — the colony starts at its base footprint
   state.claimProgress = 0 // spec 051 — no survey underway
+  state.lastFoundersYear = 0 // spec 053 — the founding year needs no anniversary
   state.standing = COLONY.build.standingStart // spec 032 — neutral Kookerverse Standing
   state.request = null // spec 032 — no open Civic Request
   state.requestCooldown = 0 // spec 032
@@ -445,6 +447,10 @@ function designSeedLoft(state: ColonyState): Artifact {
 function designSurveyCamp(state: ColonyState): Artifact {
   // Spec 051 — Survey Camp; a staffed boundary worksite whose Outer Claims push the colony's build footprint outward.
   return { id: state.buildIds++, kind: 'surveycamp', color: SURVEYCAMP_COLOR, height: 0.6, residents: 0, jobs: COLONY.build.surveyCampWorkers, powerLoad: COLONY.build.surveyCampPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.surveyCampCost, materialsCost: COLONY.build.matSurveyCamp, crew: COLONY.build.crewSurveyCamp, materialsGen: 0, componentsCost: COLONY.build.compSurveyCamp }
+}
+function designCalendarOffice(state: ColonyState): Artifact {
+  // Spec 053 — Calendar Office; a one-clerk civic room that counts the colony's years and marks Founders' Day.
+  return { id: state.buildIds++, kind: 'calendar', color: CALENDAR_COLOR, height: 0.8, residents: 0, jobs: COLONY.build.calendarWorkers, powerLoad: COLONY.build.calendarPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.calendarCost, materialsCost: COLONY.build.matCalendar, crew: COLONY.build.crewCalendar, materialsGen: 0, componentsCost: COLONY.build.compCalendar, reelsCost: COLONY.build.reelCalendar }
 }
 
 /** Spec 045 — steady power the built, staffed Turbine Masts add to the grid (harvests wind day + night; understaffing cuts it). */
@@ -909,6 +915,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 12 && !inBrownout(state) && countKind(state, 'greenhouse') > 0 && state.food > COLONY.build.seedLoftFoodSurplus && state.components >= COLONY.build.compSeedLoft + COLONY.build.seedLoftSpareComponents && countKind(state, 'seedloft') < Math.max(1, Math.ceil(countKind(state, 'greenhouse') / 6))) return designSeedLoft(state)
   // Spec 051 — when the colony has filled its current footprint (no block left to develop) and could still claim more ground, raise a Survey Camp to push the boundary out.
   if (state.colonists > 14 && countKind(state, 'surveycamp') < 1 && (state.claims ?? 0) < COLONY.build.maxClaims && nextBlock(state) === null && state.components >= COLONY.build.compSurveyCamp && state.materials >= COLONY.build.matSurveyCamp + COLONY.build.matPerClaim) return designSurveyCamp(state)
+  // Spec 053 — a settled, mature colony with fine reels to spare raises a Calendar Office to count its years and keep Founders' Day.
+  if (state.colonists > 18 && countKind(state, 'calendar') < 1 && state.components >= COLONY.build.compCalendar && state.reels >= COLONY.build.reelCalendar && state.materials >= COLONY.build.matCalendar) return designCalendarOffice(state)
   // Spec 036 — once trade is established (an Exchange stands) and the bank is flush, raise an Import Office to buy shortages.
   if (state.colonists > 12 && countKind(state, 'import') < 1 && countKind(state, 'exchange') > 0 && state.components >= COLONY.build.compImportOffice && state.treasury > COLONY.build.importOfficeCost) return designImportOffice(state)
   // Spec 039 — a mature colony raises a Comptroller's Office so the treasury can ride a hard stretch on managed debt.
@@ -1015,7 +1023,7 @@ const SECTOR_OF: Record<BuildKind, Sector> = {
   transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics', turbine: 'logistics', surveycamp: 'logistics',
   bellhouse: 'safety', feverwatch: 'safety', ward: 'safety', stormwatch: 'safety', scrubber: 'safety',
   exchange: 'trade', import: 'trade',
-  levy: 'civic', payoffice: 'civic', liaison: 'civic', academy: 'civic', mast: 'civic', hall: 'civic', feast: 'civic', comptroller: 'civic', roster: 'civic', census: 'civic', habitat: 'civic',
+  levy: 'civic', payoffice: 'civic', liaison: 'civic', academy: 'civic', mast: 'civic', hall: 'civic', feast: 'civic', comptroller: 'civic', roster: 'civic', census: 'civic', habitat: 'civic', calendar: 'civic',
 }
 // Spec 038 — priority orders the Roster Office fills under a shortage. 'balanced' uses the uniform split (no order).
 const ESSENTIALS_ORDER: Sector[] = ['food', 'safety', 'services', 'civic', 'logistics', 'industry', 'trade']
@@ -2161,6 +2169,30 @@ function claimStep(state: ColonyState, dtMin: number): void {
   state.claimProgress = progress
 }
 
+/** Spec 053 — is a Calendar Office built and staffed (so it can keep the calendar and mark Founders' Day)? */
+function calendarStaffed(state: ColonyState): boolean {
+  if (countKind(state, 'calendar') === 0) return false
+  return (state.totalJobs > 0 ? state.colonists / state.totalJobs : 0) > 0
+}
+
+/** Spec 053 — the colony's age and calendar readout for the HUD: year + month since founding, months until the next Founders'
+ *  Day, and whether a Calendar Office stands. The age is read straight from the clock, so it always counts even with no office. */
+export function calendarStatus(state: ColonyState): { year: number; month: number; monthsToFounders: number; office: boolean } {
+  const day = Math.max(0, state.clock?.day ?? 0)
+  const year = Math.floor(day / COLONY.build.daysPerYear)
+  const month = Math.floor((day % COLONY.build.daysPerYear) / COLONY.build.daysPerMonth) + 1 // 1..12
+  return { year, month, monthsToFounders: 13 - month, office: countKind(state, 'calendar') > 0 }
+}
+
+/** Spec 053 — mark the turning of the colony's years. When a year boundary is crossed, a staffed Calendar Office eases unrest a
+ *  little (Founders' Day); an unstaffed or unbuilt one lets the year pass unmarked. Inert until a year actually turns. */
+export function calendarStep(state: ColonyState): void {
+  const year = Math.floor(Math.max(0, state.clock?.day ?? 0) / COLONY.build.daysPerYear)
+  if (year <= (state.lastFoundersYear ?? 0)) return // no new year has turned
+  if (calendarStaffed(state)) state.unrest = Math.max(0, (state.unrest ?? 0) - COLONY.build.foundersDayUnrestRelief) // a free, annual morale lift
+  state.lastFoundersYear = year // account the year whether or not it was marked (no catch-up celebrations)
+}
+
 /** Spec 005 — services (water hubs) consume a trickle of components to run. */
 function serviceUpkeep(state: ColonyState, dtMin: number): void {
   let upkeep = 0 // components (water/depot/clinic/theatre)
@@ -2377,6 +2409,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   departureStep(state, dtMin) // spec 041 — sustained failure sheds households; runs right after immigration so the net is arrivals minus departures
   birthStep(state, dtMin) // spec 050 — stable mid-tier homes raise children that mature into colonists (reads tiers + vacancy after housing/immigration)
   claimStep(state, dtMin) // spec 051 — a staffed Survey Camp advances the next Outer Claim and widens the build footprint
+  calendarStep(state) // spec 053 — mark the turning of the colony's years; a staffed Calendar Office gives a Founders' Day lift
   tradeStep(state, dtMin)
   importStep(state, dtMin) // spec 036 — the buying side: spend treasury to land the order good (capped by storage headroom below)
   clampStorage(state) // spec 023 — finite storage: production past a cap is lost (after all goods are produced/sold)

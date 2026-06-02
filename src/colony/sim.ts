@@ -49,6 +49,7 @@ export interface ColonyState {
   children: number // spec 050 — dependents being raised in mid-tier homes; cost food, give no labour, then mature into colonists; 0 until a birth
   claims: number // spec 051 — completed Outer Claims; each adds one deck-ring to the effective build radius; 0 until a Survey Camp claims ground
   claimProgress: number // spec 051 — work toward the next Outer Claim, 0..1 (a staffed Survey Camp advances it)
+  lastFoundersYear: number // spec 053 — the last colony-year whose turn has been accounted for (Founders' Day fires once per year)
   parcels: Parcel[]
   jobs: ConstructionJob[]
   buildings: ColonyBuilding[]
@@ -143,6 +144,7 @@ export class ColonySim {
       children: 0, // spec 050 — no dependents until a household births one
       claims: 0, // spec 051 — the colony starts at its base footprint
       claimProgress: 0, // spec 051 — no survey underway
+      lastFoundersYear: 0, // spec 053 — the founding year (year 0) needs no anniversary
       parcels: [],
       jobs: [],
       buildings: [],

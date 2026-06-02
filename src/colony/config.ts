@@ -664,6 +664,19 @@ export const COLONY = {
     // dry. Inert until a vein actually thins (a fresh or unrecorded mine reads full), so the materials economy is unchanged early.
     veinLifeDays: 360, // days of full-staffed digging a fresh mine's vein holds (output stays 100% until half is gone, ~6 months)
     veinFloor: 0.25, // an exhausted vein still yields this fraction — a poor pit, never a dead one
+    // Founding Calendar (spec 053): the colony learns to count its years. A staffed Calendar Office surfaces the colony's age, and
+    // every year-turn (Founders' Day) it eases unrest a little — free and automatic, unlike the council-funded Civic Feast (030).
+    // Inert with no office; the lift is small and only annual, so it can never harm anything.
+    matCalendar: 10,
+    compCalendar: 3,
+    reelCalendar: 2, // bound almanacs and printed ledgers — Mara Vell's fine cloth and paper
+    crewCalendar: 1,
+    calendarCost: 900,
+    calendarWorkers: 1, // one clerk keeps the calendar
+    calendarPowerLoad: 0.2,
+    daysPerYear: 360, // 12 months of 30 days — the colony's year
+    daysPerMonth: 30,
+    foundersDayUnrestRelief: 0.08, // the small, free morale lift a staffed office gives when a year turns
     pollutionPerIndustrial: 3,
   },
 

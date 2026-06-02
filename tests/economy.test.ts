@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, birthStatus, effectiveBuildRadius, footprintStatus, veinFactor, veinStatus, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, birthStatus, effectiveBuildRadius, footprintStatus, veinFactor, veinStatus, calendarStatus, calendarStep, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -3654,5 +3654,84 @@ describe('Spec 052 — The Vein Ledger: ore runs out, so the colony must spread 
     const status = veinStatus({ buildings: [mine(0, 0, COLONY.build.veinLifeDays), mine(1, 1, 0.3 * COLONY.build.veinLifeDays)] } as any)
     expect(status.mines).toBe(2)
     expect(status.poorest).toBe(0.6)
+  })
+})
+
+describe('Spec 053 — The Founding Calendar: the colony learns to count its years', () => {
+  const office = (x: number, y: number): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: { id: 1, kind: 'calendar', color: 0, height: 1, residents: 0, jobs: COLONY.build.calendarWorkers, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 },
+  })
+
+  it('the colony age readout tracks the clock (year + month since founding)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.clock.day = 0
+    expect(calendarStatus(s).year).toBe(0)
+    expect(calendarStatus(s).month).toBe(1)
+    s.clock.day = COLONY.build.daysPerYear * 2 + COLONY.build.daysPerMonth * 3 // year 2, month 4
+    const cs = calendarStatus(s)
+    expect(cs.year).toBe(2)
+    expect(cs.month).toBe(4)
+    expect(cs.monthsToFounders).toBe(13 - 4) // 9 months until the next year turns
+  })
+
+  it('with no Calendar Office, a year turns unmarked — no morale shift, but the year is accounted', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.clock.day = COLONY.build.daysPerYear // year 1
+    s.lastFoundersYear = 0
+    s.unrest = 0.5
+    calendarStep(s)
+    expect(s.unrest).toBe(0.5) // no office → no Founders' Day lift
+    expect(s.lastFoundersYear).toBe(1) // the year still passes (no catch-up later)
+    expect(calendarStatus(s).office).toBe(false)
+  })
+
+  it('a built, staffed Calendar Office eases unrest a little when a year turns (Founders Day)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(office(s.terrain.landing.x + 4, s.terrain.landing.y))
+    s.colonists = 8
+    s.totalJobs = 4 // staffed
+    s.clock.day = COLONY.build.daysPerYear // year 1
+    s.lastFoundersYear = 0
+    s.unrest = 0.5
+    calendarStep(s)
+    expect(s.unrest).toBeCloseTo(0.5 - COLONY.build.foundersDayUnrestRelief, 5) // the free annual lift
+    expect(s.lastFoundersYear).toBe(1)
+  })
+
+  it('Founders Day fires once per year, not every step', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(office(s.terrain.landing.x + 4, s.terrain.landing.y))
+    s.colonists = 8
+    s.totalJobs = 4
+    s.clock.day = COLONY.build.daysPerYear
+    s.lastFoundersYear = 0
+    s.unrest = 0.5
+    calendarStep(s) // fires
+    const afterFirst = s.unrest
+    expect(s.lastFoundersYear).toBe(1)
+    calendarStep(s) // same year → must not fire again
+    expect(s.unrest).toBe(afterFirst) // no second lift
+    expect(s.lastFoundersYear).toBe(1)
+  })
+
+  it('an unstaffed office lets the year pass unmarked (no lift)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(office(s.terrain.landing.x + 4, s.terrain.landing.y))
+    s.colonists = 0
+    s.totalJobs = 4 // no labour → unstaffed
+    s.clock.day = COLONY.build.daysPerYear
+    s.lastFoundersYear = 0
+    s.unrest = 0.5
+    calendarStep(s)
+    expect(s.unrest).toBe(0.5) // unstaffed → no lift
+    expect(s.lastFoundersYear).toBe(1) // but the year is still accounted (unmarked)
   })
 })
