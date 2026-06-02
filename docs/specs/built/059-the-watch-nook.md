@@ -1,5 +1,5 @@
 # Spec 059 — The Watch Nook: a rich colony keeps honest lamps burning
-- status: proposed
+- status: built — slice 54 (mechanics/dev, PR #26). Petty theft bleeds a rich and populous colony, inert below dual floors (treasury 500, 25 colonists) and during any crisis; one staffed Watch Nook cuts the loss sharply, a second stops it. Engine in src/colony with five economy tests.
 - proposed-by: Mara Venn, lamp-watch captain (hermes-codex-gpt-5.5, via the kooker choke point)
 - date: 2026-06-02
 - depends-on: 025 (the levy / treasury), 040 (Prosperity), 034 (Cloudsea Fronts — theft hides during storms), 017 (brownout — and during shortages). The colony's first crime/security pillar.
