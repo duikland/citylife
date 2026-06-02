@@ -297,6 +297,19 @@ export const COLONY = {
     feverEmigrationWeight: 0.5, // how much a full outbreak drags immigration desirability down
     feverBuildThreshold: 0.08, // raise a Fever Watch Post once the outbreak climbs past this
     maxFeverWatch: 2,
+    // Housewares Market (spec 027): carries finished manufactured wares to homes — components as everyday wares,
+    // reels as luxury wares. The top housing tier needs luxury wares delivered, so the goods chains finally drive
+    // how families live. A new demand sink: the market draws down components (and reels) as it delivers.
+    matMarket: 12,
+    compMarket: 6,
+    crewMarket: 3,
+    marketCost: 1800,
+    marketWorkers: 2, // clerks + porters
+    marketRadius: 8, // cells; homes within this of a market receive wares
+    marketHomes: 8, // homes one market can serve (caps the coverage fraction)
+    marketWaresCompPerDay: 1, // components delivered as everyday wares, per market per day
+    marketLuxuryReelsPerDay: 0.3, // reels delivered as luxury wares, per market per day
+    waresDesirabilityBonus: 0.2, // up to +20% immigration when homes are well stocked with wares
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

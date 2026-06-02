@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market'
 
 export interface Parcel {
   id: number
@@ -81,6 +81,7 @@ const STOREHOUSE_COLOR = 0xb0a06a // khaki crate-stacked storehouse platform
 const BELLHOUSE_COLOR = 0xd2452f // emergency-red bellhouse (response crews)
 const LEVY_COLOR = 0x4caf8a // jade civic levy office (the ledger desk)
 const FEVERWATCH_COLOR = 0xe85d9c // pink-magenta fever watch post (public health)
+const MARKET_COLOR = 0xe39a3c // marigold housewares market (goods to homes)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -319,6 +320,10 @@ function designFeverWatch(state: ColonyState): Artifact {
   // Spec 026 — Fever Watch Post; staffed medics + aides quarantine and contain an outbreak before it spreads.
   return { id: state.buildIds++, kind: 'feverwatch', color: FEVERWATCH_COLOR, height: 1.0, residents: 0, jobs: COLONY.build.feverWatchWorkers, powerLoad: 0.4, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.feverWatchCost, materialsCost: COLONY.build.matFeverWatch, crew: COLONY.build.crewFeverWatch, materialsGen: 0, componentsCost: COLONY.build.compFeverWatch }
 }
+function designMarket(state: ColonyState): Artifact {
+  // Spec 027 — Housewares Market; staffed porters carry manufactured wares (components + reels) out to homes.
+  return { id: state.buildIds++, kind: 'market', color: MARKET_COLOR, height: 0.9, residents: 0, jobs: COLONY.build.marketWorkers, powerLoad: 0.4, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.marketCost, materialsCost: COLONY.build.matMarket, crew: COLONY.build.crewMarket, materialsGen: 0, componentsCost: COLONY.build.compMarket }
+}
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
 function countKind(state: ColonyState, kind: BuildKind): number {
@@ -502,6 +507,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 4 && state.food < state.colonists * COLONY.build.foodPerColonistPerDay && state.components >= COLONY.build.compGreenhouse && countKind(state, 'greenhouse') < Math.ceil(state.colonists / 12)) return designGreenhouse(state)
   // Spec 008 — get the food to the homes: built homes + food on hand + components → raise a Ration Depot.
   if (countKind(state, 'habitat') > 0 && state.food > 0 && provisionedFraction(state) < 0.9 && state.components >= COLONY.build.compDepot && countKind(state, 'depot') < Math.ceil(countKind(state, 'habitat') / COLONY.build.rationDepotHomes)) return designDepot(state)
+  // Spec 027 — get the wares to the homes: built homes + components on hand → raise a Housewares Market (the top tier needs delivered wares).
+  if (countKind(state, 'habitat') > 0 && housewaresFraction(state) < 0.9 && state.components >= COLONY.build.compMarket && countKind(state, 'market') < Math.ceil(countKind(state, 'habitat') / COLONY.build.marketHomes)) return designMarket(state)
   // Spec 009 — keep the workers well: homes exist + low health coverage + components → raise a First Aid Clinic.
   if (countKind(state, 'habitat') > 0 && healthFraction(state) < 0.9 && state.components >= COLONY.build.compClinic && countKind(state, 'clinic') < Math.ceil(countKind(state, 'habitat') / 6)) return designClinic(state)
   // Spec 010 — culture for a thriving colony: homes exist + low culture coverage + components → raise a Holo-Theatre.
@@ -978,6 +985,30 @@ function fullyServed(state: ColonyState, home: ColonyBuilding): boolean {
   )
 }
 
+/** Spec 027 — a home receives everyday wares when a Housewares Market is in reach AND the colony holds the goods
+ *  (delivery is spatial, like the Ration Depot: in range + stock on hand). */
+export function housewaresSupplied(state: ColonyState, home: ColonyBuilding): boolean {
+  if (state.components <= 0) return false
+  return nearBuildingKind(state, home, 'market', COLONY.build.marketRadius)
+}
+
+/** Spec 027 — a home receives luxury wares when it is wares-supplied AND the colony holds reels (the top tier needs these). */
+export function luxurySupplied(state: ColonyState, home: ColonyBuilding): boolean {
+  return housewaresSupplied(state, home) && state.reels > 0
+}
+
+/** Spec 027 — fraction of homes a market actually reaches with wares (in range, capped by market coverage), for the HUD + desirability. */
+export function housewaresFraction(state: ColonyState): number {
+  const habs = state.buildings.filter((b) => b.artifact.kind === 'habitat')
+  if (!habs.length) return 0
+  const markets = state.buildings.filter((b) => b.artifact.kind === 'market')
+  if (!markets.length || state.components <= 0) return 0
+  let inRange = 0
+  for (const h of habs) if (markets.some((m) => Math.hypot(m.x - h.x, m.y - h.y) <= COLONY.build.marketRadius)) inRange++
+  const capacity = markets.length * COLONY.build.marketHomes
+  return Math.min(inRange, capacity) / habs.length
+}
+
 /** Spec 006/015 — homes evolve on an interval. T1→T2 needs water + spare components; T2→T3 needs the FULL
  *  service stack (water + food + health + culture) + components. A home devolves if it loses what its
  *  current tier requires, after a grace period. */
@@ -990,8 +1021,8 @@ function housingStep(state: ColonyState, dtMin: number): void {
     if (b.artifact.kind !== 'habitat') continue
     if (b.tier === undefined) b.tier = 1
     const watered = nearWater(state, b.x, b.y)
-    const served = fullyServed(state, b) // spec 015 — the whole stack, required for the top tier
-    // Climb: T1→T2 on water, T2→T3 on the full service stack — each step spends spare components.
+    const served = fullyServed(state, b) && luxurySupplied(state, b) // spec 015/027 — the whole stack AND delivered luxury wares for the top tier
+    // Climb: T1→T2 on water, T2→T3 on the full service stack + luxury wares — each step spends spare components.
     const canClimb = b.tier < 3 && (b.tier === 1 ? watered : served) && state.components >= COLONY.build.housingUpgradeCost
     // Hold: a home keeps its tier only while it still meets that tier's requirement (T1 always holds).
     const holds = b.tier <= 1 ? true : b.tier === 2 ? watered : served
@@ -1031,7 +1062,7 @@ function immigration(state: ColonyState, dtMin: number): void {
   // Spec 010 — culture draws settlers: a cultured colony is more desirable.
   // Spec 010/014 — culture draws settlers; a theatre with no reels (spec 014) runs dark, halving its pull.
   const cultureFactor = 1 + COLONY.build.cultureDesirabilityBonus * cultureFraction(state) * cultureFuelFactor(state)
-  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) * (1 - (state.outbreak ?? 0) * COLONY.build.feverEmigrationWeight) // spec 025/026 — a gentle levy draws settlers, an outbreak drives them off
+  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) * (1 - (state.outbreak ?? 0) * COLONY.build.feverEmigrationWeight) * (1 + COLONY.build.waresDesirabilityBonus * housewaresFraction(state)) // spec 025/026/027 — a gentle levy draws settlers, an outbreak drives them off, stocked homes draw them in
   if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * perDay)
 }
 
@@ -1055,6 +1086,10 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
     else if (b.artifact.kind === 'bellhouse') upkeep += COLONY.build.bellhouseMaintCompPerDay // spec 024 — foam/alarm upkeep
     else if (b.artifact.kind === 'levy') upkeep += COLONY.build.levyMaintCompPerDay // spec 025 — ledger supply
     else if (b.artifact.kind === 'feverwatch') upkeep += COLONY.build.feverWatchMaintCompPerDay // spec 026 — medical supply
+    else if (b.artifact.kind === 'market') {
+      upkeep += COLONY.build.marketWaresCompPerDay // spec 027 — everyday wares delivered to homes (components)
+      reelUpkeep += COLONY.build.marketLuxuryReelsPerDay // spec 027 — luxury wares delivered (reels)
+    }
   }
   if (upkeep > 0) state.components = Math.max(0, state.components - upkeep * (dtMin / (24 * 60)))
   if (matUpkeep > 0) state.materials = Math.max(0, state.materials - matUpkeep * (dtMin / (24 * 60)))

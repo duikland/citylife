@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -725,7 +725,7 @@ describe('Spec 015 — the full-service top tier: grand homes demand the whole s
     y,
     artifact: { id: 1, kind: 'habitat', color: 0, height: 1, residents, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 },
   })
-  const svc = (kind: 'water' | 'depot' | 'clinic' | 'theatre', x: number, y: number): ColonyBuilding => ({
+  const svc = (kind: 'water' | 'depot' | 'clinic' | 'theatre' | 'market', x: number, y: number): ColonyBuilding => ({
     id: x * 1000 + y + 7,
     x,
     y,
@@ -754,10 +754,12 @@ describe('Spec 015 — the full-service top tier: grand homes demand the whole s
     s.buildings.push(svc('depot', 51, 51))
     s.buildings.push(svc('clinic', 49, 50))
     s.buildings.push(svc('theatre', 50, 51))
+    s.buildings.push(svc('market', 49, 51)) // spec 027 — a Housewares Market delivers the luxury wares the top tier needs
     s.components = 100
+    s.reels = 100 // spec 027 — luxury wares (reels) in stock to deliver
     s.materials = 0
     for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
-    expect(h.tier).toBe(3) // the whole stack in reach → the grandest tier
+    expect(h.tier).toBe(3) // the whole stack + delivered luxury wares → the grandest tier
   })
 
   it('a tier-3 home devolves when it loses a service', () => {
@@ -905,7 +907,7 @@ describe('Spec 018 — Battery Sheds buffer the grid (built from reels)', () => 
 })
 
 describe('Spec 019 — Smog Drift + Air Scrubber Gardens', () => {
-  const mk = (kind: 'habitat' | 'mine' | 'foundry' | 'scrubber' | 'water' | 'depot' | 'clinic' | 'theatre', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+  const mk = (kind: 'habitat' | 'mine' | 'foundry' | 'scrubber' | 'water' | 'depot' | 'clinic' | 'theatre' | 'market', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
     id: x * 1000 + y,
     x,
     y,
@@ -936,7 +938,9 @@ describe('Spec 019 — Smog Drift + Air Scrubber Gardens', () => {
     s.buildings.push(mk('clinic', 49, 50))
     s.buildings.push(mk('theatre', 50, 51))
     s.buildings.push(mk('foundry', 52, 50)) // fouls the air
+    s.buildings.push(mk('market', 49, 51)) // spec 027 — delivers the luxury wares the top tier needs
     s.components = 100
+    s.reels = 100 // spec 027 — luxury wares in stock
     s.materials = 0
     const livSmoggy = homeLiveability(s, h)
     for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
@@ -1339,6 +1343,79 @@ describe('Spec 026 — The Fever Watch: an outbreak that spreads, sickens, and i
       return s.materials - m0
     }
     expect(run(true)).toBeGreaterThan(run(false)) // a clinic lowers the severity → more mined
+  })
+})
+
+describe('Spec 027 — The Housewares Market: manufactured goods reach the home', () => {
+  const mk = (kind: 'habitat' | 'water' | 'depot' | 'clinic' | 'theatre' | 'market', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('a market delivers wares to homes in range while the colony holds the goods', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mk('habitat', 50, 50, { residents: 3 })
+    s.buildings.push(h)
+    expect(housewaresSupplied(s, h)).toBe(false) // no market at all
+    s.buildings.push(mk('market', 49, 50))
+    s.components = 0
+    expect(housewaresSupplied(s, h)).toBe(false) // a market, but no wares in stock to deliver
+    s.components = 50
+    expect(housewaresSupplied(s, h)).toBe(true) // market in range + stock on hand
+    expect(luxurySupplied(s, h)).toBe(false) // ...but no reels → no luxury wares
+    s.reels = 10
+    expect(luxurySupplied(s, h)).toBe(true) // reels in stock → luxury wares delivered
+    const far = mk('habitat', 85, 85, { residents: 3 })
+    s.buildings.push(far)
+    expect(housewaresSupplied(s, far)).toBe(false) // out of every market's range — delivery is spatial
+  })
+
+  const topTier = (opts: { market: boolean; reels: boolean }) => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const h = mk('habitat', 50, 50, { residents: 3 })
+    s.buildings.push(h, mk('water', 51, 50), mk('depot', 51, 51), mk('clinic', 49, 50), mk('theatre', 50, 51))
+    s.food = 100
+    s.components = 100
+    s.materials = 0
+    if (opts.market) s.buildings.push(mk('market', 49, 51))
+    s.reels = opts.reels ? 100 : 0
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
+    return h.tier
+  }
+
+  it('a fully-served home reaches the top tier only when a market delivers luxury wares', () => {
+    expect(topTier({ market: true, reels: true })).toBe(3) // full stack + delivered luxury wares → T3
+    expect(topTier({ market: false, reels: true })).toBe(2) // no market → wares never reach the home → stalls at T2
+    expect(topTier({ market: true, reels: false })).toBe(2) // a market but no reels → no luxury wares → stalls at T2
+  })
+
+  it('a market draws down components and reels as it delivers (a new demand sink)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('habitat', 50, 50, { residents: 3 }))
+    s.buildings.push(mk('market', 49, 50))
+    s.components = 50
+    s.reels = 50
+    s.materials = 0
+    const c0 = s.components
+    const r0 = s.reels
+    for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60) // ~2.5 days of deliveries
+    expect(s.components).toBeLessThan(c0) // everyday wares consumed
+    expect(s.reels).toBeLessThan(r0) // luxury wares consumed
+  })
+
+  it('housewares coverage is zero without a market and rises once one reaches the homes', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('habitat', 50, 50, { residents: 3 }))
+    s.components = 50
+    expect(housewaresFraction(s)).toBe(0) // no market
+    s.buildings.push(mk('market', 49, 50))
+    expect(housewaresFraction(s)).toBe(1) // the home is in range and the colony holds wares
   })
 })
 
