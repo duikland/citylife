@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery'
 
 export interface Parcel {
   id: number
@@ -30,6 +30,7 @@ export interface Artifact {
   materialsCost: number // spec 001: materials consumed to construct
   crew: number // spec 001: free colonists reserved for the build duration
   materialsGen: number // spec 002: materials/day produced when fully staffed (mines); 0 otherwise
+  fibreGen?: number // spec 031: skyflax fibre/day produced when fully staffed (Skimmer Docks); defaults to 0
   componentsCost?: number // spec 005: components consumed to construct (services); defaults to 0
   reelsCost?: number // spec 018: reels (luxury good) consumed to construct (battery sheds); defaults to 0
 }
@@ -85,6 +86,8 @@ const MARKET_COLOR = 0xe39a3c // marigold housewares market (goods to homes)
 const WARD_COLOR = 0x4060c0 // deep-blue ward post (wardens keep order)
 const PAYOFFICE_COLOR = 0x7c6fce // violet pay office (payroll counter)
 const FEAST_COLOR = 0xf0b840 // festival-gold feast deck (lanterns + cook-tables)
+const SKIMMER_COLOR = 0x7fae8a // sage-green flax skimmer dock (rim cloudweed)
+const WEAVERY_COLOR = 0xd8c8a0 // linen-cream weavery (looms + bolts)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -106,6 +109,8 @@ export function initBuild(state: ColonyState): void {
   state.food = 0 // spec 007 — grown by greenhouses; colonists subsist on dropship rations until then
   state.reels = 0 // spec 013 — luxury good, refined by foundries from components
   state.skilled = 0 // spec 020 — skilled workers, trained by academies
+  state.fibre = 0 // spec 031 — skyflax fibre, gathered by Skimmer Docks
+  state.linen = 0 // spec 031 — linen bolts, woven by Weaveries
   state.parcels = []
   state.jobs = []
   state.buildings = []
@@ -339,6 +344,14 @@ function designFeast(state: ColonyState): Artifact {
   // Spec 030 — Feast Deck; a staffed venue where the council funds a Civic Feast to lift morale.
   return { id: state.buildIds++, kind: 'feast', color: FEAST_COLOR, height: 0.7, residents: 0, jobs: COLONY.build.feastWorkers, powerLoad: 0.4, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.feastDeckCost, materialsCost: COLONY.build.matFeast, crew: COLONY.build.crewFeast, materialsGen: 0, componentsCost: COLONY.build.compFeast, reelsCost: COLONY.build.reelFeast }
 }
+function designSkimmer(state: ColonyState): Artifact {
+  // Spec 031 — Flax Skimmer Dock; gathers skyflax fibre from the rim cloudweed while staffed (the 2nd extractor).
+  return { id: state.buildIds++, kind: 'skimmer', color: SKIMMER_COLOR, height: 0.6, residents: 0, jobs: COLONY.build.skimmerWorkers, powerLoad: 0.3, powerGen: 0, buildTimeMin: COLONY.build.mineBuildHours * 60, cost: COLONY.build.skimmerCost, materialsCost: COLONY.build.matSkimmer, crew: COLONY.build.crewSkimmer, materialsGen: 0, fibreGen: COLONY.build.fibreGenPerDay }
+}
+function designWeavery(state: ColonyState): Artifact {
+  // Spec 031 — Weavery; weaves skyflax fibre into linen bolts (2:1) while staffed (the 2nd refinery).
+  return { id: state.buildIds++, kind: 'weavery', color: WEAVERY_COLOR, height: 1.0, residents: 0, jobs: COLONY.build.weaveryWorkers, powerLoad: 0.5, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.weaveryCost, materialsCost: COLONY.build.matWeavery, crew: COLONY.build.crewWeavery, materialsGen: 0, componentsCost: COLONY.build.compWeavery }
+}
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
 function countKind(state: ColonyState, kind: BuildKind): number {
@@ -536,6 +549,10 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 8 && countKind(state, 'exchange') < 1 && state.components > COLONY.build.tradeComponentReserve && state.components >= COLONY.build.compExchange) return designExchange(state)
   // Spec 013 — with components plentiful and an Exchange to sell through, raise a Reel Foundry to refine luxury reels.
   if (state.colonists > 10 && countKind(state, 'foundry') < 1 && state.components > 40 && state.components >= COLONY.build.compFoundry) return designFoundry(state)
+  // Spec 031 — open the second line only once the core economy is comfortable (materials in surplus) and fibre is short.
+  if (state.colonists > 12 && state.materials > COLONY.build.materialsSurplus && (state.fibre ?? 0) < COLONY.build.fibreLowThreshold && countKind(state, 'skimmer') < COLONY.build.maxSkimmer) return designSkimmer(state)
+  // Spec 031 — weave the surplus: with fibre plentiful, raise a Weavery (up to one per dock) to make linen.
+  if (countKind(state, 'skimmer') > 0 && (state.fibre ?? 0) > COLONY.build.fibreSurplus && countKind(state, 'weavery') < countKind(state, 'skimmer')) return designWeavery(state)
   // Spec 020 — train the advanced trades: workshops/foundries up but skilled workers short → raise a Skillhouse Academy.
   if (countKind(state, 'workshop') + countKind(state, 'foundry') > 0 && state.skilled < (countKind(state, 'workshop') + countKind(state, 'foundry')) * COLONY.build.skilledPerAdvanced && state.components >= COLONY.build.compAcademy && countKind(state, 'academy') < 2) return designAcademy(state)
   // Spec 016 — once the colony is a real town, raise a Broadcast Mast so the Kookerverse Courier can speak.
@@ -716,13 +733,15 @@ function maintenanceUncovered(state: ColonyState): boolean {
 }
 
 /** Spec 023 — per-resource storage cap = the founders' hold + what each Storehouse Platform adds. */
-export function storageCaps(state: ColonyState): { materials: number; components: number; food: number; reels: number } {
+export function storageCaps(state: ColonyState): { materials: number; components: number; food: number; reels: number; fibre: number; linen: number } {
   const n = countKind(state, 'storehouse')
   return {
     materials: COLONY.build.storeBaseMaterials + n * COLONY.build.storePerMaterials,
     components: COLONY.build.storeBaseComponents + n * COLONY.build.storePerComponents,
     food: COLONY.build.storeBaseFood + n * COLONY.build.storePerFood,
     reels: COLONY.build.storeBaseReels + n * COLONY.build.storePerReels,
+    fibre: COLONY.build.storeBaseFibre + n * COLONY.build.storePerFibre, // spec 031
+    linen: COLONY.build.storeBaseLinen + n * COLONY.build.storePerLinen, // spec 031
   }
 }
 
@@ -733,6 +752,8 @@ function clampStorage(state: ColonyState): void {
   if (state.components > cap.components) state.components = cap.components
   if (state.food > cap.food) state.food = cap.food
   if (state.reels > cap.reels) state.reels = cap.reels
+  if ((state.fibre ?? 0) > cap.fibre) state.fibre = cap.fibre // spec 031
+  if ((state.linen ?? 0) > cap.linen) state.linen = cap.linen // spec 031
 }
 
 /** Spec 023 — storage readout for the HUD: fullest stockpile (0..1), whether it's overflowing, and which. */
@@ -743,6 +764,8 @@ export function storageStatus(state: ColonyState): { fill: number; full: boolean
     ['components', state.components, cap.components],
     ['food', state.food, cap.food],
     ['reels', state.reels, cap.reels],
+    ['fibre', state.fibre ?? 0, cap.fibre], // spec 031
+    ['linen', state.linen ?? 0, cap.linen], // spec 031
   ]
   let fill = 0
   let tightest = 'materials'
@@ -1110,6 +1133,32 @@ function produceReels(state: ColonyState, dtMin: number): void {
   }
 }
 
+/** Spec 031 — staffed Flax Skimmer Docks gather skyflax fibre from the rims (the colony's second extractor). */
+function produceFibre(state: ColonyState, dtMin: number): void {
+  let gen = 0
+  for (const b of state.buildings) if (b.artifact.kind === 'skimmer' && !b.incident) gen += (b.artifact.fibreGen ?? 0) * maintFactor(b)
+  if (gen <= 0) return
+  const staffing = state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0
+  state.fibre += gen * staffing * healthFactor(state) * powerFactor(state) * transitFactor(state) * feverFactor(state) * orderFactor(state) * (dtMin / (24 * 60))
+}
+
+/** Spec 031 — staffed Weaveries weave fibre into linen bolts (2:1); halt when fibre runs out. */
+function produceLinen(state: ColonyState, dtMin: number): void {
+  const eff = (state.totalJobs > 0 ? Math.min(1, state.colonists / state.totalJobs) : 0) * healthFactor(state) * powerFactor(state) * transitFactor(state) * feverFactor(state) * orderFactor(state) // sick, brownout, congested, fevered or restless weaveries weave less
+  if (eff <= 0) return
+  const day = 24 * 60
+  for (const b of state.buildings) {
+    if (b.artifact.kind !== 'weavery' || b.incident) continue
+    const mf = maintFactor(b)
+    const need = COLONY.build.weaveryFibreIn * eff * mf * (dtMin / day)
+    if (need <= 0) continue
+    const consume = Math.min(state.fibre, need)
+    if (consume <= 0) continue
+    state.fibre -= consume
+    state.linen += COLONY.build.weaveryLinenOut * eff * mf * (dtMin / day) * (consume / need)
+  }
+}
+
 /** Spec 004/006 — total housing: the founders' dropship + each habitat's capacity at its CURRENT tier. */
 export function housingCapacity(state: ColonyState): number {
   let cap = COLONY.seed.colonists
@@ -1187,7 +1236,7 @@ function housingStep(state: ColonyState, dtMin: number): void {
     if (b.artifact.kind !== 'habitat') continue
     if (b.tier === undefined) b.tier = 1
     const watered = nearWater(state, b.x, b.y)
-    const served = fullyServed(state, b) && luxurySupplied(state, b) // spec 015/027 — the whole stack AND delivered luxury wares for the top tier
+    const served = fullyServed(state, b) && luxurySupplied(state, b) && (state.linen ?? 0) > 0 // spec 015/027/031 — the whole stack, luxury wares, AND linen for the top tier
     // Climb: T1→T2 on water, T2→T3 on the full service stack + luxury wares — each step spends spare components.
     const canClimb = b.tier < 3 && (b.tier === 1 ? watered : served) && state.components >= COLONY.build.housingUpgradeCost
     // Hold: a home keeps its tier only while it still meets that tier's requirement (T1 always holds).
@@ -1237,10 +1286,14 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
   let upkeep = 0 // components (water/depot/clinic/theatre)
   let matUpkeep = 0 // materials (spec 011 — the survey office burns sensors/supplies)
   let reelUpkeep = 0 // reels (spec 014 — theatres burn reels as show media)
+  let linenUpkeep = 0 // linen (spec 031 — clinics use it as bandage cloth, more in a fever)
   for (const b of state.buildings) {
     if (b.artifact.kind === 'water') upkeep += COLONY.build.waterHubMaintCompPerDay
     else if (b.artifact.kind === 'depot') upkeep += COLONY.build.depotMaintCompPerDay
-    else if (b.artifact.kind === 'clinic') upkeep += COLONY.build.clinicMaintCompPerDay
+    else if (b.artifact.kind === 'clinic') {
+      upkeep += COLONY.build.clinicMaintCompPerDay
+      linenUpkeep += COLONY.build.clinicLinenPerDay * (1 + (state.outbreak ?? 0) * (COLONY.build.clinicLinenFeverMult - 1)) // spec 031 — more dressings during an outbreak
+    }
     else if (b.artifact.kind === 'theatre') {
       upkeep += COLONY.build.theatreMaintCompPerDay
       reelUpkeep += COLONY.build.theatreReelsPerDay
@@ -1262,6 +1315,7 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
   if (upkeep > 0) state.components = Math.max(0, state.components - upkeep * (dtMin / (24 * 60)))
   if (matUpkeep > 0) state.materials = Math.max(0, state.materials - matUpkeep * (dtMin / (24 * 60)))
   if (reelUpkeep > 0) state.reels = Math.max(0, state.reels - reelUpkeep * (dtMin / (24 * 60)))
+  if (linenUpkeep > 0) state.linen = Math.max(0, (state.linen ?? 0) - linenUpkeep * (dtMin / (24 * 60))) // spec 031
 }
 
 /** Spec 007 — staffed greenhouses grow food (boosted near a Water Hub); colonists eat a little each day. */
@@ -1322,9 +1376,11 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   unrestStep(state, dtMin) // spec 028 — unrest rises or is calmed; producers + income below read the current order
   feastStep(state, dtMin) // spec 030 — count down an active feast, or auto-throw one for a wealthy, restless colony
   produceMaterials(state, dtMin)
+  produceFibre(state, dtMin) // spec 031 — gather skyflax fibre (the second extractor)
   academyStep(state, dtMin)
   produceComponents(state, dtMin)
   produceReels(state, dtMin)
+  produceLinen(state, dtMin) // spec 031 — weave fibre into linen (the second refinery)
   serviceUpkeep(state, dtMin)
   foodStep(state, dtMin)
   housingStep(state, dtMin)

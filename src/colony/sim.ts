@@ -40,6 +40,8 @@ export interface ColonyState {
   food: number // spec 007 — grown by Skyfarm Greenhouses, eaten by colonists daily
   reels: number // spec 013 — luxury good refined from components by Reel Foundries, exported for treasury
   skilled: number // spec 020 — skilled workers trained by Skillhouse Academies; the advanced trades need them
+  fibre: number // spec 031 — skyflax fibre, the second raw resource, gathered from the rims by Skimmer Docks
+  linen: number // spec 031 — linen bolts, woven from fibre by Weaveries; the top tier + clinics need it
   parcels: Parcel[]
   jobs: ConstructionJob[]
   buildings: ColonyBuilding[]
@@ -115,6 +117,8 @@ export class ColonySim {
       food: 0, // spec 007 — set/grown by greenhouses
       reels: 0, // spec 013 — refined by foundries
       skilled: 0, // spec 020 — trained by academies
+      fibre: 0, // spec 031 — gathered by Flax Skimmer Docks
+      linen: 0, // spec 031 — woven by Weaveries
       parcels: [],
       jobs: [],
       buildings: [],

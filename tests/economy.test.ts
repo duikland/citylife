@@ -757,6 +757,7 @@ describe('Spec 015 — the full-service top tier: grand homes demand the whole s
     s.buildings.push(svc('market', 49, 51)) // spec 027 — a Housewares Market delivers the luxury wares the top tier needs
     s.components = 100
     s.reels = 100 // spec 027 — luxury wares (reels) in stock to deliver
+    s.linen = 100 // spec 031 — linen on hand, which the top tier also needs
     s.materials = 0
     for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
     expect(h.tier).toBe(3) // the whole stack + delivered luxury wares → the grandest tier
@@ -941,6 +942,7 @@ describe('Spec 019 — Smog Drift + Air Scrubber Gardens', () => {
     s.buildings.push(mk('market', 49, 51)) // spec 027 — delivers the luxury wares the top tier needs
     s.components = 100
     s.reels = 100 // spec 027 — luxury wares in stock
+    s.linen = 100 // spec 031 — linen on hand for the top tier
     s.materials = 0
     const livSmoggy = homeLiveability(s, h)
     for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
@@ -1383,6 +1385,7 @@ describe('Spec 027 — The Housewares Market: manufactured goods reach the home'
     s.materials = 0
     if (opts.market) s.buildings.push(mk('market', 49, 51))
     s.reels = opts.reels ? 100 : 0
+    s.linen = 100 // spec 031 — linen on hand so the top tier isn't blocked on the second chain
     for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
     return h.tier
   }
@@ -1730,6 +1733,93 @@ describe('Spec 030 — The Civic Feast: the council buys one honest cheer', () =
     s.food = 0 // so it can't auto-throw another once this one ends
     for (let i = 0; i < 500; i++) stepBuild(s, sim.rng, 60) // ~20 days, well past the feast window
     expect(feasting(s)).toBe(false) // the cheer fades
+  })
+})
+
+describe('Spec 031 — The Skyflax Line: a second resource and chain', () => {
+  const mk = (kind: 'skimmer' | 'weavery' | 'habitat' | 'water' | 'depot' | 'clinic' | 'theatre' | 'market', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('a Flax Skimmer Dock gathers skyflax fibre while staffed', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 6
+    s.totalJobs = 6
+    s.buildings.push(mk('skimmer', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 6, fibreGen: 5 }))
+    const f0 = s.fibre
+    for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+    expect(s.fibre).toBeGreaterThan(f0) // the rims yield fibre
+  })
+
+  it('a Weavery weaves fibre into linen and halts when fibre runs out', () => {
+    const run = (fibre: number) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      s.colonists = 6
+      s.totalJobs = 6
+      s.buildings.push(mk('weavery', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 6 }))
+      s.fibre = fibre
+      const l0 = s.linen
+      for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+      return { linen: s.linen - l0, fibre: s.fibre }
+    }
+    const fed = run(50)
+    expect(fed.linen).toBeGreaterThan(0) // fibre on hand → linen woven
+    expect(fed.fibre).toBeLessThan(50) // ...consuming the fibre
+    expect(run(0).linen).toBe(0) // no fibre → no linen
+  })
+
+  it('the top housing tier needs linen on hand', () => {
+    const topTier = (linen: number) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      const h = mk('habitat', 50, 50, { residents: 3 })
+      s.buildings.push(h, mk('water', 51, 50), mk('depot', 51, 51), mk('clinic', 49, 50), mk('theatre', 50, 51), mk('market', 49, 51))
+      s.food = 100
+      s.components = 100
+      s.reels = 100
+      s.materials = 0
+      s.linen = linen
+      for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 60)
+      return h.tier
+    }
+    expect(topTier(100)).toBe(3) // full stack + luxury wares + linen → the grandest tier
+    expect(topTier(0)).toBe(2) // everything but linen → stalls below the top
+  })
+
+  it('clinics draw linen as bandage cloth, more during a fever outbreak', () => {
+    const drained = (outbreak: number) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      s.colonists = 6
+      s.totalJobs = 6
+      s.buildings.push(mk('clinic', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 2 }))
+      s.linen = 100
+      s.outbreak = outbreak
+      for (let i = 0; i < 100; i++) stepBuild(s, sim.rng, 10)
+      return 100 - s.linen
+    }
+    expect(drained(0)).toBeGreaterThan(0) // a clinic always uses a little
+    expect(drained(0.8)).toBeGreaterThan(drained(0)) // an outbreak burns through dressings
+  })
+
+  it('fibre and linen are capped by storage and the founding economy never has them', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    const caps = storageCaps(s)
+    expect(caps.fibre).toBe(COLONY.build.storeBaseFibre)
+    expect(caps.linen).toBe(COLONY.build.storeBaseLinen)
+    s.fibre = 100000
+    s.linen = 100000
+    s.colonists = 4
+    s.totalJobs = 4
+    stepBuild(s, sim.rng, 10)
+    expect(s.fibre).toBe(caps.fibre) // overflow clamped (spec 023)
+    expect(s.linen).toBe(caps.linen)
   })
 })
 

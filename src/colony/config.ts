@@ -366,6 +366,30 @@ export const COLONY = {
     feastAutoTreasuryMargin: 3, // the colony auto-throws a feast only when treasury exceeds the cost by this much
     feastAutoUnrestThreshold: 0.1, // ...and the people are at least this restless
     maxFeastDeck: 2,
+    // Skyflax Line (spec 031): the colony's second production chain. A Flax Skimmer Dock gathers skyflax FIBRE from the
+    // rims; a Weavery weaves fibre into LINEN (2:1). The top housing tier needs linen on hand, and clinics consume linen
+    // as bandage cloth (more during a fever). Inert until a skimmer/weavery is built, so existing play is unaffected.
+    matSkimmer: 8,
+    crewSkimmer: 3,
+    skimmerCost: 1200,
+    skimmerWorkers: 2,
+    fibreGenPerDay: 5, // skyflax fibre gathered per staffed dock per day (≈ a mine's rate)
+    fibreLowThreshold: 12, // raise a Skimmer Dock when the fibre stockpile drops below this
+    matWeavery: 10,
+    compWeavery: 4,
+    crewWeavery: 3,
+    weaveryCost: 1600,
+    weaveryWorkers: 2,
+    weaveryFibreIn: 4, // fibre/day consumed at full staffing
+    weaveryLinenOut: 2, // linen/day produced at full staffing (2:1)
+    fibreSurplus: 20, // raise a Weavery to weave once fibre exceeds this
+    storeBaseFibre: 120, // storage cap (spec 023) — founders' hold for fibre
+    storePerFibre: 80,
+    storeBaseLinen: 100, // storage cap for linen
+    storePerLinen: 60,
+    clinicLinenPerDay: 0.5, // linen a clinic uses as bandage cloth per day
+    clinicLinenFeverMult: 3, // ...up to this much more at a full fever outbreak
+    maxSkimmer: 2,
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,
