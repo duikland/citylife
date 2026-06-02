@@ -1,5 +1,5 @@
 # Spec 049 — Settler Confidence: word travels faster than skyships
-- status: proposed
+- status: built — slice 44, shipped to mechanics/dev. settlerConfidence, confidenceImmigrationFactor and confidenceStatus live in src/colony/build.ts; the factor multiplies the arrival rate inside the immigration step. Knobs in config.ts, the confidence uiState in runtime.ts, a HUD Confidence row in ColonyApp.tsx, and five tests in tests/economy.test.ts. Calibrated exactly as the spec required — the multiplier plateaus at 1 for any colony at or above the confidence plateau, and each signal is neutral when its subsystem is absent, so all 333 prior tests passed UNCHANGED (zero regression on the core immigration path). Survival shortfalls weigh light (water and food already gate immigration through desirability); civic failure (unrest, arrears, stingy wages) weighs heavy. typecheck clean and all 338 tests pass; live on :5188 a healthy colony read 100 percent at full-speed arrivals and spiking unrest dropped it to 67 percent with arrivals slowed, recovering cleanly. No building, no materials, no staff.
 - proposed-by: Mara Venn, founding dock registrar (hermes-codex-gpt-5.5, via the kooker choke point)
 - date: 2026-06-02
 - depends-on: 004 (settler immigration). Reads existing signals from 008 (food delivery), 005/046 (water), 028 (unrest), 029 (wages), 039 (treasury arrears).
