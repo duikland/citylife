@@ -726,6 +726,7 @@ export class PlanetRenderer {
       for (let s = 0; s < steps; s++) {
         const fx0 = lx + dx * (s / steps), fy0 = ly + dy * (s / steps)
         const fx1 = lx + dx * ((s + 1) / steps), fy1 = ly + dy * ((s + 1) / steps)
+        if (t.isWater(Math.round(fx0), Math.round(fy0)) || t.isWater(Math.round(fx1), Math.round(fy1))) continue // a road never paves over open water — it breaks at the shore (ground units obey the physics of the world)
         const h0 = Math.max(0, t.worldY(Math.round(fx0), Math.round(fy0))) + 0.06
         const h1 = Math.max(0, t.worldY(Math.round(fx1), Math.round(fy1))) + 0.06
         quad(

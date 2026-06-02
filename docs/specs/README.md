@@ -61,6 +61,24 @@ turn any of these into a spec; Review & Build can implement it):
   Council: scope a small first slice** — e.g. one named, finite, persistable artifact that survives a reload,
   grows scarce as it is consumed, and can be duplicated for a real materials cost.
 
+- **VISUAL-FIRST — every thing is a seen thing.** Binding standing rule, not an optional nicety: every
+  material, building, tool and object is a **visual component**, declared in the one agreed format at
+  `docs/specs/VISUAL-STANDARD.md` and rendered on :5188 as part of "done". Animation is a bonus. The economy
+  is deep but mostly invisible — a spreadsheet wearing a beautiful island — so the **standing visual debt**
+  is the Council's priority backlog, in order: (1) make STOCKPILES visible (goods render as piles that grow
+  and shrink at their building); (2) make GOODS + SERVICES MOVE (a truck on the roads for bulk, a person on
+  the footpaths for a service — re-use the crew-truck + pedestrian systems); (3) give each building its
+  declared composite **massing**, retiring the plain coloured box. **Every new mechanic must prefer the
+  visible over the invisible**, and may not ship a new thing as a bare counter.
+
+- **A living economy, not a ledger** (`docs/research/2026-06-02-living-economy.md`). CityLife has a city's
+  *economy* but not yet a city's *life*. Caesar III felt alive because nothing teleported — goods and
+  services travelled as walkers. Ours is different and better: **people on foot** carry the human economy
+  (a service round, a ration drop), **cars and trucks** carry the industrial economy (a cargo run of
+  materials, folios, food) — a two-tier embodied logistics, feet for people, wheels for goods, both obeying
+  the water barrier. Direction: embody the stockpiles, then the flows, then the people, so every counter has
+  a body on the island. **Roads + agents never cross open water** (ground physics).
+
 ## Spec queue location
 
 The canonical queue lives **outside the repo** at `D:\infra\projects\citylife-specs\{proposed,built}\`
