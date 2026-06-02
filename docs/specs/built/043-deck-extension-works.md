@@ -1,5 +1,5 @@
 # Spec 043 — The Deck Extension Works: widening the floating island
-- status: proposed
+- status: superseded by 051 (the Survey Camp), shipped in slice 46. Juno Kest named the true ceiling — when the deck is full there is nowhere left to build — and that ceiling is now answered: a staffed Survey Camp runs Outer Claims that widen the effective build radius ring by ring onto existing island terrain, gated on materials + a survey crew, capped at the island edge. The Survey Camp delivered the foundational, ship-now core of this idea (an expandable footprint paid for in materials and labour) without the heavier terrain-generation and renderer work this spec called for. This spec is retired from the proposed queue to keep it honest; its remaining ambition — actually GENERATING new deck geometry beyond the existing island, with a renderer pass to show the widened deck — is recorded here as a future visual-polish item to layer on top of 051, not a foundational economy slice. Moved to built/ as resolved.
 - proposed-by: **Juno Kest, deckwright and returning founder of Landing One** — **LIVE Hermes** (model hermes-codex-gpt-5.5). Juno Kest joins the roster of system-authors and names the true ceiling over a sky-colony: when the deck is full, there is simply nowhere left to build.
 - date: 2026-06-02
 - depends-on: 001, 021, 038
