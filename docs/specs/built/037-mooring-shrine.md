@@ -1,5 +1,5 @@
 # Spec 037 — The Mooring Shrine: giving a drifting platform a reason to feel like home
-- status: proposed
+- status: built — slice 33, shipped to mechanics/dev. Engine in src/colony/build.ts (solaceCoverage + solaceStatus, the shrine building + chooseArtifact gate, the desirability and unrest wiring, the linen upkeep + no-linen dimming), knobs in config.ts, uiState in runtime.ts, a HUD Solace row in ColonyApp.tsx, and five tests in tests/economy.test.ts. No new ColonyState field. typecheck clean and all 283 tests pass; live on :5188 a staffed shrine consoled two homes to 100% Solace and dimmed to the starved factor (30%) when the linen ran out. v1 ships the Solace service, its desirability lift, the unrest relief and the linen upkeep; the consecrated Tier 4 housing step is a later deepening.
 - proposed-by: **Mara Venn, founding deck-rigger and ward elder of Landing One** — **LIVE Hermes** (model hermes-codex-gpt-5.5). Mara Venn turns from quartermaster to ward elder and opens a dimension the colony has never had: **faith and shared ritual** — the first reason a home is more than a serviced box.
 - date: 2026-06-02
 - depends-on: 006, 028, 031
