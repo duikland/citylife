@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, birthStatus, effectiveBuildRadius, footprintStatus, veinFactor, veinStatus, calendarStatus, calendarStep, seasonOf, seasonFactor, seasonStatus, solarSeasonOf, solarSeasonFactor, ledgerStep, ledgerStatus, rimfishStatus, driedFishStatus, wasteStep, wasteDesirabilityFactor, wasteStatus, securityStatus, dietVarietyStatus, varietyCovered, varietyDesirabilityFactor, varietyEvolutionFactor, labourStatus, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, birthStatus, effectiveBuildRadius, footprintStatus, veinFactor, veinStatus, calendarStatus, calendarStep, seasonOf, seasonFactor, seasonStatus, solarSeasonOf, solarSeasonFactor, ledgerStep, ledgerStatus, rimfishStatus, driedFishStatus, wasteStep, wasteDesirabilityFactor, wasteStatus, securityStatus, dietVarietyStatus, varietyCovered, varietyDesirabilityFactor, varietyEvolutionFactor, labourStatus, planterStatus, planterBlooming, planterLiveabilityBoost, planterDesirabilityFactor, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -4463,5 +4463,79 @@ describe('Spec 062 — The Labour Registry Desk: idle hands finally show in the 
     holdIdle(sim, 100, 50, 20) // now well past the severe line
     expect(s.registryPenalty).toBe(2)
     expect(prosperityRank(s)).toBeGreaterThanOrEqual(0) // floored — never below the bottom rank
+  })
+})
+
+describe('Spec 063 — The Planter Square: a deliberate patch of beauty', () => {
+  const mk = (kind: 'planter' | 'habitat' | 'water', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('inert without a Planter — desirability and liveability are exactly as today', () => {
+    const sim = new ColonySim(19)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    s.buildings.push(mk('habitat', lx, ly), mk('water', lx, ly))
+    expect(planterStatus(s).squares).toBe(0)
+    expect(planterDesirabilityFactor(s)).toBe(1)
+    expect(planterLiveabilityBoost(s, s.buildings[0]!, 1)).toBe(0)
+  })
+
+  it('a tended, watered Planter comes into Bloom, and fades when the water stops', () => {
+    const sim = new ColonySim(19)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    const planter = mk('planter', lx, ly, { jobs: 1 })
+    s.buildings.push(planter)
+    s.colonists = 20; s.totalJobs = 4; s.powerGen = 100; s.power.batteryWh = s.power.batteryCapWh
+    for (let i = 0; i < 8; i++) { s.water = 100; s.colonists = 20; s.totalJobs = 4; stepBuild(s, sim.rng, 24 * 60) }
+    expect(planterBlooming(planter)).toBe(true) // tended + watered 8 days → Blooming
+    for (let i = 0; i < 5; i++) { s.water = 0; s.colonists = 20; s.totalJobs = 4; stepBuild(s, sim.rng, 24 * 60) } // the tanks run dry
+    expect(planterBlooming(planter)).toBe(false) // untended → the Bloom fades
+  })
+
+  it('a Bloom lifts a served home, the near ring more than the far ring', () => {
+    const sim = new ColonySim(19)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    const planter = mk('planter', lx, ly, { jobs: 1 }); planter.tend = COLONY.build.planterBloomCap // Bloom it directly
+    const near = mk('habitat', lx + 2, ly); const far = mk('habitat', lx + 6, ly); const control = mk('habitat', lx + 40, ly)
+    // each home served by its own co-located Water Hub (distance 0 → always in range)
+    s.buildings.push(planter, near, mk('water', lx + 2, ly), far, mk('water', lx + 6, ly), control, mk('water', lx + 40, ly))
+    expect(planterBlooming(planter)).toBe(true)
+    const lNear = homeLiveability(s, near), lFar = homeLiveability(s, far), lControl = homeLiveability(s, control)
+    expect(lNear).toBeGreaterThan(lFar) // +6 within 4 tiles beats...
+    expect(lFar).toBeGreaterThan(lControl) // ...+3 within 8 tiles beats no Planter at all
+  })
+
+  it('a home gathers at most the cap from a wall of Planters, and never drops below baseline untended', () => {
+    const sim = new ColonySim(19)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    const home = mk('habitat', lx, ly)
+    s.buildings.push(home, mk('water', lx, ly))
+    // ring the home with five Blooming Planters, all in the near ring (5 x 6 = 30 raw points, capped at 12)
+    for (let i = 0; i < 5; i++) { const p = mk('planter', lx + 1 + i, ly + 1, { jobs: 1 }); p.tend = COLONY.build.planterBloomCap; s.buildings.push(p) }
+    expect(planterLiveabilityBoost(s, home, 1)).toBeCloseTo(COLONY.build.planterMaxBonus * COLONY.build.planterLiveabilityPerPoint, 6) // capped at +12 points
+    // now strip the Bloom: untended Planters give nothing, and the home returns to exactly its no-Planter liveability
+    for (const b of s.buildings) if (b.artifact.kind === 'planter') b.tend = 0
+    expect(planterLiveabilityBoost(s, home, 1)).toBe(0)
+    const withUntended = homeLiveability(s, home)
+    s.buildings = s.buildings.filter((b) => b.artifact.kind !== 'planter')
+    expect(homeLiveability(s, home)).toBe(withUntended) // untended Planters changed nothing — no penalty
+  })
+
+  it('a Bloom draws settlers — immigration desirability rises, and is neutral untended', () => {
+    const sim = new ColonySim(19)
+    const s = sim.state
+    const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+    const planter = mk('planter', lx, ly, { jobs: 1 }); planter.tend = COLONY.build.planterBloomCap // Bloom it directly
+    s.buildings.push(planter, mk('habitat', lx + 2, ly))
+    expect(planterDesirabilityFactor(s)).toBeGreaterThan(1) // a cared-for colony draws settlers a touch faster
+    planter.tend = 0 // untended → no Bloom
+    expect(planterDesirabilityFactor(s)).toBe(1) // ...and neutral again, never below 1
   })
 })

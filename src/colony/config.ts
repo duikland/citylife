@@ -808,6 +808,26 @@ export const COLONY = {
     registryHighDays: 7, // consecutive days above the high line before the -1 bites
     registrySevereDays: 14, // consecutive days above the severe line before the -2 bites
     registryClearDays: 7, // consecutive days below the clear line before the penalty lifts (hysteresis)
+    // The Planter Square (spec 063): the colony's first POSITIVE spatial lever — a staffed, watered beautification tile that, while
+    // Blooming, lifts the desirability/liveability of homes in its radius and draws settlers. The smog mechanic with the sign flipped.
+    // Inert by default: no Planter, or an untended one, changes nothing; it only ever adds, capped, and only to homes already served.
+    matPlanter: 14, // materials to build
+    compPlanter: 2, // components to build
+    toolPlanter: 1, // tool-kits to build (watering-line fittings, spec 047)
+    crewPlanter: 3, // builders reserved for the construction job
+    planterCost: 400, // treasury to build
+    planterWorkers: 1, // a Civic groundskeeper (a light tend; an unstaffed Square is untended)
+    planterWaterWarm: 1, // stored water drawn per day in the warm seasons (Bloom/Highsun) — also the no-calendar default
+    planterWaterCool: 0.5, // ...and in the cool ones (Grey/Frost)
+    planterNearRadius: 4, // homes within this many tiles get the near desirability bonus
+    planterFarRadius: 8, // ...and within this, the far bonus (the nearer ring wins per Planter, not additive)
+    planterNearBonus: 6, // desirability points to homes in the near ring
+    planterFarBonus: 3, // desirability points to homes in the far ring
+    planterMaxBonus: 12, // a single home gathers at most this many points from all Planters combined (no cheat-wall)
+    planterLiveabilityPerPoint: 0.01, // each desirability point adds this to a served home's liveability (12 pts → +0.12)
+    planterImmigrationBonus: 0.08, // immigration desirability lift at full Bloom coverage (a colony that looks cared for draws settlers)
+    planterBloomDays: 7, // a Planter Blooms once tended at least this many of the trailing days
+    planterBloomCap: 10, // the tended-day counter saturates here (so a 7-of-10 window gives a few days of grace before a Bloom fades)
     pollutionPerIndustrial: 3,
   },
 

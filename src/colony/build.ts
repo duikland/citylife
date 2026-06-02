@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar' | 'hallofnames' | 'netdock' | 'sanitation' | 'watchnook' | 'rationvar' | 'dryrack' | 'registry'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar' | 'hallofnames' | 'netdock' | 'sanitation' | 'watchnook' | 'rationvar' | 'dryrack' | 'registry' | 'planter'
 
 export interface Parcel {
   id: number
@@ -57,6 +57,7 @@ export interface ColonyBuilding {
   vein?: number // spec 052 — a mine's remaining ore reserve in days of life; set full on construction, ticks down as it digs; undefined = full
   incident?: { timer: number } // spec 024 — an active emergency; the building is paused while timer (sim-min) runs
   hazardAccum?: number // spec 024 — accumulated hazard toward the next incident (deterministic, sustained-condition)
+  tend?: number // spec 063 — a Planter Square's tended-day counter (0..planterBloomCap); Blooms at/above planterBloomDays
 }
 export interface RoadCell {
   x: number
@@ -114,6 +115,7 @@ const NETDOCK_COLOR = 0x4fb0a6 // cloudsea-teal — the Cloudsea Net Dock (nets 
 const RATIONVAR_COLOR = 0xd98c5f // warm amber-coral — the Variety Ration Counter (mixed-ration serving hatch)
 const DRYRACK_COLOR = 0x9fb4a0 // pale weathered sage — the Rimfish Drying Rack (slatted drying lines)
 const REGISTRY_COLOR = 0x8a93b8 // slate-indigo — the Labour Registry Desk (clerks, boards, ledgers)
+const PLANTER_COLOR = 0x6fae5a // fresh planted green — the Planter Square (raised beds, a bench)
 const SANITATION_COLOR = 0x6f8f6a // drain-green — the Sanitation Post (clears household waste before it sickens the colony)
 const WATCHNOOK_COLOR = 0xb0a04a // lamp-brass — the Watch Nook (keeps petty theft off a rich colony's coffers)
 const key = (x: number, y: number) => x + ',' + y
@@ -506,6 +508,10 @@ function designRegistry(state: ColonyState): Artifact {
   // Spec 062 — Labour Registry Desk; a staffed Civic office (no power) that makes chronic unemployment drag the Prosperity Rank. Costs tool-kits + folios to build.
   return { id: state.buildIds++, kind: 'registry', color: REGISTRY_COLOR, height: 0.9, residents: 0, jobs: COLONY.build.registryWorkers, powerLoad: 0, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.registryCost, materialsCost: COLONY.build.matRegistry, crew: COLONY.build.crewRegistry, materialsGen: 0, componentsCost: COLONY.build.compRegistry, toolsCost: COLONY.build.toolRegistry, folioCost: COLONY.build.folioRegistry }
 }
+function designPlanter(state: ColonyState): Artifact {
+  // Spec 063 — Planter Square; a staffed (Civic groundskeeper), watered beautification tile that Blooms and lifts nearby home desirability. No power.
+  return { id: state.buildIds++, kind: 'planter', color: PLANTER_COLOR, height: 0.35, residents: 0, jobs: COLONY.build.planterWorkers, powerLoad: 0, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.planterCost, materialsCost: COLONY.build.matPlanter, crew: COLONY.build.crewPlanter, materialsGen: 0, componentsCost: COLONY.build.compPlanter, toolsCost: COLONY.build.toolPlanter }
+}
 
 /** Spec 045 — steady power the built, staffed Turbine Masts add to the grid (harvests wind day + night; understaffing cuts it). */
 export function turbinePower(state: ColonyState): number {
@@ -879,8 +885,10 @@ export function homeLiveability(state: ColonyState, home: ColonyBuilding): numbe
   const cultured = nearBuildingKind(state, home, 'theatre', COLONY.build.theatreRadius) ? 1 : 0
   const services = (watered + provisioned + healthy + cultured) / 4
   const tierTerm = (Math.max(1, Math.min(3, home.tier ?? 1)) - 1) / 2
-  const score = 0.7 * services + 0.3 * tierTerm
-  return polluted(state, home) ? Math.max(0, score - COLONY.build.pollutionPenalty) : score // spec 019 — smog drags it down
+  let score = 0.7 * services + 0.3 * tierTerm
+  if (polluted(state, home)) score = Math.max(0, score - COLONY.build.pollutionPenalty) // spec 019 — smog drags it down
+  score += planterLiveabilityBoost(state, home, services) // spec 063 — a nearby Bloom sweetens a served home (0 with no Planter; scaled by how served it is)
+  return Math.max(0, Math.min(1, score))
 }
 
 /** Spec 011 — mean liveability across all homes (0 if none), for the HUD readout. */
@@ -890,6 +898,67 @@ export function colonyLiveability(state: ColonyState): number {
   let sum = 0
   for (const h of habs) sum += homeLiveability(state, h)
   return sum / habs.length
+}
+
+/** Spec 063 — a Planter Square Blooms once tended (watered + a groundskeeper) for planterBloomDays of the trailing window. */
+export function planterBlooming(b: ColonyBuilding): boolean {
+  return b.artifact.kind === 'planter' && (b.tend ?? 0) >= COLONY.build.planterBloomDays
+}
+
+/** Spec 063 — the desirability points a home gathers from all Blooming Planter Squares: the near ring wins per Planter (not additive
+ *  with the far ring for the same Planter), additive across Planters, capped at planterMaxBonus. 0 with no Blooming Planter. */
+function planterDesirabilityPoints(state: ColonyState, home: ColonyBuilding): number {
+  let pts = 0
+  for (const b of state.buildings) {
+    if (!planterBlooming(b)) continue
+    const d = Math.hypot(b.x - home.x, b.y - home.y)
+    if (d <= COLONY.build.planterNearRadius) pts += COLONY.build.planterNearBonus
+    else if (d <= COLONY.build.planterFarRadius) pts += COLONY.build.planterFarBonus
+  }
+  return Math.min(COLONY.build.planterMaxBonus, pts)
+}
+
+/** Spec 063 — a served home's liveability lift from nearby Blooming Planters (points -> liveability), scaled by how served the home is
+ *  so beauty never substitutes for water/food/care. 0 with no Planter, so homeLiveability is exactly spec 011/019 by default. */
+export function planterLiveabilityBoost(state: ColonyState, home: ColonyBuilding, serviceFraction: number): number {
+  return planterDesirabilityPoints(state, home) * COLONY.build.planterLiveabilityPerPoint * serviceFraction
+}
+
+/** Spec 063 — the immigration desirability lift from a cared-for colony: 1 (no effect) with no Bloom, up to 1 + planterImmigrationBonus
+ *  when every home sits by a Blooming Planter. */
+export function planterDesirabilityFactor(state: ColonyState): number {
+  const habs = state.buildings.filter((b) => b.artifact.kind === 'habitat')
+  if (!habs.length) return 1
+  let touched = 0
+  for (const h of habs) if (planterDesirabilityPoints(state, h) > 0) touched++
+  return 1 + COLONY.build.planterImmigrationBonus * (touched / habs.length)
+}
+
+/** Spec 063 — advance each Planter's tended-day counter: a Square tended today (a Civic groundskeeper AND a day's water, drawn from the
+ *  tanks; the warm seasons drink more) rises toward Bloom; an untended or unwatered Square decays. Inert with no Planter. */
+function planterStep(state: ColonyState, dtMin: number): void {
+  const planters = state.buildings.filter((b) => b.artifact.kind === 'planter')
+  if (!planters.length) return
+  const frac = dtMin / (24 * 60)
+  const staffed = state.colonists > 0 && sectorStaffing(state, 'civic') > 0 // a groundskeeper on the round
+  const season = countKind(state, 'calendar') > 0 ? seasonOf(calendarStatus(state).month).name : '' // no calendar → no seasons
+  const perDay = season === 'Grey' || season === 'Frost' ? COLONY.build.planterWaterCool : COLONY.build.planterWaterWarm
+  for (const b of planters) {
+    const need = perDay * frac
+    const tended = staffed && !b.incident && (state.water ?? 0) >= need
+    if (tended) {
+      state.water = Math.max(0, (state.water ?? 0) - need)
+      b.tend = Math.min(COLONY.build.planterBloomCap, (b.tend ?? 0) + frac)
+    } else {
+      b.tend = Math.max(0, (b.tend ?? 0) - frac)
+    }
+  }
+}
+
+/** Spec 063 — Planter readout for the HUD: how many Squares stand and how many are in Bloom. */
+export function planterStatus(state: ColonyState): { squares: number; blooming: number } {
+  const planters = state.buildings.filter((b) => b.artifact.kind === 'planter')
+  return { squares: planters.length, blooming: planters.filter(planterBlooming).length }
 }
 
 /** Spec 011 — the liveability overlay is available only once a Survey Office is built AND the colony is peopled. */
@@ -1042,6 +1111,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 14 && countKind(state, 'roster') < 1 && state.components >= COLONY.build.compRoster) return designRoster(state)
   // Spec 062 — a mature colony that already keeps a Census and a Pay Office raises a Labour Registry Desk so chronic idleness finally shows in the Prosperity books.
   if (state.colonists > 14 && countKind(state, 'census') > 0 && countKind(state, 'payoffice') > 0 && countKind(state, 'registry') < Math.max(1, Math.ceil(state.colonists / COLONY.build.registryCapacity)) && state.components >= COLONY.build.compRegistry && state.materials >= COLONY.build.matRegistry && (state.tools ?? 0) >= COLONY.build.toolRegistry && (state.folios ?? 0) >= COLONY.build.folioRegistry) return designRegistry(state)
+  // Spec 063 — a watered, established colony beautifies its neighbourhoods: raise a Planter Square (one per ~4 homes) once a Cistern keeps the tanks and tool-kits are on hand.
+  if (state.colonists > 14 && countKind(state, 'habitat') > 0 && countKind(state, 'cistern') > 0 && countKind(state, 'planter') < Math.max(1, Math.ceil(countKind(state, 'habitat') / 4)) && state.components >= COLONY.build.compPlanter && state.materials >= COLONY.build.matPlanter && (state.tools ?? 0) >= COLONY.build.toolPlanter) return designPlanter(state)
   // Spec 026 — answer an outbreak: when fever climbs past the build line and no post contains it → raise a Fever Watch Post.
   if (state.outbreak > COLONY.build.feverBuildThreshold && state.components >= COLONY.build.compFeverWatch && countKind(state, 'feverwatch') < COLONY.build.maxFeverWatch) return designFeverWatch(state)
   // Spec 028 — keep the peace: when unrest climbs past the build line and no post patrols → raise a Ward Post.
@@ -1148,7 +1219,7 @@ const SECTOR_OF: Record<BuildKind, Sector> = {
   transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics', turbine: 'logistics', surveycamp: 'logistics',
   bellhouse: 'safety', feverwatch: 'safety', ward: 'safety', stormwatch: 'safety', scrubber: 'safety', watchnook: 'safety',
   exchange: 'trade', import: 'trade',
-  levy: 'civic', payoffice: 'civic', liaison: 'civic', academy: 'civic', mast: 'civic', hall: 'civic', feast: 'civic', comptroller: 'civic', roster: 'civic', census: 'civic', habitat: 'civic', calendar: 'civic', hallofnames: 'civic', registry: 'civic',
+  levy: 'civic', payoffice: 'civic', liaison: 'civic', academy: 'civic', mast: 'civic', hall: 'civic', feast: 'civic', comptroller: 'civic', roster: 'civic', census: 'civic', habitat: 'civic', calendar: 'civic', hallofnames: 'civic', registry: 'civic', planter: 'civic',
 }
 // Spec 038 — priority orders the Roster Office fills under a shortage. 'balanced' uses the uniform split (no order).
 const ESSENTIALS_ORDER: Sector[] = ['food', 'safety', 'services', 'civic', 'logistics', 'industry', 'trade']
@@ -2283,7 +2354,7 @@ function immigration(state: ColonyState, dtMin: number): void {
   // Spec 010 — culture draws settlers: a cultured colony is more desirable.
   // Spec 010/014 — culture draws settlers; a theatre with no reels (spec 014) runs dark, halving its pull.
   const cultureFactor = 1 + COLONY.build.cultureDesirabilityBonus * cultureFraction(state) * cultureFuelFactor(state)
-  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) * (1 - (state.outbreak ?? 0) * COLONY.build.feverEmigrationWeight) * (1 + COLONY.build.waresDesirabilityBonus * housewaresFraction(state)) * (1 - (state.unrest ?? 0) * COLONY.build.unrestDesirabilityWeight) * wageDesirabilityFactor(state) * (feasting(state) ? 1 + COLONY.build.feastDesirabilityBonus : 1) * standingDesirabilityFactor(state) * (spireComplete(state) ? COLONY.build.spireImmigrationBonus : 1) * (foundersHallActive(state) ? COLONY.build.foundersDesirabilityBonus : 1) * (1 + COLONY.build.solaceDesirabilityBonus * solaceCoverage(state)) * (arrearsStrain(state) ? COLONY.build.arrearsStrainDesirabilityFactor : 1) * (1 + COLONY.build.educationDesirabilityBonus * educationFraction(state)) * prosperityDesirabilityFactor(state) * ((state.rimfish ?? 0) > 0 ? 1 + COLONY.build.rimfishDesirabilityBonus : 1) * wasteDesirabilityFactor(state) * varietyDesirabilityFactor(state) // spec 025/026/027/028/029/030/032/033/035/037/039/042/040/056/058/060 — levy, outbreak, stocked homes, unrest, wages, a feast, Kookerverse standing, the Spire, named founders, a consoled colony, a colony deep in arrears, a schooled colony, a high-Prosperity colony, a varied table (rimfish), a colony that minds its drains, and a colony whose Variety Ration Counter keeps a Varied Diet all pull on who comes and stays
+  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) * (1 - (state.outbreak ?? 0) * COLONY.build.feverEmigrationWeight) * (1 + COLONY.build.waresDesirabilityBonus * housewaresFraction(state)) * (1 - (state.unrest ?? 0) * COLONY.build.unrestDesirabilityWeight) * wageDesirabilityFactor(state) * (feasting(state) ? 1 + COLONY.build.feastDesirabilityBonus : 1) * standingDesirabilityFactor(state) * (spireComplete(state) ? COLONY.build.spireImmigrationBonus : 1) * (foundersHallActive(state) ? COLONY.build.foundersDesirabilityBonus : 1) * (1 + COLONY.build.solaceDesirabilityBonus * solaceCoverage(state)) * (arrearsStrain(state) ? COLONY.build.arrearsStrainDesirabilityFactor : 1) * (1 + COLONY.build.educationDesirabilityBonus * educationFraction(state)) * prosperityDesirabilityFactor(state) * ((state.rimfish ?? 0) > 0 ? 1 + COLONY.build.rimfishDesirabilityBonus : 1) * wasteDesirabilityFactor(state) * varietyDesirabilityFactor(state) * planterDesirabilityFactor(state) // spec 025/026/027/028/029/030/032/033/035/037/039/042/040/056/058/060/063 — levy, outbreak, stocked homes, unrest, wages, a feast, Kookerverse standing, the Spire, named founders, a consoled colony, a colony deep in arrears, a schooled colony, a high-Prosperity colony, a varied table (rimfish), a colony that minds its drains, and a colony whose Variety Ration Counter keeps a Varied Diet all pull on who comes and stays
   if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * confidenceImmigrationFactor(state) * perDay) // spec 049 — arrivals also follow the colony's Settler Confidence (a healthy colony sits at the plateau, so this is 1; deep distress slows it, terrible distress halts it)
 }
 
@@ -2821,6 +2892,7 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   housingStep(state, dtMin)
   wasteStep(state, dtMin) // spec 058 — occupied homes make filth, Sanitation Posts clear it; runs before immigration so desirability reads the current waste
   registryStep(state, dtMin) // spec 062 — a staffed Labour Registry books chronic idleness into the Prosperity penalty; runs before immigration so Prosperity-driven desirability reads it
+  planterStep(state, dtMin) // spec 063 — tend the Planter Squares (water + groundskeeper) so their Bloom is current before liveability + immigration read it
   immigration(state, dtMin)
   departureStep(state, dtMin) // spec 041 — sustained failure sheds households; runs right after immigration so the net is arrivals minus departures
   birthStep(state, dtMin) // spec 050 — stable mid-tier homes raise children that mature into colonists (reads tiers + vacancy after housing/immigration)
