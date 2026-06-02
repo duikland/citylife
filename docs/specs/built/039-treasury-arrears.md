@@ -1,5 +1,5 @@
 # Spec 039 — Treasury Arrears: giving an empty treasury teeth
-- status: proposed
+- status: built — slice 34, shipped to mechanics/dev. Engine in src/colony/build.ts (the Comptroller building, comptrollerExists/comptrollerActive guards, colonyDebt + arrearsStrain, a clampTreasury floor of 0 without an office and -debtCeiling with one, payday interest doubled while unstaffed, the desirability + unrest strain wiring, and arrearsStatus), knobs in config.ts, uiState in runtime.ts, a HUD Debt row in ColonyApp.tsx, and eight tests in tests/economy.test.ts. No new ColonyState field — the debt is a negative treasury. typecheck clean and all 291 tests pass; live on :5188 the treasury floored at 0 with no office, held a deficit to the -5000 ceiling with a staffed one, and flagged the strain past half the ceiling. v1 ties the debt floor to the office standing with staffing governing the interest rate; the literal levy-seizure ordering Toma described is folded into the payday interest.
 - proposed-by: **Toma Rill, ledger-keeper and founding dockhand of Landing One** — **LIVE Hermes** (model hermes-codex-gpt-5.5). A new founder steps forward (Toma Rill joins the roster of system-authors), naming the one place the economy has no consequence: going broke costs the colony nothing.
 - date: 2026-06-02
 - depends-on: 025, 028, 029
