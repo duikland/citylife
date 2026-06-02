@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -2498,5 +2498,116 @@ describe('Spec 037 — The Mooring Shrine: faith, solace, and the first reason t
     s.linen = 50
     expect(solaceCoverage(s)).toBe(0)
     expect(solaceStatus(s).shrines).toBe(0)
+  })
+})
+
+describe('Spec 039 — Treasury Arrears: giving an empty treasury teeth', () => {
+  const mk = (kind: 'comptroller', x: number, y: number, extra: Record<string, number> = {}): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: Object.assign({ id: 1, kind, color: 0, height: 1, residents: 0, jobs: 0, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 }, extra),
+  })
+
+  it('without a Comptroller Office the treasury cannot fall below zero (hard floor)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.treasury = -500 // try to force a deficit with no debt desk
+    stepBuild(s, sim.rng, 10)
+    expect(s.treasury).toBe(0) // floored — overdraw is not allowed, exactly as the colony ran before
+  })
+
+  it('a Comptroller Office is the debt desk only when built and staffed', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    expect(comptrollerExists(s)).toBe(false)
+    expect(comptrollerActive(s)).toBe(false)
+    s.buildings.push(mk('comptroller', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 3 }))
+    s.totalJobs = 3
+    s.colonists = 0
+    expect(comptrollerExists(s)).toBe(true)
+    expect(comptrollerActive(s)).toBe(false) // built, but no clerks
+    s.colonists = 12
+    expect(comptrollerActive(s)).toBe(true)
+  })
+
+  it('a staffed Comptroller Office lets the treasury hold a deficit down to the ceiling', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 12
+    s.totalJobs = 4
+    s.buildings.push(mk('comptroller', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 3 }))
+    s.treasury = -10000 // far beyond the ceiling
+    stepBuild(s, sim.rng, 10)
+    expect(s.treasury).toBe(-COLONY.build.debtCeiling) // clamped to the ceiling, not erased to zero
+  })
+
+  it('interest grows the debt on a payday', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('comptroller', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 3 }))
+    s.colonists = 0 // no income this payday, so the change is interest (+ a touch of upkeep)
+    s.totalJobs = 0
+    s.treasury = -1000
+    s.clock.day = 1
+    s.lastIncomeDay = 0 // fire exactly one payday
+    stepBuild(s, sim.rng, 10)
+    expect(s.treasury).toBeLessThan(-1000) // the debt deepened — interest accrued
+    expect(s.treasury).toBeGreaterThanOrEqual(-COLONY.build.debtCeiling) // still within the ceiling
+  })
+
+  it('arrears strain begins once the debt passes half the ceiling', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 12
+    s.totalJobs = 4
+    s.buildings.push(mk('comptroller', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 3 }))
+    s.treasury = -(COLONY.build.debtCeiling * 0.4) // below half → managed, no strain
+    expect(arrearsStrain(s)).toBe(false)
+    s.treasury = -(COLONY.build.debtCeiling * 0.6) // past half → strain
+    expect(arrearsStrain(s)).toBe(true)
+  })
+
+  it('a colony under arrears strain frays faster (unrest creeps)', () => {
+    const run = (debt: number) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      s.colonists = 6
+      s.totalJobs = 6 // fully employed: no idle-pressure confound
+      s.buildings.push(mk('comptroller', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 3 }))
+      s.treasury = -debt
+      s.unrest = 0.3
+      for (let i = 0; i < 60; i++) stepBuild(s, sim.rng, 10)
+      return s.unrest ?? 0
+    }
+    expect(run(3000)).toBeGreaterThan(run(1000)) // past half the 5000 ceiling → strain unrest; below → none
+  })
+
+  it('arrears go unmanaged when the office is unstaffed while in the red', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.buildings.push(mk('comptroller', s.terrain.landing.x + 3, s.terrain.landing.y, { jobs: 3 }))
+    s.colonists = 0
+    s.totalJobs = 3 // a desk with no clerks
+    s.treasury = -1000
+    const st = arrearsStatus(s)
+    expect(st.office).toBe(true)
+    expect(st.debt).toBe(1000)
+    expect(st.unmanaged).toBe(true) // interest doubles until staffed
+    s.colonists = 12
+    expect(arrearsStatus(s).unmanaged).toBe(false) // clerks back → managed again
+  })
+
+  it('with no office the colony is solvent and unstrained (inert)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.colonists = 12
+    s.totalJobs = 4
+    s.treasury = 500
+    for (let i = 0; i < 30; i++) stepBuild(s, sim.rng, 10)
+    expect(s.treasury).toBeGreaterThanOrEqual(0) // never goes into debt without a desk
+    expect(arrearsStatus(s).office).toBe(false)
+    expect(arrearsStatus(s).strain).toBe(false)
+    expect(arrearsStatus(s).debt).toBe(0)
   })
 })

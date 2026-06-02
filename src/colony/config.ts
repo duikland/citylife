@@ -487,6 +487,20 @@ export const COLONY = {
     solaceDesirabilityBonus: 0.12, // up to +12% immigration at full solace coverage
     solaceCalmPerDay: 0.06, // daily unrest relief at full solace coverage
     solaceStarvedFactor: 0.3, // solace dims to this fraction when the shrine has run out of linen
+    // Comptroller's Office (spec 039): the colony's debt desk. Without one the treasury floors at 0 (as the engine clamps it);
+    // with a staffed one the colony may run a deficit to a ceiling, accruing interest each payday, with strain past half the ceiling.
+    matComptroller: 18,
+    compComptroller: 4,
+    crewComptroller: 4,
+    comptrollerCost: 2400,
+    comptrollerWorkers: 3,
+    comptrollerMaintCompPerDay: 0.5,
+    debtCeiling: 5000, // the treasury may fall to -this while a Comptroller's Office stands
+    debtInterestPerPayday: 0.03, // fraction of the outstanding debt added on each income day
+    debtUnmanagedMult: 2, // interest doubles while the office is unstaffed and the treasury is negative
+    arrearsStrainFraction: 0.5, // debt past this fraction of the ceiling stretches the colony
+    arrearsStrainDesirabilityFactor: 0.85, // immigration desirability while under arrears strain (settlers slow)
+    arrearsUnrestPerDay: 0.03, // extra daily unrest pressure while under arrears strain
     block: 7, // grid block size (bumped 5→7) so the base spreads out and the city feels less cramped
     maxBlockRadius: 7, // how many blocks out from the landing the colony can spread
     pollutionPerIndustrial: 3,

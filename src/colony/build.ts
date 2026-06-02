@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller'
 
 export interface Parcel {
   id: number
@@ -93,6 +93,7 @@ const STORMWATCH_COLOR = 0x9aa7b0 // storm-grey stormwatch shelter (rim lookout 
 const HALL_COLOR = 0xd8b65a // founders' gold — the Founders' Hall (civic archive + seat of the notable founders)
 const IMPORT_COLOR = 0xc05a9a // import-magenta — the Skybridge Import Office (the buying side of trade)
 const SHRINE_COLOR = 0xb6a8e0 // soft violet — the Mooring Shrine (faith + solace for the homes)
+const COMPTROLLER_COLOR = 0x3f7d5a // ledger-green — the Comptroller's Office (the colony's debt desk)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -385,6 +386,10 @@ function designShrine(state: ColonyState): Artifact {
   // Spec 037 — Mooring Shrine; a small staffed civic shrine that carries Solace to nearby homes (fed by a trickle of linen).
   return { id: state.buildIds++, kind: 'shrine', color: SHRINE_COLOR, height: 1.2, residents: 0, jobs: COLONY.build.shrineWorkers, powerLoad: 0.2, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.shrineCost, materialsCost: COLONY.build.matShrine, crew: COLONY.build.crewShrine, materialsGen: 0, componentsCost: COLONY.build.compShrine }
 }
+function designComptroller(state: ColonyState): Artifact {
+  // Spec 039 — Comptroller's Office; the colony's debt desk — lets the treasury run a managed deficit to a ceiling.
+  return { id: state.buildIds++, kind: 'comptroller', color: COMPTROLLER_COLOR, height: 1.4, residents: 0, jobs: COLONY.build.comptrollerWorkers, powerLoad: 0.3, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.comptrollerCost, materialsCost: COLONY.build.matComptroller, crew: COLONY.build.crewComptroller, materialsGen: 0, componentsCost: COLONY.build.compComptroller }
+}
 
 /** Count buildings + queued jobs of a given kind (so we don't over-queue). */
 function countKind(state: ColonyState, kind: BuildKind): number {
@@ -629,6 +634,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 14 && countKind(state, 'hall') < 1 && state.components >= COLONY.build.compHall) return designHall(state)
   // Spec 036 — once trade is established (an Exchange stands) and the bank is flush, raise an Import Office to buy shortages.
   if (state.colonists > 12 && countKind(state, 'import') < 1 && countKind(state, 'exchange') > 0 && state.components >= COLONY.build.compImportOffice && state.treasury > COLONY.build.importOfficeCost) return designImportOffice(state)
+  // Spec 039 — a mature colony raises a Comptroller's Office so the treasury can ride a hard stretch on managed debt.
+  if (state.colonists > 14 && countKind(state, 'comptroller') < 1 && state.components >= COLONY.build.compComptroller && state.treasury > COLONY.build.comptrollerCost) return designComptroller(state)
   // Spec 026 — answer an outbreak: when fever climbs past the build line and no post contains it → raise a Fever Watch Post.
   if (state.outbreak > COLONY.build.feverBuildThreshold && state.components >= COLONY.build.compFeverWatch && countKind(state, 'feverwatch') < COLONY.build.maxFeverWatch) return designFeverWatch(state)
   // Spec 028 — keep the peace: when unrest climbs past the build line and no post patrols → raise a Ward Post.
@@ -1049,6 +1056,7 @@ function unrestStep(state: ColonyState, dtMin: number): void {
   if (foundersHallActive(state)) u -= COLONY.build.foundersUnrestRelief * frac // spec 035 — pride in who built this steadies the colony
   const solace = solaceCoverage(state)
   if (solace > 0) u -= COLONY.build.solaceCalmPerDay * solace * frac // spec 037 — consoled homes fray slower under a squeeze
+  if (arrearsStrain(state)) u += COLONY.build.arrearsUnrestPerDay * frac // spec 039 — a treasury deep in the red squeezes the colony
   state.unrest = Math.max(0, Math.min(COLONY.build.unrestMax, u))
 }
 
@@ -1586,7 +1594,7 @@ function immigration(state: ColonyState, dtMin: number): void {
   // Spec 010 — culture draws settlers: a cultured colony is more desirable.
   // Spec 010/014 — culture draws settlers; a theatre with no reels (spec 014) runs dark, halving its pull.
   const cultureFactor = 1 + COLONY.build.cultureDesirabilityBonus * cultureFraction(state) * cultureFuelFactor(state)
-  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) * (1 - (state.outbreak ?? 0) * COLONY.build.feverEmigrationWeight) * (1 + COLONY.build.waresDesirabilityBonus * housewaresFraction(state)) * (1 - (state.unrest ?? 0) * COLONY.build.unrestDesirabilityWeight) * wageDesirabilityFactor(state) * (feasting(state) ? 1 + COLONY.build.feastDesirabilityBonus : 1) * standingDesirabilityFactor(state) * (spireComplete(state) ? COLONY.build.spireImmigrationBonus : 1) * (foundersHallActive(state) ? COLONY.build.foundersDesirabilityBonus : 1) * (1 + COLONY.build.solaceDesirabilityBonus * solaceCoverage(state)) // spec 025/026/027/028/029/030/032/033/035/037 — levy, outbreak, stocked homes, unrest, wages, a feast, Kookerverse standing, the Spire, named founders, and a consoled colony all pull on who comes and stays
+  const desirability = Math.max(0.25, wateredFraction(state)) * fedFactor * tierFactor * cultureFactor * levyDesirabilityFactor(state) * (1 - (state.outbreak ?? 0) * COLONY.build.feverEmigrationWeight) * (1 + COLONY.build.waresDesirabilityBonus * housewaresFraction(state)) * (1 - (state.unrest ?? 0) * COLONY.build.unrestDesirabilityWeight) * wageDesirabilityFactor(state) * (feasting(state) ? 1 + COLONY.build.feastDesirabilityBonus : 1) * standingDesirabilityFactor(state) * (spireComplete(state) ? COLONY.build.spireImmigrationBonus : 1) * (foundersHallActive(state) ? COLONY.build.foundersDesirabilityBonus : 1) * (1 + COLONY.build.solaceDesirabilityBonus * solaceCoverage(state)) * (arrearsStrain(state) ? COLONY.build.arrearsStrainDesirabilityFactor : 1) // spec 025/026/027/028/029/030/032/033/035/037/039 — levy, outbreak, stocked homes, unrest, wages, a feast, Kookerverse standing, the Spire, named founders, a consoled colony, and a colony deep in arrears all pull on who comes and stays
   if (state.colonists < cap) state.colonists = Math.min(cap, state.colonists + COLONY.build.immigrationPerDay * desirability * perDay)
 }
 
@@ -1625,6 +1633,7 @@ function serviceUpkeep(state: ColonyState, dtMin: number): void {
     else if (b.artifact.kind === 'hall') upkeep += COLONY.build.hallMaintCompPerDay // spec 035 — archive + roster upkeep
     else if (b.artifact.kind === 'import') upkeep += COLONY.build.importOfficeMaintCompPerDay // spec 036 — office + dispatch supply
     else if (b.artifact.kind === 'shrine') linenUpkeep += COLONY.build.shrineLinenPerDay // spec 037 — prayer flags + memorial wraps (linen)
+    else if (b.artifact.kind === 'comptroller') upkeep += COLONY.build.comptrollerMaintCompPerDay // spec 039 — ledger + audit supply
   }
   if (upkeep > 0) state.components = Math.max(0, state.components - upkeep * (dtMin / (24 * 60)))
   if (matUpkeep > 0) state.materials = Math.max(0, state.materials - matUpkeep * (dtMin / (24 * 60)))
@@ -1703,6 +1712,35 @@ export function importStatus(state: ColonyState): { active: boolean; order: Impo
   const perDay = active && good ? offices * COLONY.build.importPerDay * staffing : 0
   const dailySpend = good ? perDay * COLONY.build.importPrice[good] : 0
   return { active, order: good, perDay: Math.round(perDay), dailySpend: Math.round(dailySpend) }
+}
+
+/** Spec 039 — does a Comptroller's Office stand? (built; lets the treasury hold a deficit even if momentarily unstaffed). */
+export function comptrollerExists(state: ColonyState): boolean {
+  return countKind(state, 'comptroller') > 0
+}
+/** Spec 039 — is the debt desk staffed? (clerks keep the arrears managed; unstaffed, interest doubles). */
+export function comptrollerActive(state: ColonyState): boolean {
+  if (!comptrollerExists(state)) return false
+  return (state.totalJobs > 0 ? state.colonists / state.totalJobs : 0) > 0
+}
+/** Spec 039 — the colony's outstanding debt (0 when solvent). */
+export function colonyDebt(state: ColonyState): number {
+  return state.treasury < 0 ? -state.treasury : 0
+}
+/** Spec 039 — under arrears strain once the debt passes half the ceiling: settlers slow and unrest creeps. */
+export function arrearsStrain(state: ColonyState): boolean {
+  return comptrollerExists(state) && colonyDebt(state) > COLONY.build.debtCeiling * COLONY.build.arrearsStrainFraction
+}
+/** Spec 039 — bind the treasury to its floor: 0 with no office, -debtCeiling with one (the deficit the desk allows). */
+function clampTreasury(state: ColonyState): void {
+  const floor = comptrollerExists(state) ? -COLONY.build.debtCeiling : 0
+  if (state.treasury < floor) state.treasury = floor
+}
+/** Spec 039 — Arrears readout for the HUD: the office, the debt, its ceiling, and the strain / unmanaged flags. */
+export function arrearsStatus(state: ColonyState): { office: boolean; debt: number; ceiling: number; strain: boolean; unmanaged: boolean } {
+  const office = comptrollerExists(state)
+  const debt = colonyDebt(state)
+  return { office, debt: Math.round(debt), ceiling: COLONY.build.debtCeiling, strain: arrearsStrain(state), unmanaged: office && debt > 0 && !comptrollerActive(state) }
 }
 
 function tradeStep(state: ColonyState, dtMin: number): void {
@@ -1793,7 +1831,12 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
     const income = state.colonists * COLONY.economy.incomePerColonistPerDay * (0.6 + 0.4 * rate) * (1 - pollutionPenalty) * levyIncomeFactor(state) * (1 - (state.unrest ?? 0) * COLONY.build.unrestIncomeRefusal) // spec 025/028 — the levy rate scales the take; unrest refuses a slice of it
     const upkeep = state.buildings.length * COLONY.economy.buildingUpkeepPerDay + state.roads.length * COLONY.economy.roadUpkeepPerDay
     state.treasury += (income - upkeep - payrollPerDay(state)) * days // spec 029 — the colony pays its workers a daily wage
+    if (state.treasury < 0) { // spec 039 — interest accrues on the deficit each payday, doubled while the debt desk is unstaffed (unmanaged arrears)
+      const rate = COLONY.build.debtInterestPerPayday * (comptrollerActive(state) ? 1 : COLONY.build.debtUnmanagedMult)
+      state.treasury += state.treasury * rate * days
+    }
   }
+  clampTreasury(state) // spec 039 — the debt floor binds: 0 with no Comptroller's Office, -debtCeiling with one
 
   if (state.clock.totalMinutes - state.lastGrowMin >= COLONY.build.growIntervalHours * 60) {
     state.lastGrowMin = state.clock.totalMinutes
