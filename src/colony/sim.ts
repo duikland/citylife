@@ -50,6 +50,10 @@ export interface ColonyState {
   claims: number // spec 051 — completed Outer Claims; each adds one deck-ring to the effective build radius; 0 until a Survey Camp claims ground
   claimProgress: number // spec 051 — work toward the next Outer Claim, 0..1 (a staffed Survey Camp advances it)
   lastFoundersYear: number // spec 053 — the last colony-year whose turn has been accounted for (Founders' Day fires once per year)
+  lastLedgerYear: number // spec 055 — the last colony-year the Long Ledger has settled (natural turnover fires once per year)
+  renewalThisYear: number // spec 055 — colonists gained (arrivals + births) since the last year-turn, accumulating
+  renewalLastYear: number // spec 055 — the previous year's renewal; caps how many may pass this year
+  lastPassings: number // spec 055 — how many passed at the most recent year-turn (for the HUD)
   parcels: Parcel[]
   jobs: ConstructionJob[]
   buildings: ColonyBuilding[]
@@ -145,6 +149,10 @@ export class ColonySim {
       claims: 0, // spec 051 — the colony starts at its base footprint
       claimProgress: 0, // spec 051 — no survey underway
       lastFoundersYear: 0, // spec 053 — the founding year (year 0) needs no anniversary
+      lastLedgerYear: 0, // spec 055 — the Long Ledger starts settled at the founding year
+      renewalThisYear: 0, // spec 055
+      renewalLastYear: 0, // spec 055
+      lastPassings: 0, // spec 055 — no one has passed yet
       parcels: [],
       jobs: [],
       buildings: [],

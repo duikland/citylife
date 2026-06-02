@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ColonySim } from '../src/colony/sim'
-import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, birthStatus, effectiveBuildRadius, footprintStatus, veinFactor, veinStatus, calendarStatus, calendarStep, seasonOf, seasonFactor, seasonStatus, type ColonyBuilding } from '../src/colony/build'
+import { autoGrow, freeLabour, stepBuild, housingCapacity, wateredFraction, provisionedFraction, healthFraction, cultureFraction, homeLiveability, colonyLiveability, surveyAvailable, liveabilityTint, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, polluted, pollutedFraction, commute, maintenanceStatus, storageCaps, storageStatus, incidentStatus, levyActive, feverWatchActive, feverStatus, housewaresSupplied, luxurySupplied, housewaresFraction, wardActive, unrestStatus, payOfficeActive, payrollPerDay, feastDeckActive, canCallFeast, callFeast, feasting, liaisonActive, fulfillRequest, spireComplete, fundSpireStage, stormwatchActive, frontStatus, foundersHallActive, foundersRoster, foundersStatus, FOUNDERS, importOfficeActive, importStatus, solaceCoverage, solaceStatus, comptrollerExists, comptrollerActive, arrearsStrain, arrearsStatus, sectorStaffing, rosterActive, rosterStatus, colonyDistress, departureCause, departureStatus, educationFraction, educationStatus, censusActive, prosperityScore, prosperityRank, prosperityStatus, turbinePower, waterSupplyFactor, waterStatus, toolSupplyFactor, toolStatus, toolStockCap, seedSupplyFactor, seedStatus, seedStockCap, settlerConfidence, confidenceImmigrationFactor, confidenceStatus, birthStatus, effectiveBuildRadius, footprintStatus, veinFactor, veinStatus, calendarStatus, calendarStep, seasonOf, seasonFactor, seasonStatus, ledgerStep, ledgerStatus, type ColonyBuilding } from '../src/colony/build'
 import { COLONY } from '../src/colony/config'
 
 describe('Spec 001 — materials + labour gate construction', () => {
@@ -3796,5 +3796,97 @@ describe('Spec 054 — Mild Seasons: the almanac makes the year turn', () => {
       expect(mult).toBeGreaterThanOrEqual(0.9)
       expect(mult).toBeLessThanOrEqual(1.1)
     }
+  })
+})
+
+describe('Spec 055 — The Long Ledger: a life has a span, and the colony renews', () => {
+  const Y = COLONY.build.daysPerYear
+  const hall = (x: number, y: number): ColonyBuilding => ({
+    id: x * 1000 + y,
+    x,
+    y,
+    artifact: { id: 1, kind: 'hallofnames', color: 0, height: 1, residents: 0, jobs: COLONY.build.hallOfNamesWorkers, powerLoad: 0, powerGen: 0, buildTimeMin: 1, cost: 0, materialsCost: 0, crew: 0, materialsGen: 0 },
+  })
+
+  it('a colony younger than the span sees zero natural passings (inert)', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.clock.day = Y * 5 // year 5 — far below the onset span
+    s.lastLedgerYear = 4
+    s.renewalThisYear = 100
+    s.colonists = 50
+    ledgerStep(s)
+    expect(s.colonists).toBe(50) // no one passes before the span ends
+    expect(s.lastPassings).toBe(0)
+    expect(s.lastLedgerYear).toBe(5) // the year is still accounted
+    expect(ledgerStatus(s).turning).toBe(false)
+  })
+
+  it('an old colony sees a small natural turnover at the year-turn', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.clock.day = Y * (COLONY.build.naturalSpanYears + 10) // past the span
+    s.lastLedgerYear = COLONY.build.naturalSpanYears + 9
+    s.renewalThisYear = 100 // a renewing colony
+    s.colonists = 100
+    s.food = 100
+    ledgerStep(s)
+    expect(s.colonists).toBeLessThan(100) // a few elders pass on
+    expect(s.lastPassings).toBeGreaterThan(0)
+    expect(ledgerStatus(s).turning).toBe(true)
+  })
+
+  it('good care lengthens lives — fewer passings when well cared for than when neglected', () => {
+    const passings = (caredWell: boolean) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      s.clock.day = Y * (COLONY.build.naturalSpanYears + 10)
+      s.lastLedgerYear = COLONY.build.naturalSpanYears + 9
+      s.renewalThisYear = 100000 // huge, so the renewal cap never binds — isolate the care factor
+      s.colonists = 1000
+      s.food = 100 // fed in both
+      s.unrest = caredWell ? 0 : 1 // the only difference: a calm, ordered colony vs a disordered one
+      ledgerStep(s)
+      return s.lastPassings
+    }
+    expect(passings(true)).toBeLessThan(passings(false)) // care softens the turnover
+  })
+
+  it('passings are hard-capped by renewal, by a small fraction, and never below the founding crew', () => {
+    const sim = new ColonySim(7)
+    const s = sim.state
+    s.clock.day = Y * (COLONY.build.naturalSpanYears + 20)
+    s.lastLedgerYear = COLONY.build.naturalSpanYears + 19
+    s.colonists = 500
+    s.renewalThisYear = 6 // small renewal → the half-renewal cap should bind
+    s.food = 0
+    s.unrest = 1 // neglected → the base rate would be much larger without the caps
+    const col0 = s.colonists
+    ledgerStep(s)
+    expect(s.lastPassings).toBeLessThanOrEqual(COLONY.build.renewalCapFraction * 6 + 1e-9) // <= half the year's renewal
+    expect(s.lastPassings).toBeLessThanOrEqual(COLONY.build.maxPassFraction * col0 + 1e-9) // <= the small ceiling
+    expect(s.colonists).toBeGreaterThanOrEqual(COLONY.seed.colonists) // never empties the colony
+    expect(s.colonists).toBeCloseTo(col0 - s.lastPassings, 9) // consistent
+  })
+
+  it('a staffed Hall of Names eases the grief of a year that takes someone', () => {
+    const relief = (hasHall: boolean) => {
+      const sim = new ColonySim(7)
+      const s = sim.state
+      const lx = s.terrain.landing.x, ly = s.terrain.landing.y
+      s.clock.day = Y * (COLONY.build.naturalSpanYears + 10)
+      s.lastLedgerYear = COLONY.build.naturalSpanYears + 9
+      s.colonists = 500
+      s.totalJobs = 100 // staffed
+      s.renewalThisYear = 200
+      s.food = 0
+      s.unrest = 0.5
+      if (hasHall) s.buildings.push(hall(lx, ly))
+      const u0 = s.unrest
+      ledgerStep(s)
+      return u0 - s.unrest
+    }
+    expect(relief(true)).toBeGreaterThan(relief(false)) // remembrance comforts the colony; without a Hall there is no comfort
+    expect(relief(false)).toBe(0)
   })
 })

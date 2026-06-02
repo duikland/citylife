@@ -684,6 +684,22 @@ export const COLONY = {
     highsunYield: 1.05, // months 5-6
     greyYield: 0.95, // months 7-8
     frostYield: 0.9, // months 9-12 — the lean season (put food by in the storehouses)
+    // The Long Ledger (spec 055): a life has a long span, then a gentle, capped natural turnover. Inert until the colony is past the
+    // span (no test or young colony runs that long), softened by good care, and hard-capped so it can never out-pace renewal or
+    // empty the colony — passings never exceed half the year's births+arrivals, never exceed a small fraction, never below the crew.
+    naturalSpanYears: 60, // no natural passings until the colony is this many years old (the founding generation's long span)
+    naturalPassRate: 0.015, // base fraction of colonists who pass per year once past the span
+    naturalPassRampPerYear: 0.01, // the rate rises this much per colony-year past the span (an older colony has more elders)
+    maxPassFraction: 0.03, // hard ceiling — never more than this fraction of colonists pass in a single year
+    carePassFloor: 0.4, // best care (clinics, water, food, order) reduces passings to this fraction of the base — longer lives
+    renewalCapFraction: 0.5, // passings never exceed this fraction of the previous year's renewal (births + arrivals); net stays positive
+    matHallOfNames: 18,
+    compHallOfNames: 5,
+    crewHallOfNames: 2,
+    hallOfNamesCost: 1500,
+    hallOfNamesWorkers: 2, // two attendants keep the Long Ledger
+    hallOfNamesPowerLoad: 0.3,
+    remembranceRelief: 0.05, // a staffed Hall of Names eases unrest by this after a year that takes someone
     pollutionPerIndustrial: 3,
   },
 

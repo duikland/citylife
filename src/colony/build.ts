@@ -9,7 +9,7 @@ import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
 
-export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar'
+export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar' | 'hallofnames'
 
 export interface Parcel {
   id: number
@@ -105,6 +105,7 @@ const TOOLCRIB_COLOR = 0xb8823c // worked-bronze — the Tool Crib (components b
 const SEEDLOFT_COLOR = 0x7fae57 // seed-green — the Seed Loft (saved harvest becomes seed-stock)
 const SURVEYCAMP_COLOR = 0xc8a25a // surveyor-ochre — the Survey Camp (claims new ground for the colony)
 const CALENDAR_COLOR = 0xd9c089 // parchment-gold — the Calendar Office (the colony counts its years)
+const HALLOFNAMES_COLOR = 0x9a8fb0 // dusk-violet — the Hall of Names (the colony remembers its elders)
 const key = (x: number, y: number) => x + ',' + y
 const B = COLONY.build.block
 
@@ -136,6 +137,10 @@ export function initBuild(state: ColonyState): void {
   state.claims = 0 // spec 051 — the colony starts at its base footprint
   state.claimProgress = 0 // spec 051 — no survey underway
   state.lastFoundersYear = 0 // spec 053 — the founding year needs no anniversary
+  state.lastLedgerYear = 0 // spec 055 — the Long Ledger starts settled at the founding year
+  state.renewalThisYear = 0 // spec 055
+  state.renewalLastYear = 0 // spec 055
+  state.lastPassings = 0 // spec 055
   state.standing = COLONY.build.standingStart // spec 032 — neutral Kookerverse Standing
   state.request = null // spec 032 — no open Civic Request
   state.requestCooldown = 0 // spec 032
@@ -451,6 +456,10 @@ function designSurveyCamp(state: ColonyState): Artifact {
 function designCalendarOffice(state: ColonyState): Artifact {
   // Spec 053 — Calendar Office; a one-clerk civic room that counts the colony's years and marks Founders' Day.
   return { id: state.buildIds++, kind: 'calendar', color: CALENDAR_COLOR, height: 0.8, residents: 0, jobs: COLONY.build.calendarWorkers, powerLoad: COLONY.build.calendarPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.calendarCost, materialsCost: COLONY.build.matCalendar, crew: COLONY.build.crewCalendar, materialsGen: 0, componentsCost: COLONY.build.compCalendar, reelsCost: COLONY.build.reelCalendar }
+}
+function designHallOfNames(state: ColonyState): Artifact {
+  // Spec 055 — Hall of Names; a staffed civic room of remembrance that keeps the Long Ledger and comforts the colony after a loss.
+  return { id: state.buildIds++, kind: 'hallofnames', color: HALLOFNAMES_COLOR, height: 1.0, residents: 0, jobs: COLONY.build.hallOfNamesWorkers, powerLoad: COLONY.build.hallOfNamesPowerLoad, powerGen: 0, buildTimeMin: COLONY.build.workplaceBuildHours * 60, cost: COLONY.build.hallOfNamesCost, materialsCost: COLONY.build.matHallOfNames, crew: COLONY.build.crewHallOfNames, materialsGen: 0, componentsCost: COLONY.build.compHallOfNames }
 }
 
 /** Spec 045 — steady power the built, staffed Turbine Masts add to the grid (harvests wind day + night; understaffing cuts it). */
@@ -917,6 +926,8 @@ function chooseArtifact(state: ColonyState, rng: RNG): Artifact {
   if (state.colonists > 14 && countKind(state, 'surveycamp') < 1 && (state.claims ?? 0) < COLONY.build.maxClaims && nextBlock(state) === null && state.components >= COLONY.build.compSurveyCamp && state.materials >= COLONY.build.matSurveyCamp + COLONY.build.matPerClaim) return designSurveyCamp(state)
   // Spec 053 — a settled, mature colony with fine reels to spare raises a Calendar Office to count its years and keep Founders' Day.
   if (state.colonists > 18 && countKind(state, 'calendar') < 1 && state.components >= COLONY.build.compCalendar && state.reels >= COLONY.build.reelCalendar && state.materials >= COLONY.build.matCalendar) return designCalendarOffice(state)
+  // Spec 055 — a settled colony that already keeps a calendar raises a Hall of Names to remember its elders and comfort the colony when a life ends.
+  if (state.colonists > 20 && countKind(state, 'calendar') > 0 && countKind(state, 'hallofnames') < 1 && state.components >= COLONY.build.compHallOfNames && state.materials >= COLONY.build.matHallOfNames) return designHallOfNames(state)
   // Spec 036 — once trade is established (an Exchange stands) and the bank is flush, raise an Import Office to buy shortages.
   if (state.colonists > 12 && countKind(state, 'import') < 1 && countKind(state, 'exchange') > 0 && state.components >= COLONY.build.compImportOffice && state.treasury > COLONY.build.importOfficeCost) return designImportOffice(state)
   // Spec 039 — a mature colony raises a Comptroller's Office so the treasury can ride a hard stretch on managed debt.
@@ -1023,7 +1034,7 @@ const SECTOR_OF: Record<BuildKind, Sector> = {
   transit: 'logistics', maintshed: 'logistics', storehouse: 'logistics', solar: 'logistics', battery: 'logistics', turbine: 'logistics', surveycamp: 'logistics',
   bellhouse: 'safety', feverwatch: 'safety', ward: 'safety', stormwatch: 'safety', scrubber: 'safety',
   exchange: 'trade', import: 'trade',
-  levy: 'civic', payoffice: 'civic', liaison: 'civic', academy: 'civic', mast: 'civic', hall: 'civic', feast: 'civic', comptroller: 'civic', roster: 'civic', census: 'civic', habitat: 'civic', calendar: 'civic',
+  levy: 'civic', payoffice: 'civic', liaison: 'civic', academy: 'civic', mast: 'civic', hall: 'civic', feast: 'civic', comptroller: 'civic', roster: 'civic', census: 'civic', habitat: 'civic', calendar: 'civic', hallofnames: 'civic',
 }
 // Spec 038 — priority orders the Roster Office fills under a shortage. 'balanced' uses the uniform split (no order).
 const ESSENTIALS_ORDER: Sector[] = ['food', 'safety', 'services', 'civic', 'logistics', 'industry', 'trade']
@@ -2215,6 +2226,45 @@ export function seasonStatus(state: ColonyState): { name: string; modifier: numb
   return { name: s.name, modifier: Math.round((s.multiplier - 1) * 100), active: countKind(state, 'calendar') > 0 }
 }
 
+/** Spec 055 — how well the colony cares for its people, blended from health, water, food and order. Returns the passing multiplier
+ *  in [carePassFloor, 1]: well cared for → the floor (fewer passings, longer lives); neglected → 1 (the full natural rate). */
+function careFactor(state: ColonyState): number {
+  const fed = countKind(state, 'depot') > 0 ? provisionedFraction(state) : ((state.food ?? 0) > 0 ? 1 : 0)
+  const care = (healthFraction(state) + wateredFraction(state) + fed + (1 - Math.min(1, Math.max(0, state.unrest ?? 0)))) / 4
+  return 1 - (1 - COLONY.build.carePassFloor) * Math.max(0, Math.min(1, care))
+}
+
+/** Spec 055 — Long Ledger readout for the HUD: the colony's age, whether natural turnover has begun, the last year's passings, and whether a Hall of Names stands. */
+export function ledgerStatus(state: ColonyState): { ageYears: number; onset: number; turning: boolean; lastPassings: number; hall: boolean } {
+  const ageYears = Math.floor(Math.max(0, state.clock?.day ?? 0) / COLONY.build.daysPerYear)
+  return { ageYears, onset: COLONY.build.naturalSpanYears, turning: ageYears >= COLONY.build.naturalSpanYears, lastPassings: Math.round(state.lastPassings ?? 0), hall: countKind(state, 'hallofnames') > 0 }
+}
+
+/** Spec 055 — settle the Long Ledger on each year-turn: a long-settled colony sees a small, care-softened natural turnover, hard-
+ *  capped to half the year's renewal, a small fraction of the population, and never below the founding crew. Inert below the onset
+ *  span (no passings, the year is just accounted). A staffed Hall of Names eases the grief. */
+export function ledgerStep(state: ColonyState): void {
+  const ageYears = Math.floor(Math.max(0, state.clock?.day ?? 0) / COLONY.build.daysPerYear)
+  if (ageYears <= (state.lastLedgerYear ?? 0)) return // no new year has turned
+  const renewal = state.renewalThisYear ?? 0
+  state.renewalLastYear = renewal // settle the year's renewal
+  state.renewalThisYear = 0
+  state.lastLedgerYear = ageYears
+  state.lastPassings = 0
+  if (ageYears < COLONY.build.naturalSpanYears) return // before the span ends, no one passes — the year is simply accounted
+  const ramp = 1 + Math.max(0, ageYears - COLONY.build.naturalSpanYears) * COLONY.build.naturalPassRampPerYear // an older colony has more elders
+  let passings = state.colonists * COLONY.build.naturalPassRate * ramp * careFactor(state)
+  passings = Math.min(passings, COLONY.build.maxPassFraction * state.colonists) // belt-and-braces ceiling
+  passings = Math.min(passings, COLONY.build.renewalCapFraction * renewal) // never more than half the year's renewal → net stays positive
+  passings = Math.min(passings, Math.max(0, state.colonists - COLONY.seed.colonists)) // the founding crew always remains
+  passings = Math.max(0, passings)
+  if (passings <= 0) return
+  state.colonists -= passings
+  state.lastPassings = passings
+  const hallStaffed = countKind(state, 'hallofnames') > 0 && (state.totalJobs > 0 ? state.colonists / state.totalJobs : 0) > 0
+  if (hallStaffed) state.unrest = Math.max(0, (state.unrest ?? 0) - COLONY.build.remembranceRelief) // remembrance eases grief
+}
+
 /** Spec 005 — services (water hubs) consume a trickle of components to run. */
 function serviceUpkeep(state: ColonyState, dtMin: number): void {
   let upkeep = 0 // components (water/depot/clinic/theatre)
@@ -2406,6 +2456,7 @@ export function tradeExportRate(state: ColonyState): number {
 }
 
 export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
+  const popAtStepStart = state.colonists // spec 055 — snapshot before the population steps, to measure this step's renewal
   toolStep(state, dtMin) // spec 047 — make/draw tool-kits first so every tooled producer + the fitters read this step's rack
   maintenanceStep(state, dtMin) // spec 022 — accrue/repair wear first so producers read current condition
   incidentStep(state, dtMin) // spec 024 — crises strike, get answered, or hit their consequence (paused buildings won't produce below)
@@ -2431,7 +2482,9 @@ export function stepBuild(state: ColonyState, rng: RNG, dtMin: number): void {
   departureStep(state, dtMin) // spec 041 — sustained failure sheds households; runs right after immigration so the net is arrivals minus departures
   birthStep(state, dtMin) // spec 050 — stable mid-tier homes raise children that mature into colonists (reads tiers + vacancy after housing/immigration)
   claimStep(state, dtMin) // spec 051 — a staffed Survey Camp advances the next Outer Claim and widens the build footprint
+  state.renewalThisYear = (state.renewalThisYear ?? 0) + Math.max(0, state.colonists - popAtStepStart) // spec 055 — accumulate the year's net renewal (arrivals + births) before the Ledger reads it
   calendarStep(state) // spec 053 — mark the turning of the colony's years; a staffed Calendar Office gives a Founders' Day lift
+  ledgerStep(state) // spec 055 — on the year-turn, a long-settled colony sees a gentle, capped natural turnover (inert below the onset span)
   tradeStep(state, dtMin)
   importStep(state, dtMin) // spec 036 — the buying side: spend treasury to land the order good (capped by storage headroom below)
   clampStorage(state) // spec 023 — finite storage: production past a cap is lost (after all goods are produced/sold)
