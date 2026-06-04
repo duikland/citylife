@@ -11,3 +11,6 @@ social-export/
 
 # scratch commit-message file written by Write before git commit -F
 .git-commit-msg.tmp
+
+# operator bot-provisioning helper (reads secrets at runtime; not part of the app)
+provision-citizen.sh
