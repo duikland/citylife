@@ -35,6 +35,14 @@ export interface Citizen {
   tokensSpentLifetime: number
   /** Timestamp of registration (ms). Stamped from outside (deterministic in tests). */
   bornAtMs: number
+  /** P1 — live avatar position on the heightfield (cells). Starts at the home cell; eased toward target. */
+  pos: { x: number; y: number }
+  /** P1 — destination cell the avatar walks to. The bot or governor sets this via setTarget. */
+  target: { x: number; y: number }
+  /** P1 — facing in radians (atan2 of the travel direction). */
+  heading: number
+  /** P1 — walk speed in cells per second. */
+  spd: number
 }
 
 /** Public-safe slice of a Citizen for the HUD / UI / save file. Excludes any field that could carry
@@ -90,6 +98,10 @@ export class CitizenRoster {
       hasPod: false,
       tokensSpentLifetime: 0,
       bornAtMs: nowMs,
+      pos: { x: plot.x, y: plot.y },
+      target: { x: plot.x, y: plot.y },
+      heading: 0,
+      spd: 0.8,
     }
     this.byHousehold.set(h.id, c)
     return c
@@ -132,6 +144,33 @@ export class CitizenRoster {
     if (!c) return false
     c.telegramHandle = handle
     return true
+  }
+
+  /** P1 — point a citizen's avatar at a destination cell. The bot or governor calls this to make the avatar walk. */
+  setTarget(citizenId: string, cell: { x: number; y: number }): boolean {
+    const c = this.byId(citizenId)
+    if (!c || !Number.isFinite(cell.x) || !Number.isFinite(cell.y)) return false
+    c.target = { x: cell.x, y: cell.y }
+    return true
+  }
+
+  /** P1 — advance every avatar toward its target by dt seconds (eased straight-line walk, heading follows travel). */
+  stepAvatars(dt: number): void {
+    if (!Number.isFinite(dt) || dt <= 0) return
+    for (const c of this.byHousehold.values()) {
+      const dx = c.target.x - c.pos.x, dy = c.target.y - c.pos.y
+      const d = Math.hypot(dx, dy)
+      if (d < 1e-3) continue
+      const move = Math.min(d, c.spd * dt)
+      c.pos.x += (dx / d) * move
+      c.pos.y += (dy / d) * move
+      c.heading = Math.atan2(dy, dx)
+    }
+  }
+
+  /** P1 — live avatar render data for the renderer (public-safe: name + position only, never the gateway URL). */
+  avatars(): { id: string; displayName: string; x: number; y: number; heading: number; hasPod: boolean }[] {
+    return Array.from(this.byHousehold.values()).map((c) => ({ id: c.id, displayName: c.displayName, x: c.pos.x, y: c.pos.y, heading: c.heading, hasPod: c.hasPod }))
   }
 
   /** Token-thrift accounting: charge this citizen for inference they just spent. */

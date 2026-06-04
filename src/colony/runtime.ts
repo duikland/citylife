@@ -1,7 +1,7 @@
 // Browser runtime for the colony: fixed-timestep sim loop + planet renderer + camera presets.
 import { COLONY } from './config'
 import { ColonySim } from './sim'
-import { PlanetRenderer, type CameraPreset, type ViewMode } from './render/PlanetRenderer'
+import { PlanetRenderer, type CameraPreset, type ViewMode, type AvatarView } from './render/PlanetRenderer'
 import { Biome } from './terrain'
 import { autoGrow, freeLabour, housingCapacity, wateredFraction, provisionedFraction, housingTierCounts, healthFraction, cultureFraction, colonyLiveability, surveyAvailable, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, pollutedFraction, commute, maintenanceStatus, storageStatus, incidentStatus, levyStatus, feverStatus, housewaresFraction, unrestStatus, wageStatus, feastStatus, callFeast, liaisonStatus, fulfillRequest, spireStatus, fundSpireStage, frontStatus, foundersStatus, importStatus, solaceStatus, arrearsStatus, rosterStatus, departureStatus, educationStatus, prosperityStatus, turbinePower, waterStatus, toolStatus, seedStatus, confidenceStatus, birthStatus, footprintStatus, veinStatus, calendarStatus, seasonStatus, ledgerStatus, rimfishStatus, driedFishStatus, duskcapStatus, bathhouseStatus, libraryStatus, wasteStatus, securityStatus, dietVarietyStatus, labourStatus, planterStatus, stallStatus, galleryStatus, porterStatus, avatarStatus, fireStatus, reclaimStatus, festivalStatus, type ImportGood } from './build'
 import { registerSettler as kookerRegister, generateName as randomSettlerName, type KookerCard } from './kooker'
@@ -41,6 +41,7 @@ export interface ColonyUiState {
   bank: { currency: string; deposits: number; accounts: number; recent: { id: number; memo: string }[] }
   border: { households: Household[]; bots: Bot[]; botSource: string; plots: Plot[] }
   citizens: { count: number; awake: number; list: CitizenPublic[] }
+  firstPerson: { active: boolean; citizenId: string | null; citizenName: string | null; operatorCitizenId: string | null }
   radio: RadioState
   courier: { on: boolean; headline: string } // spec 016 — the colony's own news, when a Broadcast Mast is up
   tv: boolean
@@ -86,6 +87,10 @@ export class ColonyRuntime {
   // Sol = real days since founding (operator directive: every real day is a sol). Fixed on first boot and
   // accumulated in wall-clock time, decoupled from the fast sim economy clock — so a 24/7 colony ages honestly.
   private foundingMs: number = resolveFoundingMs(typeof localStorage === 'undefined' ? undefined : localStorage, Date.now())
+  // P1 — the logged-in operator's name, so we can mark which avatar is theirs + gate the step-into.
+  private operatorName: string | null = null
+  // P1 — the citizen currently being viewed in first person (null = orbit camera).
+  private fpCitizenId: string | null = null
 
   constructor(seed: number = COLONY.render.seed) {
     this.sim = new ColonySim(seed)
@@ -155,6 +160,42 @@ export class ColonyRuntime {
    *  prompt and the generated text). Returns a discriminated result so the UI shows the reason on reject. */
   generatePersonality(magicPrompt: string): Promise<{ ok: true; personality: string } | { ok: false; reason: string }> {
     return this.botService.generatePersonality(magicPrompt)
+  }
+
+  /** P1 — record the logged-in operator name (from auth). Marks their avatar + gates the step-into. */
+  setOperatorName(name: string | null): void {
+    this.operatorName = name && name.trim() ? name.trim() : null
+    this.emit()
+  }
+
+  /** P1 — the citizen the operator owns (their login name matches the citizen display name), or null. */
+  private operatorCitizenId(): string | null {
+    if (!this.operatorName) return null
+    const me = this.operatorName.toLowerCase()
+    const hit = this.citizens.list().find((c) => c.displayName.toLowerCase() === me)
+    return hit?.id ?? null
+  }
+
+  /** P1 — the bot/governor points a citizen's avatar at a destination cell (it walks there). */
+  setAvatarTarget(citizenId: string, cell: { x: number; y: number }): boolean {
+    const ok = this.citizens.setTarget(citizenId, cell)
+    if (ok) this.emit()
+    return ok
+  }
+
+  /** P1 — step the operator INTO a citizen for a live first-person view through the bot's eyes. */
+  enterFirstPerson(citizenId: string): boolean {
+    if (!this.citizens.byId(citizenId)) return false
+    this.fpCitizenId = citizenId
+    this.renderer?.enterFirstPerson(citizenId)
+    this.emit()
+    return true
+  }
+  /** P1 — leave first-person, restoring the orbit camera. */
+  exitFirstPerson(): void {
+    this.fpCitizenId = null
+    this.renderer?.exitFirstPerson()
+    this.emit()
   }
 
   /** Border patrol asks an approved household's bot another question (the reply is the bot's own). */
@@ -299,6 +340,12 @@ export class ColonyRuntime {
     if (this.running) return
     this.renderer = new PlanetRenderer(container, this.sim)
     this.renderer.setZonesVisible(this.zonesVisible)
+    // P1 — feed the renderer the live citizen avatars each frame, marking the operator's own.
+    this.renderer.setAvatarSource((): AvatarView[] => {
+      const mine = this.operatorCitizenId()
+      return this.citizens.avatars().map((a) => ({ ...a, isOperator: a.id === mine }))
+    })
+    if (this.fpCitizenId) this.renderer.enterFirstPerson(this.fpCitizenId)
     this.running = true
     this.lastFrame = performance.now()
     this.lastUi = this.lastFrame
@@ -326,6 +373,7 @@ export class ColonyRuntime {
         steps++
       }
     }
+    this.citizens.stepAvatars(dtReal) // P1 — walk the avatars in real time toward their targets
     this.renderer?.frame()
     if (now - this.lastUi > 200) {
       this.lastUi = now
@@ -465,6 +513,11 @@ export class ColonyRuntime {
       },
       border: { households: this.backend.households(), bots: this.botService.bots, botSource: this.botService.source, plots: this.cityPlan.plots },
       citizens: { count: this.citizens.size(), awake: this.citizens.awakeCount(), list: this.citizens.list() },
+      firstPerson: (() => {
+        const opId = this.operatorCitizenId()
+        const c = this.fpCitizenId ? this.citizens.byId(this.fpCitizenId) : null
+        return { active: this.fpCitizenId !== null, citizenId: this.fpCitizenId, citizenName: c?.displayName ?? null, operatorCitizenId: opId }
+      })(),
       radio: this.radio,
       courier: (() => {
         // Spec 016 — the Kookerverse Courier: rotate through the colony's currently-true headlines.
