@@ -16,6 +16,7 @@ import type { Household } from './newcomers'
 import type { CityPlan, Plot } from './cityPlan'
 import { validatePG } from './bot/pgSafety'
 import type { FirstPersonView } from './bot/firstPersonView'
+import { getAuthClient } from './authClient'
 
 export type Speaker = 'patrol' | 'newcomer' | 'narrator'
 
@@ -154,8 +155,11 @@ export class MockBotAdapter implements BotAdapter {
  *     on the inference route, so the browser never holds the credential. */
 export class KookerInferenceBotAdapter implements BotAdapter {
   readonly source = 'kooker-inference'
+  /** tokenProvider yields the logged-in player's current (auto-refreshed) kooker JWT. The bot
+   *  authenticates to the inference choke point AS THE PLAYER — no shared PAT. Returns null when the
+   *  player is not signed in, in which case the call fails closed (the gateway rejects it). */
   constructor(
-    private readonly token?: string,
+    private readonly tokenProvider?: () => Promise<string | null>,
     private readonly model = 'kooker-codex',
     private readonly url = '/kooker/api/v1/ai/route/chat',
   ) {}
@@ -192,13 +196,15 @@ export class KookerInferenceBotAdapter implements BotAdapter {
     let lastErr = 'unknown error'
     for (let attempt = 1; attempt <= 4; attempt++) {
       try {
+        // The player's own JWT, freshly renewed if near expiry. Fetched per attempt so a token that
+        // crossed the expiry boundary mid-retry is replaced rather than reused.
+        const token = this.tokenProvider ? await this.tokenProvider() : null
         const res = await fetch(this.url, {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
             'X-Kooker-Tier': 'external',
-            // Only attach a Bearer when we hold a PAT locally; in-cluster the nginx proxy injects it.
-            ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body,
         })
@@ -220,41 +226,37 @@ export class KookerInferenceBotAdapter implements BotAdapter {
   }
 }
 
-/** Pick the real adapter when a citylife PAT is configured, else the mock. */
+/** Real inference uses the logged-in player's own kooker JWT (no shared PAT). When the player is not
+ *  yet authenticated, fall back to the mock so the engine never stalls; resolveBotAdapter() upgrades
+ *  to the real adapter once a session exists. */
 export function defaultBotAdapter(): BotAdapter {
-  let pat: string | undefined
-  try {
-    pat = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_CITYLIFE_PAT
-  } catch {
-    pat = undefined
-  }
-  return pat ? new KookerInferenceBotAdapter(pat) : new MockBotAdapter()
+  const auth = getAuthClient()
+  return auth.isAuthenticated
+    ? new KookerInferenceBotAdapter(() => auth.getValidToken())
+    : new MockBotAdapter()
 }
 
-/** Resolve the reply source at runtime, in priority order, NEVER baking a secret into the bundle:
- *   1. Local dev — a gitignored VITE_CITYLIFE_PAT means call the choke point directly with it.
- *   2. In-cluster — fetch /citylife-runtime.json (rendered by nginx from env, no secret). When it
- *      says botBackend:"kooker", use the real adapter with NO token; the nginx proxy injects the
- *      Bearer from a k8s Secret on the inference route, so the PAT never reaches the browser.
- *   3. Otherwise — mock stand-ins (offline / CI / unconfigured cluster). */
+/** Resolve the reply source at runtime. The CityLife player is signed in (the AuthGate requires it),
+ *  so the bots call the kooker inference choke point AS THE PLAYER — their session JWT is attached by
+ *  the adapter and the nginx inference route forwards it unchanged. No shared PAT, no secret in the
+ *  bundle, and inference is attributed to the real user. Falls back to the mock offline / in CI / when
+ *  no one is signed in. The model name still comes from /citylife-runtime.json when present. */
 export async function resolveBotAdapter(): Promise<BotAdapter> {
-  let pat: string | undefined
-  try {
-    pat = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_CITYLIFE_PAT
-  } catch {
-    pat = undefined
-  }
-  if (pat) return new KookerInferenceBotAdapter(pat)
+  const auth = getAuthClient()
+  if (!auth.isAuthenticated) return new MockBotAdapter()
+  let model = 'kooker-codex'
   try {
     const res = await fetch('/citylife-runtime.json', { cache: 'no-store' })
     if (res.ok) {
       const cfg = (await res.json()) as { botBackend?: string; model?: string }
-      if (cfg.botBackend === 'kooker') return new KookerInferenceBotAdapter(undefined, cfg.model || 'kooker-codex')
+      // botBackend:"mock" (or an explicitly non-kooker backend) keeps the stand-ins even when signed in.
+      if (cfg.botBackend && cfg.botBackend !== 'kooker') return new MockBotAdapter()
+      if (cfg.model) model = cfg.model
     }
   } catch {
-    /* no runtime config (e.g. local dev without the proxy) — fall through to mock */
+    /* no runtime config (e.g. local dev without the proxy) — use the default model */
   }
-  return new MockBotAdapter()
+  return new KookerInferenceBotAdapter(() => auth.getValidToken(), model)
 }
 
 /** Holds the colony's bots and orchestrates the border / patrol-allocation dialogue. */

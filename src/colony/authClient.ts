@@ -11,17 +11,22 @@
 
 export interface OperatorSession {
   token: string
+  refreshToken?: string // kooker refresh token — used to mint a new access token before expiry
   expiresAt: number // epoch ms
   operator: { id: string; scopes: string[] }
 }
 
 export type LoginResult = { ok: true } | { ok: false; error: string }
 
-const STORAGE_KEY = 'citylife.session.v2' // v2: real kooker JWT (not the old unsigned dev token)
+const STORAGE_KEY = 'citylife.session.v3' // v3: adds refreshToken so the session self-renews
 const SESSION_MS = 1000 * 60 * 60 * 8 // 8 h fallback if JWT has no exp
 const KOOKER_AUTH_PATH = '/kooker/api/auth/basic'
+const KOOKER_REFRESH_PATH = '/kooker/api/auth/refresh'
 const APP_NAME = 'citylife'
 const SCOPES = ['newcomer:create', 'newcomer:read', 'chat:read', 'migration:decide', 'simulation:mutate']
+// Renew the access token this long before it actually expires, so an in-flight inference call
+// (which can take seconds) never races the expiry boundary.
+const REFRESH_SKEW_MS = 60_000
 
 /** The base64 Basic Auth header value sent once to the backend. Never logged or persisted. */
 export function basicAuth(username: string, password: string): string {
@@ -56,9 +61,18 @@ function isDevBuild(): boolean {
   }
 }
 
+/** Process-wide AuthClient shared by the login gate and the bot inference adapter, so the player's
+ *  session JWT (and its refresh) is the single source of truth for who is calling kooker inference. */
+let sharedAuth: AuthClient | null = null
+export function getAuthClient(): AuthClient {
+  if (!sharedAuth) sharedAuth = new AuthClient()
+  return sharedAuth
+}
+
 export class AuthClient {
   private session: OperatorSession | null = null
   private readonly now: () => number
+  private refreshInFlight: Promise<string | null> | null = null
 
   constructor(opts?: { now?: () => number }) {
     this.now = opts?.now ?? (() => Date.now())
@@ -66,7 +80,9 @@ export class AuthClient {
   }
 
   get isAuthenticated(): boolean {
-    return this.session !== null && this.session.expiresAt > this.now()
+    if (!this.session) return false
+    // A live access token, OR an expired one we can still renew with a refresh token.
+    return this.session.expiresAt > this.now() || !!this.session.refreshToken
   }
   get operator(): OperatorSession['operator'] | null {
     return this.isAuthenticated ? this.session!.operator : null
@@ -94,6 +110,7 @@ export class AuthClient {
       }
       const data = (await resp.json()) as {
         accessToken?: string
+        refreshToken?: string
         accessExpiresIn?: number
         user?: { email?: string; name?: string }
       }
@@ -102,7 +119,7 @@ export class AuthClient {
       const expFromJwt = jwtExpiresAt(token)
       const expiresAt = expFromJwt > 0 ? expFromJwt : this.now() + SESSION_MS
       const displayName = data.user?.name || data.user?.email || id
-      this.session = { token, expiresAt, operator: { id: displayName, scopes: SCOPES } }
+      this.session = { token, refreshToken: data.refreshToken, expiresAt, operator: { id: displayName, scopes: SCOPES } }
       this.persist()
       return { ok: true }
     } catch (e) {
@@ -132,9 +149,61 @@ export class AuthClient {
     }
   }
 
-  /** Bearer header for backend calls — empty string when not authenticated (calls fail closed). */
+  /** Bearer header for backend calls — empty object when not authenticated (calls fail closed).
+   *  Synchronous + best-effort: use getValidToken() for the refresh-aware path on long-lived calls. */
   authHeader(): Record<string, string> {
     return this.isAuthenticated ? { Authorization: `Bearer ${this.session!.token}` } : {}
+  }
+
+  /** Return a currently-valid access token, renewing it via the refresh token when it is expired or
+   *  within REFRESH_SKEW_MS of expiry. Returns null when there is no session or the refresh fails
+   *  (the caller then surfaces a re-login). Concurrent callers share a single in-flight refresh. */
+  async getValidToken(): Promise<string | null> {
+    const s = this.session
+    if (!s) return null
+    if (s.expiresAt - this.now() > REFRESH_SKEW_MS) return s.token
+    if (!s.refreshToken) {
+      // No refresh token (e.g. a legacy session) — fail closed once expired.
+      return s.expiresAt > this.now() ? s.token : null
+    }
+    return this.refresh()
+  }
+
+  /** Exchange the refresh token for a fresh access token. Dedupes concurrent calls. */
+  private refresh(): Promise<string | null> {
+    if (this.refreshInFlight) return this.refreshInFlight
+    const refreshToken = this.session?.refreshToken
+    if (!refreshToken) return Promise.resolve(null)
+    this.refreshInFlight = (async () => {
+      try {
+        const resp = await fetch(KOOKER_REFRESH_PATH, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        })
+        if (!resp.ok) {
+          // Refresh token expired/revoked — clear the session so the gate shows login again.
+          if (resp.status === 401 || resp.status === 403) this.logout()
+          return null
+        }
+        const data = (await resp.json()) as { accessToken?: string; refreshToken?: string }
+        if (!data.accessToken || !this.session) return null
+        const expFromJwt = jwtExpiresAt(data.accessToken)
+        this.session = {
+          ...this.session,
+          token: data.accessToken,
+          refreshToken: data.refreshToken ?? this.session.refreshToken,
+          expiresAt: expFromJwt > 0 ? expFromJwt : this.now() + SESSION_MS,
+        }
+        this.persist()
+        return data.accessToken
+      } catch {
+        return null
+      } finally {
+        this.refreshInFlight = null
+      }
+    })()
+    return this.refreshInFlight
   }
 
   private persist(): void {
@@ -149,7 +218,9 @@ export class AuthClient {
       const raw = sessionStorage.getItem(STORAGE_KEY)
       if (!raw) return
       const s = JSON.parse(raw) as OperatorSession
-      if (s && s.expiresAt > this.now()) this.session = s
+      // Keep a restored session if the access token is still valid OR it carries a refresh token
+      // (getValidToken will renew it on the next call).
+      if (s && (s.expiresAt > this.now() || s.refreshToken)) this.session = s
     } catch {
       /* no storage / bad data */
     }

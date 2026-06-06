@@ -103,3 +103,74 @@ describe('AuthClient (kooker login gate)', () => {
     expect((r as { ok: false; error: string }).error).toMatch(/network down/)
   })
 })
+
+describe('AuthClient (token refresh)', () => {
+  // A fetch stub that answers /basic (login) and /refresh distinctly, recording calls.
+  function mockAuthEndpoints(loginToken: string, refreshTokenOut: string, refreshAnswer: { token?: string; status?: number }) {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      calls.push(url)
+      if (url.includes('/auth/basic')) {
+        return { ok: true, status: 200, json: async () => ({ accessToken: loginToken, refreshToken: refreshTokenOut, user: { name: 'Mayor' } }) }
+      }
+      if (url.includes('/auth/refresh')) {
+        if (refreshAnswer.status && refreshAnswer.status >= 400) return { ok: false, status: refreshAnswer.status, json: async () => ({}) }
+        return { ok: true, status: 200, json: async () => ({ accessToken: refreshAnswer.token, refreshToken: 'r2' }) }
+      }
+      return { ok: false, status: 404, json: async () => ({}) }
+    })
+    return calls
+  }
+
+  it('getValidToken returns the current token when it is not near expiry', async () => {
+    let t = 1_000_000_000
+    mockAuthEndpoints(fakeJwt(t + 1000 * 60 * 60), 'r1', {})
+    const a = new AuthClient({ now: () => t })
+    await a.login('mayor@test.com', 'pw')
+    const tok = await a.getValidToken()
+    expect(tok).toBe(fakeJwt(t + 1000 * 60 * 60))
+  })
+
+  it('getValidToken renews via the refresh token when the access token is expired', async () => {
+    let t = 1_000_000_000
+    const fresh = fakeJwt(t + 1000 * 60 * 120) // new token valid 2h
+    const calls = mockAuthEndpoints(fakeJwt(t + 1000), 'r1', { token: fresh }) // login token expires in 1s
+    const a = new AuthClient({ now: () => t })
+    await a.login('mayor@test.com', 'pw')
+    t += 1000 * 60 * 5 // 5 min later — access token expired
+    const tok = await a.getValidToken()
+    expect(tok).toBe(fresh)
+    expect(calls.some((u) => u.includes('/auth/refresh'))).toBe(true)
+    expect(a.isAuthenticated).toBe(true)
+  })
+
+  it('stays authenticated while a refresh token exists even after the access token expires', async () => {
+    let t = 1_000_000_000
+    mockAuthEndpoints(fakeJwt(t + 1000), 'r1', { token: fakeJwt(t + 1000 * 60 * 120) })
+    const a = new AuthClient({ now: () => t })
+    await a.login('mayor@test.com', 'pw')
+    t += 1000 * 60 * 5
+    expect(a.isAuthenticated).toBe(true) // renewable
+  })
+
+  it('logs out when the refresh token is rejected (401)', async () => {
+    let t = 1_000_000_000
+    mockAuthEndpoints(fakeJwt(t + 1000), 'r1', { status: 401 })
+    const a = new AuthClient({ now: () => t })
+    await a.login('mayor@test.com', 'pw')
+    t += 1000 * 60 * 5
+    const tok = await a.getValidToken()
+    expect(tok).toBeNull()
+    expect(a.isAuthenticated).toBe(false)
+  })
+
+  it('dedupes concurrent refreshes into a single network call', async () => {
+    let t = 1_000_000_000
+    const calls = mockAuthEndpoints(fakeJwt(t + 1000), 'r1', { token: fakeJwt(t + 1000 * 60 * 120) })
+    const a = new AuthClient({ now: () => t })
+    await a.login('mayor@test.com', 'pw')
+    t += 1000 * 60 * 5
+    await Promise.all([a.getValidToken(), a.getValidToken(), a.getValidToken()])
+    expect(calls.filter((u) => u.includes('/auth/refresh')).length).toBe(1)
+  })
+})
