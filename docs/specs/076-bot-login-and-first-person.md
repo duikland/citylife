@@ -118,14 +118,52 @@ choke point; no path carries admin.
    is); the container plays itself, metered as the citizen.
 5. **Share-ACL + tiers** — defer to Spec 075 phase 5.
 
+## BOT_PAT storage — RESOLVED (research, 2026-06-06)
+
+There is **no `auth.json`** anywhere in the stack and no NousResearch/Hermes upstream `auth.json`
+convention. The existing, working secret-injection spine is what we reuse — **do not invent a new
+file format**:
+
+```
+register (kooker-service-ai) ── mints BOT_PAT (365d HS256 JWT) ──> BotNode.patToken (Neo4j)
+spawner POST /bots/provision ── botPat in body ──> k8s Secret bot-<label> (ns kooker), key BOT_PAT
+Deployment ── envFrom: secretRef ──> BOT_PAT env in the pod
+entrypoint-hermes.sh ── writes ~/.hermes/.env: OPENAI_API_KEY=$BOT_PAT, OPENAI_BASE_URL=<router>
+Hermes runtime ── Authorization: Bearer <BOT_PAT> ──> kooker-service-ai /api/v1/ai/route/chat
+choke point ── KookerJwtAuthenticationFilter + OwnerResolver ── meters usage to BotNode.ownerEmail
+```
+
+For a CityLife citizen bot: mint via `POST /api/swarm/fleet/register` with
+**`ownerEmail = the citizen sub-user's email`** so metering/rate-limit land on the citizen. The PAT is
+stored in the per-bot k8s Secret `bot-<label>` (key `BOT_PAT`), reaches the pod via `envFrom`, and the
+**existing** `entrypoint-hermes.sh` already does `OPENAI_API_KEY=$BOT_PAT` → Bearer to the choke
+point. No read-path code change. (Canonical spawner: `_spawner-fresh/server.js` — it injects `BOT_PAT`;
+the stale `kooker-bot-spawner/server.js` is JWT-only and should be deprecated.)
+
+This is also the "username/password vs BOT_PAT" answer: the autonomous container uses the **BOT_PAT**
+(stored in its k8s Secret, sent as the OpenAI Bearer); the UI login-as-bot uses the sub-user's
+**password** → `/auth/basic` → JWT. Both authenticate the same sub-user; both metered identically.
+
+### Security hardening to do alongside (research-flagged)
+
+1. **No real revocation**: the 365-day JWT PAT is accepted by the filter *before* the string lookup,
+   so a leaked PAT lives a full year even after `rotate-pat`. Mint **shorter-TTL** PATs for citizens
+   and add a `jti` denylist for true revocation.
+2. **`rotate-pat` mints an opaque UUID** (not a JWT) — format-inconsistent and breaks the daemon
+   heartbeat. Make it call `generateBotAccessToken`.
+3. **PAT cleartext in Neo4j** (`BotNode.patToken`) and pullable via `/{botId}/env` — hash-at-rest or
+   shorten TTL.
+4. **Omit the shared `GEMINI_API_KEY`** from citizen-bot Secrets (one leak = org-wide key); citizens
+   route through the kooker router and don't need it.
+5. **Lock down the in-pod surface** for citizen bots (Hermes dashboard `--insecure 0.0.0.0:18789`,
+   VNC/noVNC, sshd) — bind to loopback or drop.
+
 ## Open questions (resolve in review)
 
 - **Password for UI login-as-bot**: auto-generate per citizen (stored where?), or let the parent set
   it, or support a parent-asserted "enter" that mints a bot session without a typed password (the
   parent's ownership is the proof)? Leaning: parent-asserted enter for flow (A); explicit credential
-  for flow (B) / autonomous.
-- **BOT_PAT storage** for the autonomous path: k8s Secret per citizen container vs the spawner's
-  existing `BOT_PAT` mechanism (kooker-service-inference). Reuse the spawner pattern.
+  for flow (B); BOT_PAT for autonomous.
 - **Migrator image digest** bump coordination (kooker-infra) for the schema change.
 
 ## Non-goals
