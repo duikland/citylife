@@ -41,7 +41,7 @@ server {
         proxy_pass ${KOOKER_GATEWAY}/api/v1/ai/route/chat;
         proxy_http_version 1.1;
         proxy_ssl_server_name on;
-        proxy_set_header Host $proxy_host;
+        proxy_set_header Host ${KOOKER_HOST};
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Authorization "Bearer ${CITYLIFE_PAT}";
@@ -53,7 +53,7 @@ server {
         proxy_pass ${KOOKER_GATEWAY}/;
         proxy_http_version 1.1;
         proxy_ssl_server_name on;
-        proxy_set_header Host $proxy_host;
+        proxy_set_header Host ${KOOKER_HOST};
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
