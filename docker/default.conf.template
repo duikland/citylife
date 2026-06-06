@@ -34,9 +34,11 @@ server {
         return 200 '{"botBackend":"${CITYLIFE_BOT_BACKEND}","model":"${CITYLIFE_MODEL}"}';
     }
 
-    # Inference route — the ONLY place the PAT is attached. The browser sends no Authorization;
-    # nginx injects it here from the CITYLIFE_PAT env (a k8s Secret), so the credential never
-    # reaches the client bundle. Exact match so only this path gets the Bearer.
+    # Inference route — forwards the player's OWN kooker JWT through to the choke point. The browser
+    # sends Authorization: Bearer <session token> (the logged-in player's), and nginx passes it
+    # upstream unchanged (no proxy_set_header Authorization override here, so the client header flows
+    # through). No shared PAT, no secret in the cluster — inference is attributed to the real user.
+    # Exact match kept only to stamp the rate-limit tier header.
     location = /kooker/api/v1/ai/route/chat {
         proxy_pass ${KOOKER_GATEWAY}/api/v1/ai/route/chat;
         proxy_http_version 1.1;
@@ -44,7 +46,6 @@ server {
         proxy_set_header Host ${KOOKER_HOST};
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Authorization "Bearer ${CITYLIFE_PAT}";
         proxy_set_header X-Kooker-Tier external;
     }
 

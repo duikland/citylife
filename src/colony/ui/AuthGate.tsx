@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, type ReactNode } from 'react'
-import { AuthClient } from '../authClient'
+import { getAuthClient } from '../authClient'
 import { LoginScreen } from './LoginScreen'
 
 /** Gates its children behind operator login. Renders the LoginScreen until authenticated.
@@ -7,7 +7,7 @@ import { LoginScreen } from './LoginScreen'
  *  from the gitignored .env.local and hits the kooker auth service). Shows nothing during that
  *  brief check so there's no login flash when auto-login is configured. */
 export function AuthGate({ children }: { children: ReactNode }) {
-  const auth = useMemo(() => new AuthClient(), [])
+  const auth = useMemo(() => getAuthClient(), [])
   const [authed, setAuthed] = useState(auth.isAuthenticated)
   const [checking, setChecking] = useState(!auth.isAuthenticated)
 
