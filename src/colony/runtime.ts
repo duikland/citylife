@@ -104,16 +104,19 @@ export class ColonyRuntime {
     this.cityPlan = makeCityPlan(this.sim.state.terrain)
     this.sim.state.cityPlan = this.cityPlan // expose to the renderer for the zone tint + plot markers
     this.botService.setCityPlan(this.cityPlan)
-    // Spec 075 — lay out the neighbourhood and merge its street into the colony roads so the avatars
-    // walk it and it renders as pavement (never over water — makeNeighborhood only uses dry, buildable ground).
+    // Spec 076 — lay out the homestead neighbourhood and merge its 3-wide carriageway into the colony
+    // roads so the avatars walk it and it renders as a proper-width residential street (never over water
+    // — makeNeighborhood only uses dry, buildable ground). The grass verge is reserved so nothing builds
+    // on it, but kept out of the road array so it renders as the kerb, not asphalt.
     this.neighborhood = makeNeighborhood(this.sim.state.terrain)
-    for (const c of this.neighborhood.street) {
+    for (const c of this.neighborhood.carriage) {
       const k = `${c.x},${c.y}`
       if (!this.sim.state.roadSet.has(k)) {
         this.sim.state.roadSet.add(k)
         this.sim.state.roads.push({ x: c.x, y: c.y })
       }
     }
+    for (const c of this.neighborhood.verge) this.sim.state.roadSet.add(`${c.x},${c.y}`)
   }
 
   /** Roll a fresh playful settler name for the immigration dialog. */
@@ -289,7 +292,9 @@ export class ColonyRuntime {
     if (!lot || !c || lot.ownerCitizenId) return false
     for (const l of this.neighborhood.lots) if (l.ownerCitizenId === citizenId) { l.ownerCitizenId = undefined; l.built = false }
     lot.ownerCitizenId = citizenId
-    c.homeXY = { x: lot.x, y: lot.y }
+    // Home = the house-zone centre (set back from the street), so stepping into the citizen parks at
+    // their actual home; the avatar walks to the door cell facing the street.
+    c.homeXY = { x: Math.round(lot.houseZone.x + (lot.houseZone.w - 1) / 2), y: Math.round(lot.houseZone.y + (lot.houseZone.d - 1) / 2) }
     this.citizens.setTarget(citizenId, { x: lot.doorX, y: lot.doorY })
     this.emit()
     return true

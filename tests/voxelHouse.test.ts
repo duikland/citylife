@@ -51,10 +51,28 @@ describe('voxel house — a block cottage', () => {
 
   it('is deterministic by seed + door direction', () => {
     expect(buildVoxelHouse(42, 's')).toEqual(buildVoxelHouse(42, 's'))
+    expect(buildVoxelHouse(42, 's', { maxW: 7, maxD: 5 })).toEqual(buildVoxelHouse(42, 's', { maxW: 7, maxD: 5 }))
   })
 
-  it('every block kind has a colour', () => {
-    const h = buildVoxelHouse(1, 's')
+  it('grows to fill a big house-zone but never exceeds it', () => {
+    for (const seed of [1, 2, 3, 4, 5, 99]) {
+      const h = buildVoxelHouse(seed, 's', { maxW: 7, maxD: 5 })
+      expect(h.w).toBeGreaterThanOrEqual(6) // a big plot raises a big house
+      expect(h.w).toBeLessThanOrEqual(7)
+      expect(h.d).toBeGreaterThanOrEqual(4)
+      expect(h.d).toBeLessThanOrEqual(5)
+      // invariants still hold at the larger size
+      expect(h.blocks.filter((b) => b.kind === 'floor').length).toBe(h.w * h.d)
+      expect(h.blocks.filter((b) => b.kind === 'door').length).toBe(1)
+    }
+  })
+
+  it('every block kind has a colour (including homestead kinds)', () => {
+    const h = buildVoxelHouse(1, 's', { maxW: 7, maxD: 5 })
     for (const b of h.blocks) expect(typeof BLOCK_COLOR[b.kind]).toBe('number')
+    // The new homestead kinds the renderer draws are all coloured too.
+    for (const k of ['soil', 'crop', 'cropAlt', 'grass', 'fence', 'hedge', 'stone', 'path', 'trunk', 'leaf', 'well'] as BlockKind[]) {
+      expect(typeof BLOCK_COLOR[k]).toBe('number')
+    }
   })
 })

@@ -39,6 +39,10 @@ const SKY_DAY = new THREE.Color(0x0b1022)
 const SKY_NIGHT = new THREE.Color(0x03040a)
 const OCEAN = 0x143a4a
 const SLAB_ROCK = 0x24242f
+// Spec 076 — instance caps for the homestead neighbourhood (zone pads + spine ribbon; voxel blocks
+// for houses, fences, crops, garden beds and trees across a full band of large parcels).
+const PAD_CAP = 2400
+const VOX_CAP = 6000
 
 export class PlanetRenderer {
   private scene = new THREE.Scene()
@@ -597,15 +601,16 @@ export class PlanetRenderer {
     this.avatarHeadMesh.frustumCulled = false
     this.scene.add(this.avatarHeadMesh)
 
-    // Spec 075 — lot pads (a flat marker per lot, coloured by free/owned/built) + voxel-home blocks.
+    // Spec 076 — homestead ground tiles (zone pads + the spine carriageway/verge) + voxel blocks
+    // (the house, fences, farm crops, garden beds, trees). Caps raised for the larger parcels.
     const padGeo = new THREE.BoxGeometry(1, 0.06, 1)
-    this.lotPadMesh = new THREE.InstancedMesh(padGeo, new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 }), 48)
+    this.lotPadMesh = new THREE.InstancedMesh(padGeo, new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 }), PAD_CAP)
     this.lotPadMesh.count = 0
     this.lotPadMesh.receiveShadow = true
     this.lotPadMesh.frustumCulled = false
     this.scene.add(this.lotPadMesh)
     const blockGeo = new THREE.BoxGeometry(0.96, 0.56, 0.96)
-    this.voxelMesh = new THREE.InstancedMesh(blockGeo, new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.02, flatShading: true }), 1200)
+    this.voxelMesh = new THREE.InstancedMesh(blockGeo, new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.02, flatShading: true }), VOX_CAP)
     this.voxelMesh.count = 0
     this.voxelMesh.castShadow = true
     this.voxelMesh.receiveShadow = true
@@ -1302,48 +1307,99 @@ export class PlanetRenderer {
     this.lastNbhdSig = '' // force a rebuild on the next frame
   }
 
-  /** Spec 075 — lay the lot pads (free / owned / built colours) and the voxel homes for built lots. Only
-   *  recomputes when the signature (per-lot owned + built flags) changes, so it is cheap per frame. */
+  /** Spec 076 — draw the homestead neighbourhood: the spine carriageway + verge ribbon, then each
+   *  bordered parcel (zone ground pads + fence ring + driveway always; the worked farm crops, garden
+   *  beds, trees and the set-back voxel house once built). Rebuilt only when the signature changes. */
   private updateNeighborhood() {
     if (!this.neighborhood || !this.lotPadMesh || !this.voxelMesh) return
-    const lots = this.neighborhood.lots
-    const sig = lots.map((l) => `${l.id}:${l.ownerCitizenId ? 1 : 0}:${l.built ? 1 : 0}`).join('|')
+    const n = this.neighborhood
+    const lots = n.parcels
+    const sig = lots.map((l) => `${l.id}:${l.ownerCitizenId ? 1 : 0}:${l.built ? 1 : 0}`).join('|') + `#${n.carriage.length}`
     if (sig === this.lastNbhdSig) return
     this.lastNbhdSig = sig
     const t = this.sim.state.terrain
     const col = new THREE.Color()
     const BH = 0.56 // block height (the box geometry's y size)
+    const gy = (x: number, y: number) => Math.max(0, t.worldY(Math.round(x), Math.round(y)))
 
-    // ── lot pads ──
-    let p = 0
-    for (const lot of lots) {
-      const wy = Math.max(0, t.worldY(Math.round(lot.x), Math.round(lot.y)))
-      this.dummy.position.set(this.wx(lot.x), wy + 0.03, this.wz(lot.y))
+    let p = 0 // pad instance index
+    let v = 0 // voxel instance index
+    // A flat ground tile spanning a rect (min-corner zx,zy, size zw x zd) at height hOff.
+    const padRect = (zx: number, zy: number, zw: number, zd: number, hOff: number, color: number) => {
+      if (p >= PAD_CAP) return
+      const cx = zx + (zw - 1) / 2, cy = zy + (zd - 1) / 2
+      this.dummy.position.set(this.wx(cx), gy(cx, cy) + hOff, this.wz(cy))
       this.dummy.rotation.set(0, 0, 0)
-      this.dummy.scale.set(lot.w, 1, lot.h)
+      this.dummy.scale.set(zw, 1, zd)
       this.dummy.updateMatrix()
       this.lotPadMesh.setMatrixAt(p, this.dummy.matrix)
-      col.setHex(lot.built ? 0x4a4438 : lot.ownerCitizenId ? 0xc9a23a : 0x2f6f5f)
+      col.setHex(color)
       this.lotPadMesh.setColorAt(p, col)
       p++
     }
-    this.lotPadMesh.count = p
-    this.lotPadMesh.instanceMatrix.needsUpdate = true
-    if (this.lotPadMesh.instanceColor) this.lotPadMesh.instanceColor.needsUpdate = true
+    const padCell = (x: number, y: number, hOff: number, color: number) => padRect(x, y, 1, 1, hOff, color)
+    // A scaled cube at cell (x,y) whose bottom rests on the ground + zBase.
+    const block = (x: number, y: number, sx: number, sy: number, sz: number, zBase: number, color: number) => {
+      if (v >= VOX_CAP) return
+      this.dummy.position.set(this.wx(x), gy(x, y) + zBase + (BH * sy) / 2, this.wz(y))
+      this.dummy.rotation.set(0, 0, 0)
+      this.dummy.scale.set(sx, sy, sz)
+      this.dummy.updateMatrix()
+      this.voxelMesh.setMatrixAt(v, this.dummy.matrix)
+      col.setHex(color)
+      this.voxelMesh.setColorAt(v, col)
+      v++
+    }
 
-    // ── voxel homes for built lots ──
-    let v = 0
+    // ── the spine: the 3-wide carriageway is drawn by the colony road system (the runtime feeds it the
+    // carriage cells), so here we add only the grass VERGE beside it — the kerb that gives the street
+    // its width and hierarchy and stops the homes sitting flush on the asphalt. ──
+    for (const c of n.verge) padCell(c.x, c.y, 0.045, 0x55703a)
+
+    // ── each homestead parcel ──
     for (const lot of lots) {
+      const fenceColor = lot.fenceType === 'hedge' ? BLOCK_COLOR.hedge : lot.fenceType === 'wall' ? BLOCK_COLOR.stone : BLOCK_COLOR.fence
+      // surveyed homestead ground (drawn whether or not it is built, so the borders read immediately)
+      padRect(lot.houseZone.x, lot.houseZone.y, lot.houseZone.w, lot.houseZone.d, 0.05, lot.built ? 0x6b5a44 : 0x5c5140)
+      padRect(lot.garden.x, lot.garden.y, lot.garden.w, lot.garden.d, 0.04, 0x4f6f33)
+      padRect(lot.farm.x, lot.farm.y, lot.farm.w, lot.farm.d, 0.045, 0x6e4a30)
+      for (const d of lot.driveway) padCell(d.x, d.y, 0.055, BLOCK_COLOR.path)
+      padCell(lot.gate.x, lot.gate.y, 0.055, BLOCK_COLOR.path)
+      // the visible parcel border — a fence/hedge/wall ring
+      for (const f of lot.fence) block(f.x, f.y, 0.26, 0.95, 0.26, 0, fenceColor)
+
       if (!lot.built) continue
+      // worked homestead: farm furrows (alternating crop colour by row)
+      for (let yy = lot.farm.y; yy < lot.farm.y + lot.farm.d; yy++) {
+        for (let xx = lot.farm.x; xx < lot.farm.x + lot.farm.w; xx++) {
+          block(xx, yy, 0.82, 0.5, 0.82, 0.02, yy % 2 === 0 ? BLOCK_COLOR.crop : BLOCK_COLOR.cropAlt)
+        }
+      }
+      // garden veg beds on alternate cells
+      for (let yy = lot.garden.y; yy < lot.garden.y + lot.garden.d; yy++) {
+        for (let xx = lot.garden.x; xx < lot.garden.x + lot.garden.w; xx++) {
+          if ((xx + yy) % 2 === 0) block(xx, yy, 0.78, 0.38, 0.78, 0.02, BLOCK_COLOR.crop)
+        }
+      }
+      // a fruit tree at one garden corner + a well at the other
+      const tx = lot.garden.x, ty = lot.garden.y
+      block(tx, ty, 0.28, 1.1, 0.28, 0, BLOCK_COLOR.trunk)
+      block(tx, ty, 0.95, 0.95, 0.95, BH * 1.1, BLOCK_COLOR.leaf)
+      block(lot.garden.x + lot.garden.w - 1, lot.garden.y + lot.garden.d - 1, 0.6, 0.7, 0.6, 0, BLOCK_COLOR.well)
+
+      // the house, set back and centred in its house-zone, grown to fill it
       const doorDir: DoorDir = lot.doorY < lot.y ? 'n' : 's'
-      const cacheKey = `${lot.id}:${doorDir}`
+      const cacheKey = `${lot.id}:${doorDir}:${lot.houseZone.w}x${lot.houseZone.d}`
       let house = this.voxelCache.get(cacheKey)
-      if (!house) { house = buildVoxelHouse(lot.houseSeed, doorDir); this.voxelCache.set(cacheKey, house) }
-      const originX = lot.x - (house.w - 1) / 2
-      const originY = lot.y - (house.d - 1) / 2
-      const baseY = Math.max(0, t.worldY(Math.round(lot.x), Math.round(lot.y)))
+      if (!house) {
+        house = buildVoxelHouse(lot.houseSeed, doorDir, { maxW: lot.houseZone.w, maxD: lot.houseZone.d })
+        this.voxelCache.set(cacheKey, house)
+      }
+      const originX = lot.houseZone.x + (lot.houseZone.w - house.w) / 2
+      const originY = lot.houseZone.y + (lot.houseZone.d - house.d) / 2
+      const baseY = gy(lot.houseZone.x + (lot.houseZone.w - 1) / 2, lot.houseZone.y + (lot.houseZone.d - 1) / 2)
       for (const b of house.blocks) {
-        if (v >= 1200) break
+        if (v >= VOX_CAP) break
         this.dummy.position.set(this.wx(originX + b.x), baseY + b.z * BH + BH / 2, this.wz(originY + b.y))
         this.dummy.rotation.set(0, 0, 0)
         this.dummy.scale.set(1, 1, 1)
@@ -1354,6 +1410,10 @@ export class PlanetRenderer {
         v++
       }
     }
+
+    this.lotPadMesh.count = p
+    this.lotPadMesh.instanceMatrix.needsUpdate = true
+    if (this.lotPadMesh.instanceColor) this.lotPadMesh.instanceColor.needsUpdate = true
     this.voxelMesh.count = v
     this.voxelMesh.instanceMatrix.needsUpdate = true
     if (this.voxelMesh.instanceColor) this.voxelMesh.instanceColor.needsUpdate = true

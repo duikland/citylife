@@ -5,7 +5,10 @@
 // ahead) — but the walls, bed and the inside things are all here as real blocks.
 import { RNG } from '../engine/rng'
 
-export type BlockKind = 'floor' | 'wall' | 'window' | 'roof' | 'door' | 'bed' | 'table'
+export type BlockKind =
+  | 'floor' | 'wall' | 'window' | 'roof' | 'door' | 'bed' | 'table'
+  // Homestead surroundings (spec 076) — the renderer draws these as 1-cell blocks too.
+  | 'soil' | 'crop' | 'cropAlt' | 'grass' | 'fence' | 'hedge' | 'stone' | 'path' | 'trunk' | 'leaf' | 'well'
 export type DoorDir = 'n' | 's' | 'e' | 'w'
 
 export interface Block {
@@ -33,12 +36,16 @@ function doorCell(w: number, d: number, dir: DoorDir): { x: number; y: number } 
   }
 }
 
-/** Build the block list for a house, deterministically from the seed, with the door facing doorDir. */
-export function buildVoxelHouse(seed: number, doorDir: DoorDir = 's'): VoxelHouse {
+/** Build the block list for a house, deterministically from the seed, with the door facing doorDir.
+ *  `opts.maxW`/`maxD` grow the house to fill its homestead house-zone (spec 076) — a big plot raises a
+ *  big house — while never exceeding the zone. With no opts it keeps the original cottage size. */
+export function buildVoxelHouse(seed: number, doorDir: DoorDir = 's', opts: { maxW?: number; maxD?: number } = {}): VoxelHouse {
   const rng = new RNG(((seed >>> 0) ^ 0x9e3779b9) >>> 0)
-  const w = rng.pick([3, 4, 4])
-  const d = rng.pick([3, 4, 4])
-  const wallH = rng.pick([2, 2, 3])
+  const maxW = Math.max(3, opts.maxW ?? 4)
+  const maxD = Math.max(3, opts.maxD ?? 4)
+  const w = clamp(rng.pick([maxW - 1, maxW, maxW]), 3, maxW)
+  const d = clamp(rng.pick([maxD - 1, maxD, maxD]), 3, maxD)
+  const wallH = rng.pick(maxW >= 6 ? [2, 3, 3] : [2, 2, 3]) // bigger plots get taller homes
   const blocks: Block[] = []
   const door = doorCell(w, d, doorDir)
 
@@ -87,4 +94,16 @@ export const BLOCK_COLOR: Record<BlockKind, number> = {
   door: 0x5a3a22,
   bed: 0x4d8fe0,
   table: 0x8a6a3a,
+  // Homestead surroundings (spec 076): tilled field, garden, fences, driveway, trees, a well.
+  soil: 0x6e4a30,
+  crop: 0x8bbf4d,
+  cropAlt: 0xc9b24a,
+  grass: 0x5a7a3a,
+  fence: 0x7a5a36,
+  hedge: 0x3f6b39,
+  stone: 0x9a958c,
+  path: 0xb6a079,
+  trunk: 0x5a3f28,
+  leaf: 0x3d7a3f,
+  well: 0x8a8580,
 }
