@@ -43,7 +43,7 @@ export interface ColonyUiState {
   border: { households: Household[]; bots: Bot[]; botSource: string; plots: Plot[] }
   citizens: { count: number; awake: number; list: CitizenPublic[] }
   firstPerson: { active: boolean; citizenId: string | null; citizenName: string | null; operatorCitizenId: string | null }
-  neighborhood: { lots: { id: string; built: boolean; owner: string | null; ownerId: string | null }[]; free: number; built: number }
+  neighborhood: { lots: { id: string; built: boolean; owner: string | null; ownerId: string | null }[]; free: number; built: number; houseCost: number; canAfford: boolean; buildHint: string }
   radio: RadioState
   courier: { on: boolean; headline: string } // spec 016 — the colony's own news, when a Broadcast Mast is up
   tv: boolean
@@ -144,7 +144,20 @@ export class ColonyRuntime {
       // kooker-user, joekookerbot merges) — here we just hold the engine-side record.
       if (bot && bot.plotId) {
         const plot = this.cityPlan.plots.find((p) => p.id === bot.plotId)
-        if (plot) this.citizens.register(h, plot, Date.now())
+        if (plot) {
+          const citizen = this.citizens.register(h, plot, Date.now())
+          // Spec 076 — give the newcomer a real HOMESTEAD parcel (not just the flavour plot name), so
+          // their avatar walks to a homestead that is actually theirs. If the colony can afford it
+          // (materials + a free hand), raise the house right away; otherwise the Build button stands
+          // ready on their plot in the Homesteads panel.
+          if (citizen) {
+            const freeLot = this.neighborhood.lots.find((l) => !l.ownerCitizenId)
+            if (freeLot) {
+              this.assignLot(citizen.id, freeLot.id)
+              this.buildHouse(freeLot.id) // best-effort; gated on materials + labour
+            }
+          }
+        }
       }
       this.emit()
     }
@@ -678,7 +691,14 @@ export class ColonyRuntime {
           owner: l.ownerCitizenId ? (this.citizens.byId(l.ownerCitizenId)?.displayName ?? null) : null,
           ownerId: l.ownerCitizenId ?? null,
         }))
-        return { lots, free: lots.filter((l) => !l.ownerId).length, built: lots.filter((l) => l.built).length }
+        // Build affordability so the Build button can tell the truth instead of silently failing.
+        const cost = COLONY.build.matNeighborHouse
+        const hands = Math.floor(freeLabour(s))
+        const canAfford = s.materials >= cost && hands >= 1
+        const buildHint = canAfford
+          ? `Raise the voxel house — costs ${cost} materials and 1 free pair of hands`
+          : `Can't build yet: need ${cost} materials (have ${s.materials})${hands < 1 ? ' and a free pair of hands (everyone is working)' : ''}`
+        return { lots, free: lots.filter((l) => !l.ownerId).length, built: lots.filter((l) => l.built).length, houseCost: cost, canAfford, buildHint }
       })(),
       radio: this.radio,
       courier: (() => {

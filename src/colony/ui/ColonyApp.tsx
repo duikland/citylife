@@ -229,7 +229,7 @@ export function ColonyApp() {
           return <div key={l.id} style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 11 }}>
             <span style={{ flex: 1, color: l.built ? '#cdbf9e' : l.owner ? '#c9a23a' : '#7a8a7a' }}>{l.id.replace('lot_', 'Plot ')}{l.owner ? ` · ${l.owner.split(' ')[0]}` : ' · free'}{l.built ? ' 🏠' : ''}</span>
             {!l.ownerId && firstFree && <button style={{ padding: '0 6px', fontSize: 10 }} onClick={() => runtime.assignLot(firstFree.id, l.id)} title={`Give this homestead to ${firstFree.displayName}`}>Assign</button>}
-            {l.ownerId && !l.built && <button style={{ padding: '0 6px', fontSize: 10 }} onClick={() => runtime.buildHouse(l.id)} title="Raise the voxel house on this homestead (costs materials and a free hand)">Build</button>}
+            {l.ownerId && !l.built && <button style={{ padding: '0 6px', fontSize: 10, opacity: ui.neighborhood.canAfford ? 1 : 0.5, cursor: ui.neighborhood.canAfford ? 'pointer' : 'not-allowed' }} disabled={!ui.neighborhood.canAfford} onClick={() => runtime.buildHouse(l.id)} title={ui.neighborhood.buildHint}>Build</button>}
             {l.built && <button style={{ padding: '0 6px', fontSize: 10 }} onClick={() => runtime.demolishLot(l.id)} title="Tear the house down, keep the citizen">Demolish</button>}
             {l.ownerId && <button style={{ padding: '0 6px', fontSize: 10, color: '#e0584d' }} onClick={() => runtime.demolishLotAndCitizen(l.id)} title="Raze the home AND destroy the citizen and their Hermes agent">Evict</button>}
           </div>
