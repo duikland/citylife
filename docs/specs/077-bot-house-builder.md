@@ -1,0 +1,107 @@
+# Spec 077 — The Bot House Builder
+
+- status: proposed
+- proposed-by: irwin (operator directive) + claude (architect, from the spec-077 design workflow)
+- date: 2026-06-09
+- depends-on: 074 (citizen avatars), 075 (voxel homes), 076 (homesteads)
+- research: `docs/research/2026-06-09-bot-house-builder.md`
+
+## Why
+
+When a newcomer family is approved at Border Control and walks onto its homestead, the house should
+not just appear. The citizen (a Hermes bot) designs and raises its own home, block by block, on its
+real plot. The house becomes an authored artifact: inspectable, diffable, re-buildable, and visibly
+theirs. It makes the migration spine tangible (login to border to household to wallet to a house you
+designed to jobs) and gives the bot a creative, bounded task with a closed feedback loop. The houses
+must read as deliberate low-poly architecture, NOT minecraft cubes.
+
+## Mechanic
+
+1. A newcomer is approved and assignLot gives them a free homestead parcel (existing flow).
+2. Instead of an instant buildHouse, a Build House button appears on the citizen plot in the
+   Homesteads panel.
+3. Clicking it opens the House Builder (`/builder.html`, popup or new tab) seeded from the plot tile
+   dimensions and the citizen houseSeed.
+4. In the builder the citizen (human-clicking or a Playwright-driving bot) edits a 2D top-down floor
+   plan (the sandcastle wall-layer pattern) — place rooms, walls, doors, windows — with a live 3D
+   greedy-meshed preview.
+5. On Accept the builder serialises a blueprint script and posts it back (postMessage) to the game.
+6. The game validates, stores the blueprint on the citizen record, then runs the block-by-block build
+   sim on the plot, deducting materials per block and reserving labour, regenerating the real
+   greedy-meshed house deterministically from the stored script.
+
+## Rules and data
+
+- Sub-cell grid resolution N = 4 subdivisions per axis per plot cell (4x4x4 = 64 micro-blocks per
+  cell). Detailed enough for thin walls, steps and recessed doors; cheap enough to greedy-mesh under
+  50ms and stay under VOX_CAP 6000. N = 8 is rejected (blows the budget across five homesteads).
+- Block kinds extend the existing union (floor wall window roof door bed table plus the homestead
+  kinds) with micro-architecture kinds: step, beam, glassRail, water (pools), tile (patio). Each maps
+  to a colour in BLOCK_COLOR and a 3-bit code in the packed occupancy grid (air = 0).
+- Room kinds, exactly five: living, bedroom, garage, patio, pool. Each RoomSpec carries name, kind,
+  x, y, w, d in plot-cell coordinates plus furniture hints. pool fills its floor with water and a tile
+  rim; patio is roofless tile plus a low glassRail; garage is a wide door with no interior walls;
+  living and bedroom are enclosed with windows and furniture.
+- Deterministic from plot tile count. The blueprint is authored in abstract blueprint units and scaled
+  uniformly to the plot houseZone w by d tile count at build time. Same blueprint script plus houseSeed
+  plus houseZone produces identical micro-blocks always. Seed mixing uses a strong hash so citizens
+  never collide. No wall-clock, no random in the builder or compiler path.
+
+## Cost — gating and build sim
+
+- Materials. Per-block material cost. Keep matNeighborHouse 20 as a baseline budget; the block-by-block
+  sim spends a new matPerVoxel tunable per placed micro-block up to a cap, so a bigger or denser house
+  costs more but bounded. The build cannot start unless materials is at least the estimated cost
+  (occupied-block count times matPerVoxel, from the validator).
+- Labour. Reuses the Caesar III rule already in buildHouse: requires a free labour hand to run the crew,
+  reserved for the build duration.
+- Block-by-block build sim. On accept the house is emitted in z-band layers over one to two seconds.
+  Each frame the renderer rebuilds the merged mesh up to the current zTarget. Materials are deducted
+  incrementally; if materials run out mid-build the sim pauses and the partial house stands until stock
+  recovers.
+
+## Acceptance
+
+After a newcomer is in world (assignLot done, citizen registered), a Build House button on their plot
+in the Homesteads panel opens the builder (popup or new tab,
+`/builder.html?citizenId=...&lotId=...&w=...&d=...&seed=...`). The builder returns, via
+postMessage of type blueprint_saved with the script, a stored blueprint script that the game validates,
+persists on the citizen record, and uses to regenerate the actual greedy-meshed voxel house on that
+plot (deterministically, block by block, gated on materials plus labour). Re-opening the builder loads
+the stored script for further editing; reloading the game regenerates the identical house from the
+stored script.
+
+## Architecture
+
+- Blueprint format: a compact single-line whitespace-token text DSL (not JSON) — git-diffable,
+  LLM-writable in one breath, ~200 bytes, parsed to a typed ParsedBlueprint and serialised back
+  losslessly. Grammar v1:
+  `house{w:<int> d:<int> wallH:<int> door:<n|s|e|w>} room{kind:<living|bedroom|garage|patio|pool> x:<int> y:<int> w:<int> d:<int> win:<0|1>}...`
+  Example (a 6x5 home, living plus bedroom plus patio, door south):
+  `house{w:6 d:5 wallH:2 door:s} room{kind:living x:0 y:0 w:4 d:3 win:1} room{kind:bedroom x:4 y:0 w:2 d:3 win:1} room{kind:patio x:0 y:3 w:6 d:2 win:0}`
+- Mesh strategy: greedy meshing, one merged BufferGeometry per house with flat per-quad normals and
+  vertex colours from BLOCK_COLOR, added to the scene at a tile-local origin. This is the single change
+  that kills the minecraft look while LOWERING draw calls (one mesh per house vs hundreds of instances).
+- Core is a framework-agnostic module (blueprintScript.ts, houseBuilder.ts, render/voxelMesh.ts): pure
+  TS, deterministic, the single source of truth imported by the game renderer, the builder UI, and the
+  headless bot. The builder UI is a separate Vite route (builder.html plus routes/builderMain.tsx) — a
+  thin shell over the shared core, with data-build-action selectors on every control for
+  Playwright/bot driving.
+- Same blueprint runs in the game and headless: compileBlueprint(script, {w,d,seed}) runs in the browser
+  (game plus builder) and in a headless Node container (occupancy plus a BlueprintReport, optional
+  top-down PNG). The bot loop: starter blueprint to compile to read BlueprintReport (plus optional PNG)
+  to apply exactly one mutation to repeat, capped at 3 iterations, then save via the same path the human
+  Accept button uses.
+
+## Phased build plan
+
+- P0 — Blueprint DSL plus tests (no rendering change): blueprintScript.ts (parse, serialise, validate).
+- P1 — Compiler: blueprint to 4x4x4 occupancy to Block[] (back-compat with the existing instanced path).
+- P2 — Greedy mesher plus merged-geometry render path (the anti-minecraft change).
+- P3 — Builder route: 2D top-down editor plus live 3D preview, data-build-action hooks.
+- P4 — Game wiring: Build House button plus postMessage acceptance plus blueprint storage on the citizen.
+- P5 — Block-by-block build sim plus per-block material and labour gating.
+- P6 — BlueprintReport plus the capped three-iteration bot self-inspection loop.
+- P7 (optional) — Headless container parity (a thin Node service exposing compile/validate/report).
+
+Each slice ships on mechanics/dev, passes typecheck plus vitest, and is visible on :5188.
