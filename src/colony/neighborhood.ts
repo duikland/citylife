@@ -81,8 +81,10 @@ interface ParcelSize {
   gardenDepth: number
   farmDepth: number
 }
-const BIG: ParcelSize = { W: 11, D: 14, setback: 2, houseDepth: 5, gardenDepth: 3, farmDepth: 2 }
-const COMPACT: ParcelSize = { W: 9, D: 11, setback: 1, houseDepth: 4, gardenDepth: 2, farmDepth: 2 }
+// houseDepth bumped (spec 077) so the bot has room for a fancy multi-storey brick home; the depth
+// budget D is unchanged (the garden/farm give up one cell each), so the homestead still reads whole.
+const BIG: ParcelSize = { W: 11, D: 14, setback: 2, houseDepth: 6, gardenDepth: 2, farmDepth: 2 }
+const COMPACT: ParcelSize = { W: 9, D: 11, setback: 1, houseDepth: 5, gardenDepth: 2, farmDepth: 1 }
 const GAP = 3 // empty green cells between adjacent parcels along the street (beyond each fence)
 const MAX_PER_SIDE = 3 // a band of up to 3 large homesteads per side of the spine
 // Offset of the parcel's front fence from the spine centre: carriageway half (1) + verge (1) + 1.

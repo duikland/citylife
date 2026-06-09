@@ -32,12 +32,25 @@ must read as deliberate low-poly architecture, NOT minecraft cubes.
 
 ## Rules and data
 
-- Sub-cell grid resolution N = 4 subdivisions per axis per plot cell (4x4x4 = 64 micro-blocks per
-  cell). Detailed enough for thin walls, steps and recessed doors; cheap enough to greedy-mesh under
-  50ms and stay under VOX_CAP 6000. N = 8 is rejected (blows the budget across five homesteads).
+- Sub-cell grid resolution: a config tunable HOUSE_VOXEL_N, default 6 (6x6x6 = 216 micro-blocks per
+  cell), able to rise to 8 for the finest brick detail. The block COUNT no longer drives draw calls
+  because greedy meshing collapses a flat wall to a few quads regardless of N, so the old VOX_CAP
+  budget concern is gone — the finer grid exists for masonry detail, not performance. Fine enough that
+  a single brick is a small block and a wall is several brick courses tall.
+- AESTHETIC GOAL: FANCY BRICK HOUSES. The operator wants nice, detailed homes that read as MASONRY,
+  not flat low-poly planes and not chunky minecraft cubes. So walls are built from small bricks with
+  per-course (or per-brick) COLOUR VARIATION and a brick-bond offset, optionally a subtle mortar
+  recess, so the merged surface reads as brickwork. Greedy meshing is for PERFORMANCE ONLY (one merged
+  geometry per house) and must NOT flatten the brick detail — preserve the per-course colour banding
+  via vertex colours (or a brick pattern), so the wall still looks like bricks after merging.
+- MULTI-STOREY + FANCY FACADES. wallH carries floors: the bot may stack 1 to 3 storeys, so a modest
+  footprint becomes a real house. Facades get framed windows, a proper panelled door, a peaked or
+  hipped roof with eaves, optional corner trim or beams and a chimney. A 9x6 footprint times 2 to 3
+  brick storeys is a substantial home WITHOUT needing a bigger map.
 - Block kinds extend the existing union (floor wall window roof door bed table plus the homestead
-  kinds) with micro-architecture kinds: step, beam, glassRail, water (pools), tile (patio). Each maps
-  to a colour in BLOCK_COLOR and a 3-bit code in the packed occupancy grid (air = 0).
+  kinds) with brick + brickAlt (two tints for the bond) and micro-architecture kinds: step, beam,
+  glassRail, water (pools), tile (patio), trim, chimney. Each maps to a colour in BLOCK_COLOR and a
+  small code in the packed occupancy grid (air = 0).
 - Room kinds, exactly five: living, bedroom, garage, patio, pool. Each RoomSpec carries name, kind,
   x, y, w, d in plot-cell coordinates plus furniture hints. pool fills its floor with water and a tile
   rim; patio is roofless tile plus a low glassRail; garage is a wide door with no interior walls;
