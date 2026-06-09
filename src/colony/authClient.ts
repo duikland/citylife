@@ -133,8 +133,10 @@ export class AuthClient {
   async tryAutoLogin(): Promise<boolean> {
     if (this.isAuthenticated) return true
     if (!isDevBuild()) return false
-    const email = envVar('VITE_OPERATOR_EMAIL')
-    const password = envVar('VITE_OPERATOR_PASSWORD')
+    // Accept either naming: main's login uses EMAIL/PASSWORD; the homesteads line's dev gate used
+    // NAME/PASSCODE. Bridge both so a local .env.local from either lineage auto-logs in.
+    const email = envVar('VITE_OPERATOR_EMAIL') ?? envVar('VITE_OPERATOR_NAME')
+    const password = envVar('VITE_OPERATOR_PASSWORD') ?? envVar('VITE_OPERATOR_PASSCODE')
     if (!email || !password) return false
     const r = await this.login(email, password)
     return r.ok
