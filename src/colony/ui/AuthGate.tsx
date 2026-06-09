@@ -22,6 +22,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
     })
   }, [auth])
 
+  // Local-testing-only auth bypass. On a DEV build, the colony mounts WITHOUT login when either the
+  // VITE_LOCAL_TEST flag is set in .env.local (the persistent setting) or the URL carries ?skipauth=1
+  // (a one-off, handy for grabbing screenshots). A production / kind-cluster bundle has
+  // import.meta.env.DEV === false, so this is a no-op there and the real border gate always stands.
+  const env = (import.meta as unknown as { env?: { DEV?: boolean; VITE_LOCAL_TEST?: string } }).env
+  const isDev = Boolean(env?.DEV)
+  const localTestSetting = env?.VITE_LOCAL_TEST === '1' || env?.VITE_LOCAL_TEST === 'true'
+  const urlSkip = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('skipauth') === '1'
+  if (isDev && (localTestSetting || urlSkip)) return <>{children}</>
   if (checking) return null
   if (!authed) return <LoginScreen auth={auth} onAuthed={() => setAuthed(true)} />
   return <>{children}</>
