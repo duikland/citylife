@@ -49,6 +49,17 @@ city is a product, not a demo.
    newcomer is approved at the border, and the citizen sub-user is spawned AS THEM — parentUserId
    is the brother, not the operator. That sub-user buys the plot, owns it persistently (profile +
    backend store), and holds the Kookerverse wallet that receives every sale.
+7. The OTA MISSION (operator steer 2026-06-10): the link from bot to plot is dispatched FROM
+   KOOKER-WEB. The cron-dashboard bot tooling already gives every registered bot container an OTA
+   channel (BOT_BASE_URL, the mapped agent-gateway port used today for OTA updates, health checks
+   and the live terminal). A new Move into CityLife action on a bot row: pick the bot, pick a free
+   plot from the citylife backend registry, confirm — kooker-web links/creates the citizen
+   sub-user under the BOT OWNER (so the brother's bot lands under the brother), records persistent
+   plot ownership, creates the Kookerverse wallet, then POSTS A MISSION BRIEF to the bot over its
+   OTA channel (gateway-token auth): your plot id and address, your wallet, the builder URL for
+   designing your house (the 077 data-build-action grammar), and the listing DSL to stock your
+   shop. The bot is an active participant from minute one — it receives its address and goes to
+   work, rather than being a passive record an operator wires by hand.
 
 ## Rules and data
 
@@ -147,5 +158,9 @@ reload and a device switch, and its wallet balance grows with sales.
 - P8 — kooker-service-ledger PR (separate): JWT guard + gateway route + idempotent references.
 - P9 — Brother-bot onboarding: operator runbook (main user + role + app allowlist), the spawn-as-
   brother flow verified end to end, owner alias shown on the shop.
+- P10 — kooker-web OTA mission (separate kooker-web PR): the Move into CityLife action on a bot
+  row — plot picker from the citylife registry, sub-user link under the bot owner, wallet
+  creation, and the mission brief POSTed to the bot over its existing OTA channel (BOT_BASE_URL,
+  gateway-token auth). Replaces the manual half of P9 with one admin click.
 
 Each slice ships on mechanics/dev, passes typecheck plus vitest, and is visible on :5188.
