@@ -168,3 +168,26 @@ NEXT
   plot's real w/d/seed; the game listens for blueprint_saved, validates the script, stores it on the
   parcel (+ citizen), raises the house from it; re-opening passes bp= so the stored script loads for
   editing. After that: backend persistence of the blueprint via the /kooker proxy.
+
+### 2026-06-10 — Slice: Roads v2 (operator feedback — roads and paths sucked)
+DONE
+- Planning: developBlock no longer stamps rigid straight block frames across whatever terrain is
+  there. Each frame EDGE is routed with the same least-cost pathfinder the residential street uses
+  (cellOk + slopeWeight 0.6), so roads contour around water, dips and steep ground; on flat land the
+  cheapest route IS the straight line so the clean grid survives. Straight-line fallback (laying only
+  good cells) when an edge cannot be routed.
+- Rendering: shared road-corner heights are RELAXED toward their network neighbours (two passes) so
+  grades ease in and out; every boundary edge gets an embankment SKIRT dropping toward the ground so
+  a bed crossing a hollow reads as built-up earthworks, never a floating plank; surface recoloured
+  from asphalt black to warm packed earth with a faint emissive so it stays readable under the void
+  sky instead of crushing to a black gash.
+- 4 new planner tests (dry roads, mostly-buildable ground, determinism, connectedness); 590 tests
+  green; verified live on :5188 with a worst-case straight line injected across the steepest coastal
+  run — the ribbon now hugs and grades the hill with centre dashes, no float, no gash.
+
+NEXT
+- Builder house massing (operator: you can do better): pools/patios should read as OUTDOOR amenities
+  beside a clean house mass, not brick shafts punched through the roof — suppress the perimeter brick
+  ring around roofless rooms on the house edge, slim the roof shell, brighter builder preview light.
+- Then P4 game wiring (Build House button + blueprint storage), backend persistence, per-citizen
+  variety, bot self-design.

@@ -8,6 +8,7 @@ import { COLONY } from './config'
 import type { ColonyState } from './sim'
 import { gridOrigin } from './grid'
 import { roadPath } from './traffic'
+import { leastCostPath, cellOk } from './pathfind'
 
 export type BuildKind = 'habitat' | 'commercial' | 'industrial' | 'solar' | 'mine' | 'workshop' | 'water' | 'greenhouse' | 'depot' | 'clinic' | 'theatre' | 'survey' | 'exchange' | 'foundry' | 'mast' | 'battery' | 'scrubber' | 'academy' | 'transit' | 'maintshed' | 'storehouse' | 'bellhouse' | 'levy' | 'feverwatch' | 'market' | 'ward' | 'payoffice' | 'feast' | 'skimmer' | 'weavery' | 'liaison' | 'stormwatch' | 'hall' | 'import' | 'shrine' | 'comptroller' | 'roster' | 'school' | 'census' | 'folio' | 'turbine' | 'cistern' | 'toolcrib' | 'seedloft' | 'surveycamp' | 'calendar' | 'hallofnames' | 'netdock' | 'sanitation' | 'watchnook' | 'rationvar' | 'dryrack' | 'registry' | 'planter' | 'stall' | 'firewatch' | 'reclaimer' | 'festboard' | 'cellar' | 'bathhouse' | 'library' | 'gallery' | 'porter' | 'avatar'
 
@@ -228,7 +229,14 @@ function blockKey(bx: number, by: number) {
   return bx + ':' + by
 }
 
-/** Build the road frame of block (bx,by). Returns the number of new road cells laid. */
+/** Build the road frame of block (bx,by). Returns the number of new road cells laid.
+ *
+ *  Each frame EDGE is routed with the same least-cost pathfinder the residential street uses
+ *  (cellOk + a slope weight), so the road CONTOURS around dips, steep ground and the coast instead of
+ *  stamping a rigid straight line across them — that rigid stamping was exactly the floating-plank
+ *  road the operator flagged. On flat land the cheapest route IS the straight line, so the grid keeps
+ *  its clean blocks where the ground allows; only bad ground bends it. Falls back to the old straight
+ *  line (laying just the good cells) when an edge cannot be routed (e.g. a corner sits in water). */
 function developBlock(state: ColonyState, bx: number, by: number): number {
   const g = gridOrigin(state)
   const t = state.terrain
@@ -239,7 +247,7 @@ function developBlock(state: ColonyState, bx: number, by: number): number {
   let added = 0
   const lay = (x: number, y: number) => {
     if (!t.inBounds(x, y)) return
-    if (t.isWater(x, y)) return // roads stop at water (bridges later); steep land drapes fine
+    if (t.isWater(x, y)) return // roads stop at water (bridges later)
     // Belt-and-suspenders: never lay a road on top of a base structure cell, even if `nearbyInterior`
     // got displaced. Keeps the rocket / solar / battery clear of the road frame.
     for (const s of state.structures) if (s.x === x && s.y === y) return
@@ -249,14 +257,25 @@ function developBlock(state: ColonyState, bx: number, by: number): number {
     state.roads.push({ x, y })
     added++
   }
-  for (let x = x0; x <= x1; x++) {
-    lay(x, y0)
-    lay(x, y1)
+  // The straight-line fallback lays whatever good cells the old frame would have had.
+  const straight = (ax: number, ay: number, bx2: number, by2: number) => {
+    if (ax === bx2) for (let y = Math.min(ay, by2); y <= Math.max(ay, by2); y++) lay(ax, y)
+    else for (let x = Math.min(ax, bx2); x <= Math.max(ax, bx2); x++) lay(x, ay)
   }
-  for (let y = y0; y <= y1; y++) {
-    lay(x0, y)
-    lay(x1, y)
+  const edge = (ax: number, ay: number, bx2: number, by2: number) => {
+    if (cellOk(t, ax, ay) && cellOk(t, bx2, by2)) {
+      const path = leastCostPath(t, { x: ax, y: ay }, { x: bx2, y: by2 }, { slopeWeight: 0.6 })
+      if (path) {
+        for (const c of path) lay(c.x, c.y)
+        return
+      }
+    }
+    straight(ax, ay, bx2, by2)
   }
+  edge(x0, y0, x1, y0) // north edge
+  edge(x0, y1, x1, y1) // south edge
+  edge(x0, y0, x0, y1) // west edge
+  edge(x1, y0, x1, y1) // east edge
   state.developedBlocks.add(blockKey(bx, by))
   return added
 }

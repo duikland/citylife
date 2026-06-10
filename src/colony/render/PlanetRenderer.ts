@@ -546,11 +546,14 @@ export class PlanetRenderer {
   }
 
   private buildColonyLayer() {
-    // Roads drape on the terrain (elevation-compatible): a continuous asphalt ribbon with a
-    // dashed centre line, rebuilt as the network grows. Shared corner heights => no stair-steps.
+    // Roads drape on the terrain (elevation-compatible): a continuous PACKED-EARTH ribbon with a
+    // dashed centre line, rebuilt as the network grows. Warm gravel-earth, not an asphalt-black gash,
+    // so the network sits in the landscape like the residential lane does.
     this.roadSurfaceMesh = new THREE.Mesh(
       new THREE.BufferGeometry(),
-      new THREE.MeshStandardMaterial({ color: 0x2e2e34, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
+      // A faint warm emissive keeps the bed readable under the void sky — without it the earth tone
+      // crushes to a black gash on the shadow side, which is what the operator flagged.
+      new THREE.MeshStandardMaterial({ color: 0x7a6750, roughness: 1, metalness: 0, side: THREE.DoubleSide, emissive: 0x4a3c2c, emissiveIntensity: 0.32 }),
     )
     this.roadSurfaceMesh.frustumCulled = false
     this.scene.add(this.roadSurfaceMesh)
@@ -948,24 +951,62 @@ export class PlanetRenderer {
     return Math.max(0, avg)
   }
 
-  // Rebuild road geometry: asphalt quads draped on the terrain + dashed centre lines.
+  // Rebuild road geometry: packed-earth quads draped on the terrain + dashed centre lines.
+  // Two things keep the ribbon reading as a GRADED ROADBED instead of a floating plank (the operator's
+  // complaint): (1) shared corner heights are RELAXED toward their road-network neighbours, so grades
+  // ease in and out smoothly; (2) every boundary edge gets an embankment SKIRT dropping toward the
+  // ground, so wherever the bed bridges a hollow it reads as built-up earthworks, never floating.
   private rebuildRoads() {
     const s = this.sim.state
     const g = gridOrigin(s)
     const B = COLONY.build.block
     const LIFT = 0.05
+    const SKIRT = 0.9 // embankment depth below the bed edge
     const surf: number[] = []
     const line: number[] = []
     const tri = (arr: number[], a: number[], b: number[], c: number[]) => arr.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!)
     const quad = (arr: number[], a: number[], b: number[], c: number[], d: number[]) => { tri(arr, a, c, b); tri(arr, b, c, d) }
-    const corner = (gx: number, gy: number): number[] => [this.wx(gx) - 0.5, this.cornerY(gx, gy) + LIFT, this.wz(gy) - 0.5]
+    const roadKey = (x: number, y: number) => `${x},${y}`
+    const roadSet = new Set(s.roads.map((r) => roadKey(r.x, r.y)))
+    // 1) collect every unique corner of the network with its terrain-sampled base height
+    const ck = (gx: number, gy: number) => `${gx},${gy}`
+    const heights = new Map<string, number>()
+    for (const r of s.roads) {
+      for (const [gx, gy] of [[r.x, r.y], [r.x + 1, r.y], [r.x, r.y + 1], [r.x + 1, r.y + 1]] as const) {
+        const k = ck(gx, gy)
+        if (!heights.has(k)) heights.set(k, this.cornerY(gx, gy))
+      }
+    }
+    // 2) relax each corner toward its network neighbours — two passes ease the grade transitions
+    for (let pass = 0; pass < 2; pass++) {
+      const next = new Map<string, number>()
+      for (const [k, h] of heights) {
+        const [gx, gy] = k.split(',').map(Number) as [number, number]
+        let sum = 0, n = 0
+        for (const [nx, ny] of [[gx + 1, gy], [gx - 1, gy], [gx, gy + 1], [gx, gy - 1]] as const) {
+          const nh = heights.get(ck(nx, ny))
+          if (nh !== undefined) { sum += nh; n++ }
+        }
+        next.set(k, n > 0 ? h * 0.5 + (sum / n) * 0.5 : h)
+      }
+      for (const [k, h] of next) heights.set(k, h)
+    }
+    const cornerAt = (gx: number, gy: number): number[] => [this.wx(gx) - 0.5, (heights.get(ck(gx, gy)) ?? this.cornerY(gx, gy)) + LIFT, this.wz(gy) - 0.5]
+    // 3) surface + skirts
     for (const r of s.roads) {
       const x = r.x, y = r.y
-      quad(surf, corner(x, y), corner(x + 1, y), corner(x, y + 1), corner(x + 1, y + 1))
+      const c00 = cornerAt(x, y), c10 = cornerAt(x + 1, y), c01 = cornerAt(x, y + 1), c11 = cornerAt(x + 1, y + 1)
+      quad(surf, c00, c10, c01, c11)
+      const drop = (p: number[]): number[] => [p[0]!, p[1]! - SKIRT, p[2]!]
+      // a skirt on every edge not shared with another road cell
+      if (!roadSet.has(roadKey(x, y - 1))) quad(surf, c00, c10, drop(c00), drop(c10))
+      if (!roadSet.has(roadKey(x, y + 1))) quad(surf, c01, c11, drop(c01), drop(c11))
+      if (!roadSet.has(roadKey(x - 1, y))) quad(surf, c00, c01, drop(c00), drop(c01))
+      if (!roadSet.has(roadKey(x + 1, y))) quad(surf, c10, c11, drop(c10), drop(c11))
       const onV = ((((x - g.x) % B) + B) % B) === 0 // on a north-south grid line
       const onH = ((((y - g.y) % B) + B) % B) === 0 // on an east-west grid line
       if (onV === onH) continue // intersection or off-grid fill -> no centre dash
-      const h = this.smoothRoadY(x, y) + LIFT + 0.03
+      const h = (c00[1]! + c10[1]! + c01[1]! + c11[1]!) / 4 + 0.03
       const wx = this.wx(x), wz = this.wz(y)
       if (onV) quad(line, [wx - 0.05, h, wz - 0.3], [wx + 0.05, h, wz - 0.3], [wx - 0.05, h, wz + 0.3], [wx + 0.05, h, wz + 0.3])
       else quad(line, [wx - 0.3, h, wz - 0.05], [wx + 0.3, h, wz - 0.05], [wx - 0.3, h, wz + 0.05], [wx + 0.3, h, wz + 0.05])
