@@ -56,9 +56,20 @@ its own computer.
   read (the blueprintStore contract). Portraits come from the EXISTING kooker image APIs (the
   gpt-image-2 choke-point route primary, Gemini Imagen secondary) as the signed-in player,
   best-effort with the avatar render as the deterministic fallback.
-- Persistence: the blueprintStore two-layer pattern — localStorage map keyed by citizenId, plus
-  best-effort PUT/GET /kooker/api/v1/citylife/kookerbook as the player (404-tolerant until the
-  kooker-side endpoint ships; backend wins on restore).
+- Persistence: the blueprintStore two-layer pattern — localStorage map keyed by citizenId, plus a
+  best-effort backend layer (404-tolerant until it ships; backend wins on restore).
+- THE BACKEND IS kooker-service-social (operator decision 2026-06-10, first come first serve). The
+  repo exists as a spec-only skeleton (README + an OpenAPI contract written for the sprout plant
+  companion: grower profiles, grow rooms, watch relationships, activity feed, likes,
+  notifications) with NO implementation. Kookerbook claims and GENERALISES it rather than building
+  a citylife-only endpoint: core entities Profile / Post / Follow / Comment / Like / Feed, every
+  record scoped by appName (the ledger pattern) so citylife is tenant one and sprout (and any
+  later app) slots in under its own appName with the same core. App-specific shapes (grow rooms,
+  plant photos / plots, houses, shops) ride as opaque app metadata on profiles and posts, not as
+  first-class tables. The existing watch/feed/likes/notifications paths carry over nearly 1:1; the
+  citylife client calls /kooker/api/v1/social/... as the signed-in player. The service
+  implementation is a SEPARATE kooker-service-social PR (the citizen-spawn pattern); until it
+  lands the local layer carries everything.
 
 ## Cost
 
