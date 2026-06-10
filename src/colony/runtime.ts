@@ -15,7 +15,7 @@ import { makeCityPlan, type CityPlan, type Plot } from './cityPlan'
 import { CitizenRoster, type CitizenPublic } from './bot/citizenRoster'
 import { firstPersonView, type FirstPersonView } from './bot/firstPersonView'
 import { solCount, resolveFoundingMs } from './sol'
-import { makeNeighborhood, type Neighborhood, type Lot } from './neighborhood'
+import { makeNeighborhood, defaultBlueprint, type Neighborhood, type Lot } from './neighborhood'
 import { createRadio, tuneTo, toggleOn as radioToggleOn, toggleMuted as radioToggleMuted, spinHouseAd, type RadioState } from './radio'
 import { buildShareCard, headlineFor, shareStats, siteLabel, DEFAULT_TAGLINE, CARD_ID, type CardFormat } from './social/shareCard'
 
@@ -343,6 +343,13 @@ export class ColonyRuntime {
     if (s.materials < cost || freeLabour(s) < 1) return false
     s.materials -= cost
     lot.built = true
+    // Spec 077 P2 — seed a deterministic house BLUEPRINT (door facing the street) so the home raises as the
+    // fancy greedy-meshed brick house, not the legacy minecraft cottage. The builder route (P3) and the
+    // bot/human-authored script storage (P4) will overwrite this with the citizen's own design.
+    if (!lot.blueprint) {
+      const doorDir = lot.doorY < lot.y ? 'n' : 's'
+      lot.blueprint = defaultBlueprint(lot.houseSeed, doorDir)
+    }
     this.emit()
     return true
   }

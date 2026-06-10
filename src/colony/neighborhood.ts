@@ -7,6 +7,7 @@
 // the sea. Everything is a pure, deterministic function of the terrain so the layout is reproducible
 // and unit-testable.
 import type { Terrain } from './terrain'
+import type { DoorDir } from './voxelHouse'
 import { cellOk, leastCostPath, type Cell } from './pathfind'
 
 export type FenceType = 'fence' | 'hedge' | 'wall'
@@ -37,6 +38,11 @@ export interface Parcel {
   ownerCitizenId?: string
   built: boolean
   houseSeed: number
+  /** Spec 077 — the citizen's authored house blueprint script (the DSL from blueprintScript.ts). When set
+   *  on a BUILT parcel the renderer compiles it and draws the fancy greedy-meshed brick house; with none it
+   *  falls back to the legacy per-block instanced cottage. P3/P4 will store the bot/human-authored script
+   *  here; until then defaultBlueprint() seeds a deterministic one so the merged render path is exercised. */
+  blueprint?: string
   fenceType: FenceType
   /** The house build-zone (the voxel house sits here, set back from the street). */
   houseZone: Zone
@@ -331,4 +337,25 @@ export function makeNeighborhood(t: Terrain): Neighborhood {
   }
   if (best) return assemble(trimCorridor(t, best.corridor, best.parcels), best.parcels)
   return { spine: [], carriage: [], verge: [], street: [], parcels: [], lots: [] }
+}
+
+/** Spec 077 P2 — a deterministic, valid fallback BLUEPRINT for a built parcel so the fancy greedy-meshed
+ *  brick render path runs before the builder route (P3) and blueprint storage (P4) exist. Pure: a fixed
+ *  function of the parcel seed + its house-zone footprint + door facing. The layout is a real little home —
+ *  a living room across the front, a bedroom to one side, and a patio out back — sized to the zone so the
+ *  rooms tile it with no gaps. The compiler scales these abstract units onto the zone tile count.
+ */
+export function defaultBlueprint(seed: number, doorDir: DoorDir): string {
+  // Abstract blueprint footprint. Keep it small + sane (the compiler scales to the real zone w/d); a 2-storey
+  // wall gives the masonry several brick courses tall. A back patio keeps the home open + interesting.
+  const w = 6
+  const d = 5
+  const wallH = (((seed >>> 6) & 1) === 0) ? 2 : 3 // most homes 2 storeys, some 3, deterministically
+  // living spans the front, bedroom beside it, patio across the back row.
+  const rooms = [
+    `room{kind:living x:0 y:0 w:4 d:3 win:1}`,
+    `room{kind:bedroom x:4 y:0 w:2 d:3 win:1}`,
+    `room{kind:patio x:0 y:3 w:6 d:2 win:0}`,
+  ]
+  return `house{w:${w} d:${d} wallH:${wallH} door:${doorDir}} ${rooms.join(' ')}`
 }

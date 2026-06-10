@@ -17,6 +17,9 @@ import { cellZone, ZONE_COLOR, VIBE_COLOR, type Plot } from '../cityPlan'
 import { homeLiveability, surveyAvailable, liveabilityTint, porterStatus } from '../build'
 import type { Neighborhood } from '../neighborhood'
 import { buildVoxelHouse, BLOCK_COLOR, type VoxelHouse, type DoorDir } from '../voxelHouse'
+import { compileBlueprint } from '../houseBuilder'
+import { greedyMesh } from './voxelMesh'
+import type { Zone } from '../neighborhood'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
 export type CameraPreset = 'street' | 'district' | 'planet'
@@ -94,6 +97,11 @@ export class PlanetRenderer {
   private lotPadMesh!: THREE.InstancedMesh
   private voxelMesh!: THREE.InstancedMesh
   private voxelCache = new Map<string, VoxelHouse>()
+  // Spec 077 P2 — built houses that carry a blueprint render as ONE merged greedy-meshed BufferGeometry each
+  // (fancy brick masonry, not minecraft cubes), parented in this group at a tile-local origin. Lots without
+  // a blueprint keep the legacy per-block instanced path above. Rebuilt with the neighbourhood signature.
+  private mergedHouseGroup = new THREE.Group()
+  private mergedHouseMat!: THREE.MeshStandardMaterial
   private lastNbhdSig = ''
   private settlerGroup = new THREE.Group()
   private lastSettlerCount = -1
@@ -616,6 +624,12 @@ export class PlanetRenderer {
     this.voxelMesh.receiveShadow = true
     this.voxelMesh.frustumCulled = false
     this.scene.add(this.voxelMesh)
+    // Spec 077 P2 — the merged greedy-meshed brick houses. One shared vertex-colour material (the brick
+    // banding lives in the per-vertex colours), flat-shaded so each merged quad reads as a crisp masonry
+    // face. Slightly rougher than the instanced blocks so the surface reads as fired brick.
+    this.mergedHouseMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.02, flatShading: true })
+    this.mergedHouseGroup.frustumCulled = false
+    this.scene.add(this.mergedHouseGroup)
 
     // Spec 073 — goods piled at the Porter Sheds (crates + sacks), and the porter handcarts on the roads.
     const crateGeo = new THREE.BoxGeometry(0.34, 0.34, 0.34)
@@ -1314,9 +1328,16 @@ export class PlanetRenderer {
     if (!this.neighborhood || !this.lotPadMesh || !this.voxelMesh) return
     const n = this.neighborhood
     const lots = n.parcels
-    const sig = lots.map((l) => `${l.id}:${l.ownerCitizenId ? 1 : 0}:${l.built ? 1 : 0}`).join('|') + `#${n.carriage.length}`
+    // Spec 077 — the blueprint is part of the signature so a newly authored/edited script triggers a rebuild.
+    const sig = lots.map((l) => `${l.id}:${l.ownerCitizenId ? 1 : 0}:${l.built ? 1 : 0}:${l.blueprint ?? ''}`).join('|') + `#${n.carriage.length}`
     if (sig === this.lastNbhdSig) return
     this.lastNbhdSig = sig
+    // Tear down the previous merged brick houses (P2) before rebuilding — dispose their GPU geometry.
+    for (const child of [...this.mergedHouseGroup.children]) {
+      this.mergedHouseGroup.remove(child)
+      const m = child as THREE.Mesh
+      if (m.geometry) m.geometry.dispose()
+    }
     const t = this.sim.state.terrain
     const col = new THREE.Color()
     const BH = 0.56 // block height (the box geometry's y size)
@@ -1396,9 +1417,16 @@ export class PlanetRenderer {
       block(tx, ty, 0.95, 0.95, 0.95, 0.05 + BH * 1.1, BLOCK_COLOR.leaf, py)
       block(lot.garden.x + lot.garden.w - 1, lot.garden.y + lot.garden.d - 1, 0.6, 0.7, 0.6, 0.05, BLOCK_COLOR.well, py)
 
-      // the house, set back and centred in its house-zone, grown to fill it. Floor the origin so the
-      // block grid stays aligned to cells (no half-cell offset when zone and house widths differ in parity).
+      // the house, set back and centred in its house-zone, grown to fill it.
       const doorDir: DoorDir = lot.doorY < lot.y ? 'n' : 's'
+      // Spec 077 P2 — a parcel that carries a BLUEPRINT raises a FANCY BRICK house: compile the script to the
+      // fine micro-occupancy and greedy-mesh it to ONE merged geometry (masonry banding baked into the vertex
+      // colours), parented at the house-zone origin. A parcel with NO blueprint keeps the legacy per-block
+      // instanced cottage, so nothing regresses while the builder (P3) and script storage (P4) are still to come.
+      if (lot.blueprint) {
+        this.addMergedHouse(lot.houseZone, lot.blueprint, lot.houseSeed, py)
+        continue
+      }
       const cacheKey = `${lot.id}:${doorDir}:${lot.houseZone.w}x${lot.houseZone.d}`
       let house = this.voxelCache.get(cacheKey)
       if (!house) {
@@ -1426,6 +1454,30 @@ export class PlanetRenderer {
     this.voxelMesh.count = v
     this.voxelMesh.instanceMatrix.needsUpdate = true
     if (this.voxelMesh.instanceColor) this.voxelMesh.instanceColor.needsUpdate = true
+  }
+
+  /** Spec 077 P2 — compile a blueprint to its micro-occupancy, greedy-mesh it to ONE merged BufferGeometry,
+   *  and parent it at the house-zone's min-corner. The mesh is built in tile-local units (small vertex
+   *  coordinates): each micro-block is 1/n of a plot cell across, voxelY tall, so a 2-storey home is a
+   *  sensible height. The merged geometry reads as fancy brick masonry — the per-course tint banding is
+   *  carried in the vertex colours and the flat per-quad normals keep every face crisp. */
+  private addMergedHouse(zone: Zone, script: string, seed: number, groundY: number): void {
+    let compiled
+    try {
+      compiled = compileBlueprint(script, { w: zone.w, d: zone.d, seed })
+    } catch {
+      return // a malformed script never crashes the renderer — the lot simply draws no house
+    }
+    const VOXEL_Y = 0.18 // micro-block height in world units: ~3.2u tall for a 2-storey home — reads as a house
+    const { geometry } = greedyMesh(compiled.blocks, { n: compiled.n, cell: 1, voxelY: VOXEL_Y })
+    const mesh = new THREE.Mesh(geometry, this.mergedHouseMat)
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    mesh.frustumCulled = false
+    // Parent at the house-zone's min-corner: cell `zone.x` spans world [wx(zone.x)-0.5, +0.5], and the mesh's
+    // local origin is the micro-grid corner, so offset by half a cell to seat it flush on the zone.
+    mesh.position.set(this.wx(zone.x) - 0.5, groundY + 0.05, this.wz(zone.y) - 0.5)
+    this.mergedHouseGroup.add(mesh)
   }
 
   /** P1 — step the camera INTO a citizen for a live first-person view (the operator looking through their bot's
