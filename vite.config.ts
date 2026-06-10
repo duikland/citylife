@@ -29,7 +29,12 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5188,
-      host: true,
+      // SECURITY: bind to localhost only by default. A DEV build can auto-login with the operator
+      // creds from .env.local, and a VITE_CITYLIFE_PAT is reachable in the dev runtime, so a server
+      // bound to 0.0.0.0 would let any device on the same LAN open it, auto-login as the operator and
+      // spend the operator's inference. Opt into LAN exposure deliberately with VITE_LAN=1 (e.g. to
+      // test from a phone). Deployed bundles are unaffected (DEV is false, creds are nginx-injected).
+      host: env.VITE_LAN === '1' || env.VITE_LAN === 'true' ? true : '127.0.0.1',
       proxy: {
         '/kooker': {
           target: kookerGateway,
