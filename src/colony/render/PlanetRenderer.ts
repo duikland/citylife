@@ -628,7 +628,10 @@ export class PlanetRenderer {
 
     // Spec 076 — homestead ground tiles (zone pads + the spine carriageway/verge) + voxel blocks
     // (the house, fences, farm crops, garden beds, trees). Caps raised for the larger parcels.
-    const padGeo = new THREE.BoxGeometry(1, 0.06, 1)
+    // Deep pads: the tile body extends well below its top face, so on sloped ground the sides reach
+    // down into the terrain — adjacent stepped tiles read as one merged surface and a tile edge over a
+    // dip reads as built-up earth, never a floating wafer (operator feedback).
+    const padGeo = new THREE.BoxGeometry(1, 0.6, 1)
     this.lotPadMesh = new THREE.InstancedMesh(padGeo, new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 }), PAD_CAP)
     this.lotPadMesh.count = 0
     this.lotPadMesh.receiveShadow = true
@@ -1397,17 +1400,21 @@ export class PlanetRenderer {
     const t = this.sim.state.terrain
     const col = new THREE.Color()
     const BH = 0.56 // block height (the box geometry's y size)
-    const gy = (x: number, y: number) => Math.max(0, t.worldY(Math.round(x), Math.round(y)))
+    // SMOOTHED per-cell ground (5-point average): tiles follow the land's grade without per-cell
+    // flutter. The old single leveled height per homestead left the downhill half of a sloped parcel
+    // floating in the air (operator feedback) — now only the house keeps a leveled foundation.
+    const gy = (x: number, y: number) => Math.max(0, this.smoothRoadY(Math.round(x), Math.round(y)))
+    const PAD_DEPTH = 0.6 // must match padGeo's y size
 
     let p = 0 // pad instance index
     let v = 0 // voxel instance index
-    // A flat ground tile spanning a rect (min-corner zx,zy, size zw x zd) at height hOff. `groundY`, when
-    // given, levels the tile on a fixed foundation height (so a whole homestead sits flush) instead of
-    // sampling per-cell terrain.
+    // A ground tile spanning a rect (min-corner zx,zy, size zw x zd) whose TOP face sits at hOff above
+    // the ground. The deep body sinks into the terrain. `groundY`, when given, levels the tile on a
+    // fixed foundation height (the house slab) instead of sampling the smoothed per-cell terrain.
     const padRect = (zx: number, zy: number, zw: number, zd: number, hOff: number, color: number, groundY?: number) => {
       if (p >= PAD_CAP) return
       const cx = zx + (zw - 1) / 2, cy = zy + (zd - 1) / 2
-      this.dummy.position.set(this.wx(cx), (groundY ?? gy(cx, cy)) + hOff, this.wz(cy))
+      this.dummy.position.set(this.wx(cx), (groundY ?? gy(cx, cy)) + hOff - PAD_DEPTH / 2, this.wz(cy))
       this.dummy.rotation.set(0, 0, 0)
       this.dummy.scale.set(zw, 1, zd)
       this.dummy.updateMatrix()
@@ -1439,39 +1446,39 @@ export class PlanetRenderer {
     // ── each homestead parcel ──
     for (const lot of lots) {
       const fenceColor = lot.fenceType === 'hedge' ? BLOCK_COLOR.hedge : lot.fenceType === 'wall' ? BLOCK_COLOR.stone : BLOCK_COLOR.fence
-      // One leveled foundation height for the whole homestead (averaged front-to-back), so the pads,
-      // fence, crops and house all sit flush — no per-cell flutter or slope clipping.
+      // The HOUSE keeps one leveled foundation height (a real slab); everything else — garden, farm,
+      // driveway, fence — follows the smoothed per-cell terrain like real fields and paths do. The old
+      // single homestead height left the downhill half of a sloped parcel hanging in the air.
       const hcx = lot.houseZone.x + (lot.houseZone.w - 1) / 2, hcy = lot.houseZone.y + (lot.houseZone.d - 1) / 2
-      const fcx = lot.farm.x + (lot.farm.w - 1) / 2, fcy = lot.farm.y + (lot.farm.d - 1) / 2
-      const py = Math.max(0, (gy(hcx, hcy) + gy(fcx, fcy)) / 2)
+      const py = gy(hcx, hcy)
       // surveyed homestead ground (drawn whether or not it is built, so the borders read immediately).
       // Distinct pad heights (garden < farm < house < driveway) avoid coplanar z-fighting.
       padRect(lot.houseZone.x, lot.houseZone.y, lot.houseZone.w, lot.houseZone.d, 0.05, lot.built ? 0x6b5a44 : 0x5c5140, py)
-      padRect(lot.garden.x, lot.garden.y, lot.garden.w, lot.garden.d, 0.038, 0x4f6f33, py)
-      padRect(lot.farm.x, lot.farm.y, lot.farm.w, lot.farm.d, 0.044, 0x6e4a30, py)
-      for (const d of lot.driveway) padCell(d.x, d.y, 0.056, BLOCK_COLOR.path, py)
-      padCell(lot.gate.x, lot.gate.y, 0.056, BLOCK_COLOR.path, py)
-      // the visible parcel border — a fence/hedge/wall ring, raised clear of the pads
-      for (const f of lot.fence) block(f.x, f.y, 0.26, 0.9, 0.26, 0.06, fenceColor, py)
+      for (let yy = lot.garden.y; yy < lot.garden.y + lot.garden.d; yy++) for (let xx = lot.garden.x; xx < lot.garden.x + lot.garden.w; xx++) padCell(xx, yy, 0.038, 0x4f6f33)
+      for (let yy = lot.farm.y; yy < lot.farm.y + lot.farm.d; yy++) for (let xx = lot.farm.x; xx < lot.farm.x + lot.farm.w; xx++) padCell(xx, yy, 0.044, 0x6e4a30)
+      for (const d of lot.driveway) padCell(d.x, d.y, 0.056, BLOCK_COLOR.path)
+      padCell(lot.gate.x, lot.gate.y, 0.056, BLOCK_COLOR.path)
+      // the visible parcel border — a fence/hedge/wall ring riding the land, raised clear of the pads
+      for (const f of lot.fence) block(f.x, f.y, 0.26, 0.9, 0.26, 0.06, fenceColor)
 
       if (!lot.built) continue
-      // worked homestead: farm furrows (alternating crop colour by row)
+      // worked homestead: farm furrows (alternating crop colour by row) riding their own field cells
       for (let yy = lot.farm.y; yy < lot.farm.y + lot.farm.d; yy++) {
         for (let xx = lot.farm.x; xx < lot.farm.x + lot.farm.w; xx++) {
-          block(xx, yy, 0.82, 0.5, 0.82, 0.05, yy % 2 === 0 ? BLOCK_COLOR.crop : BLOCK_COLOR.cropAlt, py)
+          block(xx, yy, 0.82, 0.5, 0.82, 0.05, yy % 2 === 0 ? BLOCK_COLOR.crop : BLOCK_COLOR.cropAlt)
         }
       }
       // garden veg beds on alternate cells
       for (let yy = lot.garden.y; yy < lot.garden.y + lot.garden.d; yy++) {
         for (let xx = lot.garden.x; xx < lot.garden.x + lot.garden.w; xx++) {
-          if ((xx + yy) % 2 === 0) block(xx, yy, 0.78, 0.38, 0.78, 0.05, BLOCK_COLOR.crop, py)
+          if ((xx + yy) % 2 === 0) block(xx, yy, 0.78, 0.38, 0.78, 0.05, BLOCK_COLOR.crop)
         }
       }
       // a fruit tree at one garden corner + a well at the other
       const tx = lot.garden.x, ty = lot.garden.y
-      block(tx, ty, 0.28, 1.1, 0.28, 0.05, BLOCK_COLOR.trunk, py)
-      block(tx, ty, 0.95, 0.95, 0.95, 0.05 + BH * 1.1, BLOCK_COLOR.leaf, py)
-      block(lot.garden.x + lot.garden.w - 1, lot.garden.y + lot.garden.d - 1, 0.6, 0.7, 0.6, 0.05, BLOCK_COLOR.well, py)
+      block(tx, ty, 0.28, 1.1, 0.28, 0.05, BLOCK_COLOR.trunk)
+      block(tx, ty, 0.95, 0.95, 0.95, 0.05 + BH * 1.1, BLOCK_COLOR.leaf)
+      block(lot.garden.x + lot.garden.w - 1, lot.garden.y + lot.garden.d - 1, 0.6, 0.7, 0.6, 0.05, BLOCK_COLOR.well)
 
       // the house, set back and centred in its house-zone, grown to fill it.
       const doorDir: DoorDir = lot.doorY < lot.y ? 'n' : 's'
