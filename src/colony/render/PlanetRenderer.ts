@@ -32,6 +32,8 @@ export interface AvatarView {
   y: number
   heading: number
   hasPod: boolean
+  /** Spec 078 — body kind: humans draw as the capsule avatar, Joe the founder draws as the crab mesh. */
+  kind: 'human' | 'crab'
   /** True for the avatar belonging to the logged-in operator (rendered highlighted). */
   isOperator: boolean
 }
@@ -42,6 +44,8 @@ const SKY_DAY = new THREE.Color(0x0b1022)
 const SKY_NIGHT = new THREE.Color(0x03040a)
 const OCEAN = 0x143a4a
 const SLAB_ROCK = 0x24242f
+// Spec 078 — Joe the Crab's first-person eye height (low to the ground), vs 1.6 for the human avatars.
+const CRAB_EYE = 0.42
 // Spec 076 — instance caps for the homestead neighbourhood (zone pads + spine ribbon; voxel blocks
 // for houses, fences, crops, garden beds and trees across a full band of large parcels).
 const PAD_CAP = 2400
@@ -90,6 +94,9 @@ export class PlanetRenderer {
   // ped pool), movable by the bot, and steppable-into for a live first-person view.
   private avatarMesh!: THREE.InstancedMesh
   private avatarHeadMesh!: THREE.InstancedMesh
+  // Spec 078 — Joe the Crab: one merged, vertex-coloured geometry instanced like the human avatars but
+  // routed here by AvatarView.kind. Shares the roster + roam loop; only the body mesh + eye height differ.
+  private crabMesh!: THREE.InstancedMesh
   private avatarSource?: () => AvatarView[]
   private fpCitizenId: string | null = null
   // Spec 075 — the buildable neighbourhood: lot pads + minecraft-style voxel homes.
@@ -608,6 +615,13 @@ export class PlanetRenderer {
     this.avatarHeadMesh.castShadow = true
     this.avatarHeadMesh.frustumCulled = false
     this.scene.add(this.avatarHeadMesh)
+    // Spec 078 — Joe the Crab's body: one merged, vertex-coloured geometry drawn by a single material.
+    const crabGeo = this.makeCrabGeometry()
+    this.crabMesh = new THREE.InstancedMesh(crabGeo, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.6, metalness: 0.05 }), AV_CAP)
+    this.crabMesh.count = 0
+    this.crabMesh.castShadow = true
+    this.crabMesh.frustumCulled = false
+    this.scene.add(this.crabMesh)
 
     // Spec 076 — homestead ground tiles (zone pads + the spine carriageway/verge) + voxel blocks
     // (the house, fences, farm crops, garden beds, trees). Caps raised for the larger parcels.
@@ -1159,10 +1173,11 @@ export class PlanetRenderer {
       const a = this.avatarSource().find((x) => x.id === this.fpCitizenId)
       if (a) {
         const t = this.sim.state.terrain
-        const eye = Math.max(0, t.worldY(Math.round(a.x), Math.round(a.y))) + 1.6
+        const isCrab = a.kind === 'crab' // spec 078 — Joe sees the world from down at crab height
+        const eye = Math.max(0, t.worldY(Math.round(a.x), Math.round(a.y))) + (isCrab ? CRAB_EYE : 1.6)
         this.camera.position.set(this.wx(a.x), eye, this.wz(a.y))
         const lx = a.x + Math.cos(a.heading) * 4, ly = a.y + Math.sin(a.heading) * 4
-        const lyW = Math.max(0, t.worldY(Math.round(lx), Math.round(ly))) + 1.2
+        const lyW = Math.max(0, t.worldY(Math.round(lx), Math.round(ly))) + (isCrab ? CRAB_EYE - 0.05 : 1.2)
         this.camera.lookAt(this.wx(lx), lyW, this.wz(ly))
         this.camera.updateMatrixWorld()
       } else {
@@ -1474,15 +1489,71 @@ export class PlanetRenderer {
     return this.fpCitizenId
   }
 
+  /** Spec 078 — build Joe the Crab as ONE merged, vertex-coloured BufferGeometry (so a single
+   *  vertexColors + flatShading material draws him). Local space: origin at the ground plane, FRONT = +Z
+   *  (the shared avatar heading rotation then faces his eyes + claws down his travel direction). Locked to
+   *  his portrait: an orange-red shell, two stalked eyes, two pincer claws, six legs, a blue-white headset
+   *  with exactly one yellow lightning bolt on a single earcup. */
+  private makeCrabGeometry(): THREE.BufferGeometry {
+    const parts: THREE.BufferGeometry[] = []
+    const tint = new THREE.Color()
+    const add = (
+      g: THREE.BufferGeometry, hex: number,
+      pos: [number, number, number], rot?: [number, number, number], scale?: [number, number, number],
+    ) => {
+      if (scale) g.scale(scale[0], scale[1], scale[2])
+      if (rot) { g.rotateX(rot[0]); g.rotateY(rot[1]); g.rotateZ(rot[2]) }
+      g.translate(pos[0], pos[1], pos[2])
+      const count = g.attributes.position!.count
+      const colors = new Float32Array(count * 3)
+      tint.setHex(hex)
+      for (let i = 0; i < count; i++) { colors[i * 3] = tint.r; colors[i * 3 + 1] = tint.g; colors[i * 3 + 2] = tint.b }
+      g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+      parts.push(g)
+    }
+    const SHELL = 0xe2562f, SHELL_DK = 0xc23f1f, EYE_W = 0xf6f6f6, EYE_P = 0x101010
+    const BAND = 0xdfe7f2, CUP = 0x2f6fd0, BOLT = 0xf4c020
+    // shell — a flattened dome, wider across (x) than deep (z)
+    add(new THREE.SphereGeometry(0.30, 14, 10), SHELL, [0, 0.26, 0], undefined, [1.25, 0.6, 1.0])
+    // eyes — two forward stalks (+z) each capped with a white eyeball + dark pupil
+    for (const s of [-1, 1]) {
+      add(new THREE.CylinderGeometry(0.024, 0.024, 0.16, 6), SHELL_DK, [s * 0.12, 0.36, 0.18], [0.55, 0, 0])
+      add(new THREE.SphereGeometry(0.062, 8, 6), EYE_W, [s * 0.12, 0.46, 0.25])
+      add(new THREE.SphereGeometry(0.03, 6, 6), EYE_P, [s * 0.12, 0.47, 0.30])
+    }
+    // claws — an upper arm reaching forward-out + a two-prong pincer (mirrored)
+    for (const s of [-1, 1]) {
+      add(new THREE.BoxGeometry(0.10, 0.10, 0.26), SHELL, [s * 0.30, 0.18, 0.22])
+      add(new THREE.BoxGeometry(0.12, 0.16, 0.12), SHELL, [s * 0.34, 0.20, 0.40])
+      add(new THREE.BoxGeometry(0.05, 0.05, 0.16), SHELL_DK, [s * 0.34, 0.26, 0.50])
+      add(new THREE.BoxGeometry(0.05, 0.05, 0.13), SHELL_DK, [s * 0.34, 0.16, 0.49])
+    }
+    // legs — three per side, thin cylinders splayed down-out to the ground
+    for (const s of [-1, 1]) {
+      for (const dz of [-0.16, 0.02, 0.18]) {
+        add(new THREE.CylinderGeometry(0.02, 0.02, 0.26, 5), SHELL_DK, [s * 0.34, 0.10, dz], [0, 0, s * 0.95])
+      }
+    }
+    // headset — a half-torus band arching over the top (side to side) + two earcups
+    add(new THREE.TorusGeometry(0.28, 0.03, 6, 18, Math.PI), BAND, [0, 0.27, 0])
+    for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 14), CUP, [s * 0.28, 0.27, 0], [0, 0, Math.PI / 2])
+    // exactly ONE yellow lightning accent, on the +x earcup only (matches his portrait)
+    add(new THREE.BoxGeometry(0.05, 0.11, 0.025), BOLT, [0.32, 0.30, 0], [0, 0, 0.35])
+    const merged = mergeGeometries(parts, false)
+    for (const p of parts) p.dispose()
+    return merged
+  }
+
   /** P1 — draw the citizen avatars at their live roster positions. The one the operator owns glows cyan; the
-   *  citizen currently being stepped-into is hidden (the camera is inside it). */
+   *  citizen currently being stepped-into is hidden (the camera is inside it). Spec 078 — citizens whose
+   *  kind is 'crab' (Joe) draw into the crab mesh instead of the human capsule + head. */
   private updateAvatars() {
-    if (!this.avatarMesh || !this.avatarHeadMesh || !this.avatarSource) return
+    if (!this.avatarMesh || !this.avatarHeadMesh || !this.crabMesh || !this.avatarSource) return
     const list = this.avatarSource()
     const t = this.sim.state.terrain
     const n = Math.min(list.length, 64)
     const col = new THREE.Color()
-    let drawn = 0
+    let drawn = 0, crab = 0
     for (let i = 0; i < n; i++) {
       const a = list[i]!
       if (a.id === this.fpCitizenId) continue // hide the avatar we are looking out of
@@ -1491,17 +1562,24 @@ export class PlanetRenderer {
       this.dummy.rotation.set(0, -a.heading + Math.PI / 2, 0)
       this.dummy.scale.set(1, 1, 1)
       this.dummy.updateMatrix()
-      this.avatarMesh.setMatrixAt(drawn, this.dummy.matrix)
-      this.avatarHeadMesh.setMatrixAt(drawn, this.dummy.matrix)
-      col.setHex(a.isOperator ? 0x66e0ff : a.hasPod ? 0x9f86d8 : 0xc0b0e0)
-      this.avatarMesh.setColorAt(drawn, col)
-      drawn++
+      if (a.kind === 'crab') {
+        this.crabMesh.setMatrixAt(crab, this.dummy.matrix)
+        crab++
+      } else {
+        this.avatarMesh.setMatrixAt(drawn, this.dummy.matrix)
+        this.avatarHeadMesh.setMatrixAt(drawn, this.dummy.matrix)
+        col.setHex(a.isOperator ? 0x66e0ff : a.hasPod ? 0x9f86d8 : 0xc0b0e0)
+        this.avatarMesh.setColorAt(drawn, col)
+        drawn++
+      }
     }
     this.avatarMesh.count = drawn
     this.avatarMesh.instanceMatrix.needsUpdate = true
     if (this.avatarMesh.instanceColor) this.avatarMesh.instanceColor.needsUpdate = true
     this.avatarHeadMesh.count = drawn
     this.avatarHeadMesh.instanceMatrix.needsUpdate = true
+    this.crabMesh.count = crab
+    this.crabMesh.instanceMatrix.needsUpdate = true
   }
 
   /** Spec 073 — the Porter Sheds made visible: goods pile up as crates (materials) + sacks (food) beside each shed, growing and

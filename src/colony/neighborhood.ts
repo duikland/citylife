@@ -36,6 +36,9 @@ export interface Parcel {
   doorX: number
   doorY: number
   ownerCitizenId?: string
+  /** Spec 078 — a permanently reserved FOUNDER parcel (Joe the Crab). Never auto-assigned to a newcomer
+   *  and not freed by ordinary demolition. */
+  reservedFor?: string
   built: boolean
   houseSeed: number
   /** Spec 077 — the citizen's authored house blueprint script (the DSL from blueprintScript.ts). When set

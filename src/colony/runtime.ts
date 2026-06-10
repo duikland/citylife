@@ -19,6 +19,14 @@ import { makeNeighborhood, defaultBlueprint, type Neighborhood, type Lot } from 
 import { createRadio, tuneTo, toggleOn as radioToggleOn, toggleMuted as radioToggleMuted, spinHouseAd, type RadioState } from './radio'
 import { buildShareCard, headlineFor, shareStats, siteLabel, DEFAULT_TAGLINE, CARD_ID, type CardFormat } from './social/shareCard'
 
+// Spec 078 — Joe the Crab, the founding resident. Fixed id + birth stamp + house so he is deterministic,
+// always present from sol zero, and survives reloads with no new save format. His house is an authored 077
+// blueprint (a sea-facing patio cottage — his "city desk" by the water), reserved on the shore-most plot.
+const JOE_ID = 'citizen_joe'
+const JOE_BORN_MS = 0
+const JOE_BLUEPRINT =
+  'house{w:6 d:5 wallH:2 door:s} room{kind:living x:0 y:0 w:4 d:3 win:1} room{kind:bedroom x:4 y:0 w:2 d:3 win:1} room{kind:patio x:0 y:3 w:6 d:2 win:0}'
+
 const BIOME_LABEL: Record<number, string> = {
   [Biome.Ocean]: 'Ocean',
   [Biome.Shallows]: 'Shallows',
@@ -114,6 +122,7 @@ export class ColonyRuntime {
     this.neighborhood = makeNeighborhood(this.sim.state.terrain)
     for (const c of this.neighborhood.carriage) this.sim.state.roadSet.add(`${c.x},${c.y}`)
     for (const c of this.neighborhood.verge) this.sim.state.roadSet.add(`${c.x},${c.y}`)
+    this.seedJoe() // spec 078 — Joe the Crab takes up residence on the shore-most homestead
     // Resolve the real reply source asynchronously (in-cluster: nginx-proxied Hermes; else mock).
     void this.initBotAdapter()
   }
@@ -167,7 +176,7 @@ export class ColonyRuntime {
           // (materials + a free hand), raise the house right away; otherwise the Build button stands
           // ready on their plot in the Homesteads panel.
           if (citizen) {
-            const freeLot = this.neighborhood.lots.find((l) => !l.ownerCitizenId)
+            const freeLot = this.neighborhood.lots.find((l) => !l.ownerCitizenId && !l.reservedFor)
             if (freeLot) {
               this.assignLot(citizen.id, freeLot.id)
               this.buildHouse(freeLot.id) // best-effort; gated on materials + labour
@@ -317,6 +326,50 @@ export class ColonyRuntime {
   /** The neighbourhood lots (for the renderer + the HUD). */
   lots(): Lot[] {
     return this.neighborhood.lots
+  }
+
+  /** Spec 078 — Joe the Crab, the founder. Reserve the shore-most homestead as permanently his, raise his
+   *  fixed 077 house on it, and seed his crab citizen so he is always present and roams the streets. Pure +
+   *  deterministic from the terrain and idempotent (the roster guards on the fixed id), so reloads reproduce
+   *  the identical Joe without any new save format. The newcomer search skips reservedFor lots so Joe's plot
+   *  is never handed to an arriving family. */
+  private seedJoe(): void {
+    const lots = this.neighborhood.lots
+    if (lots.length === 0) return
+    const t = this.sim.state.terrain
+    const distToWater = (cx: number, cy: number): number => {
+      for (let r = 1; r <= 16; r++) {
+        for (let dx = -r; dx <= r; dx++) {
+          for (let dy = -r; dy <= r; dy++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue
+            const x = cx + dx, y = cy + dy
+            if (x < 0 || y < 0 || x >= t.size || y >= t.size) continue
+            if (t.isWater(x, y)) return r
+          }
+        }
+      }
+      return 999
+    }
+    // Joe lives by the water: the homestead nearest the sea (ties broken by id for determinism).
+    let plot = lots[0]!
+    let best = Infinity
+    for (const l of lots) {
+      const d = distToWater(Math.round(l.x), Math.round(l.y))
+      if (d < best || (d === best && l.id < plot.id)) { best = d; plot = l }
+    }
+    plot.reservedFor = JOE_ID
+    plot.ownerCitizenId = JOE_ID
+    plot.built = true
+    plot.blueprint = JOE_BLUEPRINT
+    const home = {
+      x: Math.round(plot.houseZone.x + (plot.houseZone.w - 1) / 2),
+      y: Math.round(plot.houseZone.y + (plot.houseZone.d - 1) / 2),
+    }
+    const joe = this.citizens.seedFounder({
+      id: JOE_ID, householdId: 'household_joe', displayName: 'Joe the Crab',
+      plotId: plot.id, plotName: 'Driftwood Cove', home, kind: 'crab', nowMs: JOE_BORN_MS, spd: 0.6,
+    })
+    if (joe) this.citizens.setTarget(JOE_ID, { x: plot.doorX, y: plot.doorY }) // start him strolling from his door
   }
 
   /** Assign a free lot to a citizen as their home, and send their avatar walking to the door. */
