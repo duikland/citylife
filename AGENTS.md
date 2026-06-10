@@ -22,6 +22,47 @@ Read [`docs/TECH-SPEC.md`](docs/TECH-SPEC.md) first. It is the source of truth f
 - Add engine/governor behaviour with a matching test in `tests/`.
 - Don't introduce React-Three-Fiber/drei unless you deliberately accept the three/fiber/drei version-matrix; the renderer is intentionally plain three.js for now.
 
+## Multi-agent lanes (Claude + Antigravity)
+
+Two coding agents work this repo on a schedule. Read your lane before touching anything; the full
+Antigravity task queue, acceptance criteria and merge flow live in
+[`docs/agents/ANTIGRAVITY.md`](docs/agents/ANTIGRAVITY.md).
+
+- **Claude** (the operator's session loop) owns branch `mechanics/dev` and the spec-077 core line.
+- **Antigravity** works ONLY the queued AG tasks, each on its own branch
+  `antigravity/<task-id>-<slug>` cut from the latest `origin/mechanics/dev`, pushed to origin.
+  Never commit to `mechanics/dev`. `main` is PROTECTED for everyone (PRs + review only).
+- Claude reviews `origin/antigravity/*` branches each loop iteration and merges green slices into
+  `mechanics/dev`.
+
+### Run + test
+- Dev server: `npm run dev` → http://localhost:5188 — **5188 belongs to Claude's loop**. Antigravity
+  runs its own on **5189**: `npm run dev -- --port 5189`.
+- Auth bypass (dev builds only, no-op deployed): `http://localhost:5189/?skipauth=1` or
+  `VITE_LOCAL_TEST=1` in `.env.local`. Never commit `.env.local`; never echo its values.
+- Typecheck `npx tsc --noEmit` · tests `npx vitest run` — both must be green before every push.
+- House Builder: `/builder.html?citizenId=<id>&lotId=<id>&w=<int>&d=<int>&seed=<int>[&bp=<encoded DSL>]`
+  — every control carries a `data-build-action` selector; Accept posts
+  `{type:'blueprint_saved', citizenId, lotId, script}` to `window.opener` (same-origin).
+- Live probe: `window.__colony` (`.sim.state`, `.renderer`, `.lots()`, `.citizens`,
+  `.applyBlueprint(lotId, script)`, `.builderUrl(lotId)`).
+
+### Hard rules (both agents)
+- Commit messages must be CI-SAFE: no double quotes, no brackets, no colon-bullet lines — kooker CI
+  shell-interpolates the head commit message. Write the message to a temp file and `git commit -F` it.
+- The blueprint compile path stays DETERMINISTIC: no Date.now, no Math.random, no wall-clock in
+  `blueprintScript.ts`, `houseBuilder.ts`, `render/voxelMesh.ts` or anything they call.
+- `KOOKER_GATEWAY` stays `https://api.kooker.co.za` (the `/kooker` Vite proxy target).
+
+### File ownership (conflict avoidance)
+- Claude-owned (Antigravity must not edit): `src/colony/runtime.ts`, `src/colony/houseBuilder.ts`,
+  `src/colony/blueprintScript.ts`, `src/colony/neighborhood.ts`, `src/colony/render/*`,
+  `src/colony/builder/BuilderApp.tsx`, `src/colony/builder/main.tsx`, `src/colony/bot/*`,
+  `src/colony/ui/*`, `docs/specs/077-bot-house-builder.md`, `vite.config.ts` (exception: AG-2 may add
+  ONE line to the rollup `input` map).
+- Antigravity-owned: `tools/`, `src/gallery/`, `src/colony/builder/history.ts`, `tests/antigravity/`,
+  `gallery.html`, `docs/agents/`.
+
 ## Public repository safety
 - This repository is public-facing. Never commit secrets, tokens, private namespaces, internal hostnames, private preview URLs, or real personal data.
 - Newcomer/household identities must be fictional, generated, and redaction-checked before being persisted or displayed.
