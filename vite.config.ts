@@ -5,8 +5,10 @@ import http from 'node:http'
 import https from 'node:https'
 
 // Vite + Vitest config. Sim/engine tests run in the node environment (no DOM).
-// The kooker gateway URL is kept OUT of this public repo — set KOOKER_GATEWAY in .env.local
-// (see .env.example). Browser -> Vite proxy -> kooker APISIX gateway (avoids CORS).
+// Dev reads KOOKER_GATEWAY from .env.local (see .env.example); the deploy image bakes the public
+// gateway as its default (Dockerfile). The gateway is the same public endpoint the kooker web app
+// calls from browsers — never put credentials or internal cluster hostnames in this repo.
+// Browser -> Vite proxy -> kooker APISIX gateway (avoids CORS).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const kookerGateway = env.KOOKER_GATEWAY || 'http://localhost:8081'

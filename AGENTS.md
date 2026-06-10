@@ -52,7 +52,9 @@ Antigravity task queue, acceptance criteria and merge flow live in
   shell-interpolates the head commit message. Write the message to a temp file and `git commit -F` it.
 - The blueprint compile path stays DETERMINISTIC: no Date.now, no Math.random, no wall-clock in
   `blueprintScript.ts`, `houseBuilder.ts`, `render/voxelMesh.ts` or anything they call.
-- `KOOKER_GATEWAY` stays `https://api.kooker.co.za` (the `/kooker` Vite proxy target).
+- `KOOKER_GATEWAY` (the `/kooker` Vite proxy target) keeps its configured value — dev reads it from
+  `.env.local`, the deploy image carries its own default. Never point it at localhost and never
+  write credentials or internal cluster hostnames anywhere in this repo.
 
 ### File ownership (conflict avoidance)
 - Claude-owned (Antigravity must not edit): `src/colony/runtime.ts`, `src/colony/houseBuilder.ts`,
