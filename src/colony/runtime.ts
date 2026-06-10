@@ -15,9 +15,19 @@ import { makeCityPlan, type CityPlan, type Plot } from './cityPlan'
 import { CitizenRoster, type CitizenPublic } from './bot/citizenRoster'
 import { firstPersonView, type FirstPersonView } from './bot/firstPersonView'
 import { solCount, resolveFoundingMs } from './sol'
-import { makeNeighborhood, type Neighborhood, type Lot } from './neighborhood'
+import { makeNeighborhood, defaultBlueprint, type Neighborhood, type Lot } from './neighborhood'
+import { validateBlueprint } from './blueprintScript'
+import { loadBlueprintsLocal, saveBlueprintLocal, saveBlueprintBackend, fetchBlueprintsBackend, mergeBlueprints } from './bot/blueprintStore'
 import { createRadio, tuneTo, toggleOn as radioToggleOn, toggleMuted as radioToggleMuted, spinHouseAd, type RadioState } from './radio'
 import { buildShareCard, headlineFor, shareStats, siteLabel, DEFAULT_TAGLINE, CARD_ID, type CardFormat } from './social/shareCard'
+
+// Spec 078 — Joe the Crab, the founding resident. Fixed id + birth stamp + house so he is deterministic,
+// always present from sol zero, and survives reloads with no new save format. His house is an authored 077
+// blueprint (a sea-facing patio cottage — his "city desk" by the water), reserved on the shore-most plot.
+const JOE_ID = 'citizen_joe'
+const JOE_BORN_MS = 0
+const JOE_BLUEPRINT =
+  'house{w:6 d:5 wallH:2 door:s} room{kind:living x:0 y:0 w:4 d:3 win:1} room{kind:bedroom x:4 y:0 w:2 d:3 win:1} room{kind:patio x:0 y:3 w:6 d:2 win:0}'
 
 const BIOME_LABEL: Record<number, string> = {
   [Biome.Ocean]: 'Ocean',
@@ -44,7 +54,7 @@ export interface ColonyUiState {
   border: { households: Household[]; bots: Bot[]; botSource: string; plots: Plot[] }
   citizens: { count: number; awake: number; list: CitizenPublic[] }
   firstPerson: { active: boolean; citizenId: string | null; citizenName: string | null; operatorCitizenId: string | null; view: FirstPersonView | null; narration: string | null; narrating: boolean }
-  neighborhood: { lots: { id: string; built: boolean; owner: string | null; ownerId: string | null }[]; free: number; built: number; houseCost: number; canAfford: boolean; buildHint: string }
+  neighborhood: { lots: { id: string; built: boolean; owner: string | null; ownerId: string | null; reserved: boolean }[]; free: number; built: number; houseCost: number; canAfford: boolean; buildHint: string }
   radio: RadioState
   courier: { on: boolean; headline: string } // spec 016 — the colony's own news, when a Broadcast Mast is up
   tv: boolean
@@ -114,6 +124,18 @@ export class ColonyRuntime {
     this.neighborhood = makeNeighborhood(this.sim.state.terrain)
     for (const c of this.neighborhood.carriage) this.sim.state.roadSet.add(`${c.x},${c.y}`)
     for (const c of this.neighborhood.verge) this.sim.state.roadSet.add(`${c.x},${c.y}`)
+    this.seedJoe() // spec 078 — Joe the Crab takes up residence on the shore-most homestead
+    this.restoreBlueprints() // spec 077 P4.5 — stored designs regenerate their houses on reload
+    // Spec 077 P4 — listen for blueprint_saved posted back by the House Builder popup. Same-origin
+    // only; the script is validated before anything is stored or built. Guarded for node test runs.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('message', (e: MessageEvent) => {
+        if (e.origin !== window.location.origin) return
+        const d = e.data as { type?: string; lotId?: string; script?: string } | null
+        if (!d || d.type !== 'blueprint_saved' || typeof d.lotId !== 'string' || typeof d.script !== 'string') return
+        this.applyBlueprint(d.lotId, d.script)
+      })
+    }
     // Resolve the real reply source asynchronously (in-cluster: nginx-proxied Hermes; else mock).
     void this.initBotAdapter()
   }
@@ -167,7 +189,7 @@ export class ColonyRuntime {
           // (materials + a free hand), raise the house right away; otherwise the Build button stands
           // ready on their plot in the Homesteads panel.
           if (citizen) {
-            const freeLot = this.neighborhood.lots.find((l) => !l.ownerCitizenId)
+            const freeLot = this.neighborhood.lots.find((l) => !l.ownerCitizenId && !l.reservedFor)
             if (freeLot) {
               this.assignLot(citizen.id, freeLot.id)
               this.buildHouse(freeLot.id) // best-effort; gated on materials + labour
@@ -319,6 +341,50 @@ export class ColonyRuntime {
     return this.neighborhood.lots
   }
 
+  /** Spec 078 — Joe the Crab, the founder. Reserve the shore-most homestead as permanently his, raise his
+   *  fixed 077 house on it, and seed his crab citizen so he is always present and roams the streets. Pure +
+   *  deterministic from the terrain and idempotent (the roster guards on the fixed id), so reloads reproduce
+   *  the identical Joe without any new save format. The newcomer search skips reservedFor lots so Joe's plot
+   *  is never handed to an arriving family. */
+  private seedJoe(): void {
+    const lots = this.neighborhood.lots
+    if (lots.length === 0) return
+    const t = this.sim.state.terrain
+    const distToWater = (cx: number, cy: number): number => {
+      for (let r = 1; r <= 16; r++) {
+        for (let dx = -r; dx <= r; dx++) {
+          for (let dy = -r; dy <= r; dy++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue
+            const x = cx + dx, y = cy + dy
+            if (x < 0 || y < 0 || x >= t.size || y >= t.size) continue
+            if (t.isWater(x, y)) return r
+          }
+        }
+      }
+      return 999
+    }
+    // Joe lives by the water: the homestead nearest the sea (ties broken by id for determinism).
+    let plot = lots[0]!
+    let best = Infinity
+    for (const l of lots) {
+      const d = distToWater(Math.round(l.x), Math.round(l.y))
+      if (d < best || (d === best && l.id < plot.id)) { best = d; plot = l }
+    }
+    plot.reservedFor = JOE_ID
+    plot.ownerCitizenId = JOE_ID
+    plot.built = true
+    plot.blueprint = JOE_BLUEPRINT
+    const home = {
+      x: Math.round(plot.houseZone.x + (plot.houseZone.w - 1) / 2),
+      y: Math.round(plot.houseZone.y + (plot.houseZone.d - 1) / 2),
+    }
+    const joe = this.citizens.seedFounder({
+      id: JOE_ID, householdId: 'household_joe', displayName: 'Joe the Crab',
+      plotId: plot.id, plotName: 'Driftwood Cove', home, kind: 'crab', nowMs: JOE_BORN_MS, spd: 0.6,
+    })
+    if (joe) this.citizens.setTarget(JOE_ID, { x: plot.doorX, y: plot.doorY }) // start him strolling from his door
+  }
+
   /** Assign a free lot to a citizen as their home, and send their avatar walking to the door. */
   assignLot(citizenId: string, lotId: string): boolean {
     const lot = this.neighborhood.lots.find((l) => l.id === lotId)
@@ -334,6 +400,79 @@ export class ColonyRuntime {
     return true
   }
 
+  /** Spec 077 P4 — the House Builder URL for a lot, seeded with the plot's REAL house-zone tile count,
+   *  its houseSeed and the owner's citizen id. A stored blueprint rides along as bp= so re-opening the
+   *  builder loads the citizen's current design for editing. Null for an unowned lot. */
+  builderUrl(lotId: string): string | null {
+    const lot = this.neighborhood.lots.find((l) => l.id === lotId)
+    if (!lot || !lot.ownerCitizenId) return null
+    const q = new URLSearchParams({
+      citizenId: lot.ownerCitizenId,
+      lotId: lot.id,
+      w: String(lot.houseZone.w),
+      d: String(lot.houseZone.d),
+      seed: String(lot.houseSeed >>> 0),
+    })
+    if (lot.blueprint) q.set('bp', lot.blueprint)
+    return `/builder.html?${q.toString()}`
+  }
+
+  /** Spec 077 P4 — open the House Builder for a lot in a popup. The popup posts blueprint_saved back
+   *  to this window (the constructor listens), which validates + stores + raises the house. */
+  openBuilder(lotId: string): boolean {
+    const url = this.builderUrl(lotId)
+    if (!url || typeof window === 'undefined') return false
+    window.open(url, `citylife_builder_${lotId}`, 'width=1280,height=800')
+    return true
+  }
+
+  /** Spec 077 P4 — accept an authored blueprint for a lot: validate the script, store it on the parcel
+   *  AND the owning citizen, then raise the house (materials + labour gated — when the colony cannot
+   *  afford it the blueprint stays stored and the Build button raises it later). Re-running on a built
+   *  lot re-renders the house from the new script (the renderer keys its rebuild on the blueprint). */
+  applyBlueprint(lotId: string, script: string): boolean {
+    const lot = this.neighborhood.lots.find((l) => l.id === lotId)
+    if (!lot || !lot.ownerCitizenId) return false
+    if (!validateBlueprint(script).ok) return false
+    lot.blueprint = script
+    const c = this.citizens.byId(lot.ownerCitizenId)
+    if (c) c.blueprint = script
+    // Spec 077 P4.5 — persist the accepted design: locally always (reload-proof offline), and to the
+    // citylife backend best-effort as the player (the cross-device copy; a 404 just means the
+    // kooker-side endpoint has not shipped yet — never blocks the game).
+    saveBlueprintLocal(lotId, lot.ownerCitizenId, script)
+    void saveBlueprintBackend(lotId, lot.ownerCitizenId, script).then((r) => {
+      if (!r.ok) console.warn('[citylife] blueprint backend save deferred:', r.error)
+    })
+    if (!lot.built) this.buildHouse(lotId) // best-effort; the stored blueprint survives a failed gate
+    this.emit()
+    return true
+  }
+
+  /** Spec 077 P4.5 — restore stored designs onto their lots: the local map immediately (so the houses
+   *  stand before first paint), then the backend layer overlaid when it answers (backend wins — it is
+   *  the cross-device truth). Every script was validated + screened by the store before it gets here. */
+  private restoreBlueprints(): void {
+    const apply = (map: Record<string, { citizenId: string; script: string }>) => {
+      let applied = 0
+      for (const [lotId, entry] of Object.entries(map)) {
+        const lot = this.neighborhood.lots.find((l) => l.id === lotId)
+        if (!lot) continue
+        lot.blueprint = entry.script
+        lot.built = true // the design was accepted and built before; it stands again on reload
+        const c = this.citizens.byId(lot.ownerCitizenId ?? '')
+        if (c) c.blueprint = entry.script
+        applied++
+      }
+      if (applied > 0) this.emit()
+    }
+    const local = loadBlueprintsLocal()
+    apply(local)
+    void fetchBlueprintsBackend().then((backend) => {
+      if (backend) apply(mergeBlueprints(local, backend))
+    })
+  }
+
   /** Build a voxel home on a lot — gated on MATERIALS + a free hand (the Caesar III rule). */
   buildHouse(lotId: string): boolean {
     const lot = this.neighborhood.lots.find((l) => l.id === lotId)
@@ -343,14 +482,22 @@ export class ColonyRuntime {
     if (s.materials < cost || freeLabour(s) < 1) return false
     s.materials -= cost
     lot.built = true
+    // Spec 077 P2 — seed a deterministic house BLUEPRINT (door facing the street) so the home raises as the
+    // fancy greedy-meshed brick house, not the legacy minecraft cottage. The builder route (P3) and the
+    // bot/human-authored script storage (P4) will overwrite this with the citizen's own design.
+    if (!lot.blueprint) {
+      const doorDir = lot.doorY < lot.y ? 'n' : 's'
+      lot.blueprint = defaultBlueprint(lot.houseSeed, doorDir)
+    }
     this.emit()
     return true
   }
 
-  /** Demolish a lot's house (frees the lot, keeps the citizen). Returns the freed owner id, if any. */
+  /** Demolish a lot's house (frees the lot, keeps the citizen). Returns the freed owner id, if any.
+   *  Founder plots (spec 078) are protected — they cannot be demolished. */
   demolishLot(lotId: string): string | null {
     const lot = this.neighborhood.lots.find((l) => l.id === lotId)
-    if (!lot) return null
+    if (!lot || lot.reservedFor) return null
     const owner = lot.ownerCitizenId ?? null
     lot.built = false
     lot.ownerCitizenId = undefined
@@ -766,6 +913,7 @@ export class ColonyRuntime {
           built: l.built,
           owner: l.ownerCitizenId ? (this.citizens.byId(l.ownerCitizenId)?.displayName ?? null) : null,
           ownerId: l.ownerCitizenId ?? null,
+          reserved: !!l.reservedFor, // spec 078 — founder plots show a nameplate and hide demolish/evict
         }))
         // Build affordability so the Build button can tell the truth instead of silently failing.
         const cost = COLONY.build.matNeighborHouse

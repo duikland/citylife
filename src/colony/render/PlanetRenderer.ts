@@ -17,6 +17,9 @@ import { cellZone, ZONE_COLOR, VIBE_COLOR, type Plot } from '../cityPlan'
 import { homeLiveability, surveyAvailable, liveabilityTint, porterStatus } from '../build'
 import type { Neighborhood } from '../neighborhood'
 import { buildVoxelHouse, BLOCK_COLOR, type VoxelHouse, type DoorDir } from '../voxelHouse'
+import { compileBlueprint } from '../houseBuilder'
+import { greedyMesh } from './voxelMesh'
+import { defaultBlueprint, type Zone } from '../neighborhood'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
 export type CameraPreset = 'street' | 'district' | 'planet'
@@ -29,6 +32,8 @@ export interface AvatarView {
   y: number
   heading: number
   hasPod: boolean
+  /** Spec 078 — body kind: humans draw as the capsule avatar, Joe the founder draws as the crab mesh. */
+  kind: 'human' | 'crab'
   /** True for the avatar belonging to the logged-in operator (rendered highlighted). */
   isOperator: boolean
 }
@@ -39,6 +44,8 @@ const SKY_DAY = new THREE.Color(0x0b1022)
 const SKY_NIGHT = new THREE.Color(0x03040a)
 const OCEAN = 0x143a4a
 const SLAB_ROCK = 0x24242f
+// Spec 078 — Joe the Crab's first-person eye height (low to the ground), vs 1.6 for the human avatars.
+const CRAB_EYE = 0.42
 // Spec 076 — instance caps for the homestead neighbourhood (zone pads + spine ribbon; voxel blocks
 // for houses, fences, crops, garden beds and trees across a full band of large parcels).
 const PAD_CAP = 2400
@@ -87,6 +94,9 @@ export class PlanetRenderer {
   // ped pool), movable by the bot, and steppable-into for a live first-person view.
   private avatarMesh!: THREE.InstancedMesh
   private avatarHeadMesh!: THREE.InstancedMesh
+  // Spec 078 — Joe the Crab: one merged, vertex-coloured geometry instanced like the human avatars but
+  // routed here by AvatarView.kind. Shares the roster + roam loop; only the body mesh + eye height differ.
+  private crabMesh!: THREE.InstancedMesh
   private avatarSource?: () => AvatarView[]
   private fpCitizenId: string | null = null
   // Spec 075 — the buildable neighbourhood: lot pads + minecraft-style voxel homes.
@@ -94,6 +104,11 @@ export class PlanetRenderer {
   private lotPadMesh!: THREE.InstancedMesh
   private voxelMesh!: THREE.InstancedMesh
   private voxelCache = new Map<string, VoxelHouse>()
+  // Spec 077 P2 — built houses that carry a blueprint render as ONE merged greedy-meshed BufferGeometry each
+  // (fancy brick masonry, not minecraft cubes), parented in this group at a tile-local origin. Lots without
+  // a blueprint keep the legacy per-block instanced path above. Rebuilt with the neighbourhood signature.
+  private mergedHouseGroup = new THREE.Group()
+  private mergedHouseMat!: THREE.MeshStandardMaterial
   private lastNbhdSig = ''
   private settlerGroup = new THREE.Group()
   private lastSettlerCount = -1
@@ -531,11 +546,14 @@ export class PlanetRenderer {
   }
 
   private buildColonyLayer() {
-    // Roads drape on the terrain (elevation-compatible): a continuous asphalt ribbon with a
-    // dashed centre line, rebuilt as the network grows. Shared corner heights => no stair-steps.
+    // Roads drape on the terrain (elevation-compatible): a continuous PACKED-EARTH ribbon with a
+    // dashed centre line, rebuilt as the network grows. Warm gravel-earth, not an asphalt-black gash,
+    // so the network sits in the landscape like the residential lane does.
     this.roadSurfaceMesh = new THREE.Mesh(
       new THREE.BufferGeometry(),
-      new THREE.MeshStandardMaterial({ color: 0x2e2e34, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
+      // A faint warm emissive keeps the bed readable under the void sky — without it the earth tone
+      // crushes to a black gash on the shadow side, which is what the operator flagged.
+      new THREE.MeshStandardMaterial({ color: 0x7a6750, roughness: 1, metalness: 0, side: THREE.DoubleSide, emissive: 0x4a3c2c, emissiveIntensity: 0.32 }),
     )
     this.roadSurfaceMesh.frustumCulled = false
     this.scene.add(this.roadSurfaceMesh)
@@ -600,10 +618,20 @@ export class PlanetRenderer {
     this.avatarHeadMesh.castShadow = true
     this.avatarHeadMesh.frustumCulled = false
     this.scene.add(this.avatarHeadMesh)
+    // Spec 078 — Joe the Crab's body: one merged, vertex-coloured geometry drawn by a single material.
+    const crabGeo = this.makeCrabGeometry()
+    this.crabMesh = new THREE.InstancedMesh(crabGeo, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.6, metalness: 0.05 }), AV_CAP)
+    this.crabMesh.count = 0
+    this.crabMesh.castShadow = true
+    this.crabMesh.frustumCulled = false
+    this.scene.add(this.crabMesh)
 
     // Spec 076 — homestead ground tiles (zone pads + the spine carriageway/verge) + voxel blocks
     // (the house, fences, farm crops, garden beds, trees). Caps raised for the larger parcels.
-    const padGeo = new THREE.BoxGeometry(1, 0.06, 1)
+    // Deep pads: the tile body extends well below its top face, so on sloped ground the sides reach
+    // down into the terrain — adjacent stepped tiles read as one merged surface and a tile edge over a
+    // dip reads as built-up earth, never a floating wafer (operator feedback).
+    const padGeo = new THREE.BoxGeometry(1, 0.6, 1)
     this.lotPadMesh = new THREE.InstancedMesh(padGeo, new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 }), PAD_CAP)
     this.lotPadMesh.count = 0
     this.lotPadMesh.receiveShadow = true
@@ -616,6 +644,12 @@ export class PlanetRenderer {
     this.voxelMesh.receiveShadow = true
     this.voxelMesh.frustumCulled = false
     this.scene.add(this.voxelMesh)
+    // Spec 077 P2 — the merged greedy-meshed brick houses. One shared vertex-colour material (the brick
+    // banding lives in the per-vertex colours), flat-shaded so each merged quad reads as a crisp masonry
+    // face. Slightly rougher than the instanced blocks so the surface reads as fired brick.
+    this.mergedHouseMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.02, flatShading: true })
+    this.mergedHouseGroup.frustumCulled = false
+    this.scene.add(this.mergedHouseGroup)
 
     // Spec 073 — goods piled at the Porter Sheds (crates + sacks), and the porter handcarts on the roads.
     const crateGeo = new THREE.BoxGeometry(0.34, 0.34, 0.34)
@@ -920,24 +954,62 @@ export class PlanetRenderer {
     return Math.max(0, avg)
   }
 
-  // Rebuild road geometry: asphalt quads draped on the terrain + dashed centre lines.
+  // Rebuild road geometry: packed-earth quads draped on the terrain + dashed centre lines.
+  // Two things keep the ribbon reading as a GRADED ROADBED instead of a floating plank (the operator's
+  // complaint): (1) shared corner heights are RELAXED toward their road-network neighbours, so grades
+  // ease in and out smoothly; (2) every boundary edge gets an embankment SKIRT dropping toward the
+  // ground, so wherever the bed bridges a hollow it reads as built-up earthworks, never floating.
   private rebuildRoads() {
     const s = this.sim.state
     const g = gridOrigin(s)
     const B = COLONY.build.block
     const LIFT = 0.05
+    const SKIRT = 0.9 // embankment depth below the bed edge
     const surf: number[] = []
     const line: number[] = []
     const tri = (arr: number[], a: number[], b: number[], c: number[]) => arr.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!)
     const quad = (arr: number[], a: number[], b: number[], c: number[], d: number[]) => { tri(arr, a, c, b); tri(arr, b, c, d) }
-    const corner = (gx: number, gy: number): number[] => [this.wx(gx) - 0.5, this.cornerY(gx, gy) + LIFT, this.wz(gy) - 0.5]
+    const roadKey = (x: number, y: number) => `${x},${y}`
+    const roadSet = new Set(s.roads.map((r) => roadKey(r.x, r.y)))
+    // 1) collect every unique corner of the network with its terrain-sampled base height
+    const ck = (gx: number, gy: number) => `${gx},${gy}`
+    const heights = new Map<string, number>()
+    for (const r of s.roads) {
+      for (const [gx, gy] of [[r.x, r.y], [r.x + 1, r.y], [r.x, r.y + 1], [r.x + 1, r.y + 1]] as const) {
+        const k = ck(gx, gy)
+        if (!heights.has(k)) heights.set(k, this.cornerY(gx, gy))
+      }
+    }
+    // 2) relax each corner toward its network neighbours — two passes ease the grade transitions
+    for (let pass = 0; pass < 2; pass++) {
+      const next = new Map<string, number>()
+      for (const [k, h] of heights) {
+        const [gx, gy] = k.split(',').map(Number) as [number, number]
+        let sum = 0, n = 0
+        for (const [nx, ny] of [[gx + 1, gy], [gx - 1, gy], [gx, gy + 1], [gx, gy - 1]] as const) {
+          const nh = heights.get(ck(nx, ny))
+          if (nh !== undefined) { sum += nh; n++ }
+        }
+        next.set(k, n > 0 ? h * 0.5 + (sum / n) * 0.5 : h)
+      }
+      for (const [k, h] of next) heights.set(k, h)
+    }
+    const cornerAt = (gx: number, gy: number): number[] => [this.wx(gx) - 0.5, (heights.get(ck(gx, gy)) ?? this.cornerY(gx, gy)) + LIFT, this.wz(gy) - 0.5]
+    // 3) surface + skirts
     for (const r of s.roads) {
       const x = r.x, y = r.y
-      quad(surf, corner(x, y), corner(x + 1, y), corner(x, y + 1), corner(x + 1, y + 1))
+      const c00 = cornerAt(x, y), c10 = cornerAt(x + 1, y), c01 = cornerAt(x, y + 1), c11 = cornerAt(x + 1, y + 1)
+      quad(surf, c00, c10, c01, c11)
+      const drop = (p: number[]): number[] => [p[0]!, p[1]! - SKIRT, p[2]!]
+      // a skirt on every edge not shared with another road cell
+      if (!roadSet.has(roadKey(x, y - 1))) quad(surf, c00, c10, drop(c00), drop(c10))
+      if (!roadSet.has(roadKey(x, y + 1))) quad(surf, c01, c11, drop(c01), drop(c11))
+      if (!roadSet.has(roadKey(x - 1, y))) quad(surf, c00, c01, drop(c00), drop(c01))
+      if (!roadSet.has(roadKey(x + 1, y))) quad(surf, c10, c11, drop(c10), drop(c11))
       const onV = ((((x - g.x) % B) + B) % B) === 0 // on a north-south grid line
       const onH = ((((y - g.y) % B) + B) % B) === 0 // on an east-west grid line
       if (onV === onH) continue // intersection or off-grid fill -> no centre dash
-      const h = this.smoothRoadY(x, y) + LIFT + 0.03
+      const h = (c00[1]! + c10[1]! + c01[1]! + c11[1]!) / 4 + 0.03
       const wx = this.wx(x), wz = this.wz(y)
       if (onV) quad(line, [wx - 0.05, h, wz - 0.3], [wx + 0.05, h, wz - 0.3], [wx - 0.05, h, wz + 0.3], [wx + 0.05, h, wz + 0.3])
       else quad(line, [wx - 0.3, h, wz - 0.05], [wx + 0.3, h, wz - 0.05], [wx - 0.3, h, wz + 0.05], [wx + 0.3, h, wz + 0.05])
@@ -1145,10 +1217,11 @@ export class PlanetRenderer {
       const a = this.avatarSource().find((x) => x.id === this.fpCitizenId)
       if (a) {
         const t = this.sim.state.terrain
-        const eye = Math.max(0, t.worldY(Math.round(a.x), Math.round(a.y))) + 1.6
+        const isCrab = a.kind === 'crab' // spec 078 — Joe sees the world from down at crab height
+        const eye = Math.max(0, t.worldY(Math.round(a.x), Math.round(a.y))) + (isCrab ? CRAB_EYE : 1.6)
         this.camera.position.set(this.wx(a.x), eye, this.wz(a.y))
         const lx = a.x + Math.cos(a.heading) * 4, ly = a.y + Math.sin(a.heading) * 4
-        const lyW = Math.max(0, t.worldY(Math.round(lx), Math.round(ly))) + 1.2
+        const lyW = Math.max(0, t.worldY(Math.round(lx), Math.round(ly))) + (isCrab ? CRAB_EYE - 0.05 : 1.2)
         this.camera.lookAt(this.wx(lx), lyW, this.wz(ly))
         this.camera.updateMatrixWorld()
       } else {
@@ -1314,23 +1387,34 @@ export class PlanetRenderer {
     if (!this.neighborhood || !this.lotPadMesh || !this.voxelMesh) return
     const n = this.neighborhood
     const lots = n.parcels
-    const sig = lots.map((l) => `${l.id}:${l.ownerCitizenId ? 1 : 0}:${l.built ? 1 : 0}`).join('|') + `#${n.carriage.length}`
+    // Spec 077 — the blueprint is part of the signature so a newly authored/edited script triggers a rebuild.
+    const sig = lots.map((l) => `${l.id}:${l.ownerCitizenId ? 1 : 0}:${l.built ? 1 : 0}:${l.blueprint ?? ''}`).join('|') + `#${n.carriage.length}`
     if (sig === this.lastNbhdSig) return
     this.lastNbhdSig = sig
+    // Tear down the previous merged brick houses (P2) before rebuilding — dispose their GPU geometry.
+    for (const child of [...this.mergedHouseGroup.children]) {
+      this.mergedHouseGroup.remove(child)
+      const m = child as THREE.Mesh
+      if (m.geometry) m.geometry.dispose()
+    }
     const t = this.sim.state.terrain
     const col = new THREE.Color()
     const BH = 0.56 // block height (the box geometry's y size)
-    const gy = (x: number, y: number) => Math.max(0, t.worldY(Math.round(x), Math.round(y)))
+    // SMOOTHED per-cell ground (5-point average): tiles follow the land's grade without per-cell
+    // flutter. The old single leveled height per homestead left the downhill half of a sloped parcel
+    // floating in the air (operator feedback) — now only the house keeps a leveled foundation.
+    const gy = (x: number, y: number) => Math.max(0, this.smoothRoadY(Math.round(x), Math.round(y)))
+    const PAD_DEPTH = 0.6 // must match padGeo's y size
 
     let p = 0 // pad instance index
     let v = 0 // voxel instance index
-    // A flat ground tile spanning a rect (min-corner zx,zy, size zw x zd) at height hOff. `groundY`, when
-    // given, levels the tile on a fixed foundation height (so a whole homestead sits flush) instead of
-    // sampling per-cell terrain.
+    // A ground tile spanning a rect (min-corner zx,zy, size zw x zd) whose TOP face sits at hOff above
+    // the ground. The deep body sinks into the terrain. `groundY`, when given, levels the tile on a
+    // fixed foundation height (the house slab) instead of sampling the smoothed per-cell terrain.
     const padRect = (zx: number, zy: number, zw: number, zd: number, hOff: number, color: number, groundY?: number) => {
       if (p >= PAD_CAP) return
       const cx = zx + (zw - 1) / 2, cy = zy + (zd - 1) / 2
-      this.dummy.position.set(this.wx(cx), (groundY ?? gy(cx, cy)) + hOff, this.wz(cy))
+      this.dummy.position.set(this.wx(cx), (groundY ?? gy(cx, cy)) + hOff - PAD_DEPTH / 2, this.wz(cy))
       this.dummy.rotation.set(0, 0, 0)
       this.dummy.scale.set(zw, 1, zd)
       this.dummy.updateMatrix()
@@ -1362,62 +1446,47 @@ export class PlanetRenderer {
     // ── each homestead parcel ──
     for (const lot of lots) {
       const fenceColor = lot.fenceType === 'hedge' ? BLOCK_COLOR.hedge : lot.fenceType === 'wall' ? BLOCK_COLOR.stone : BLOCK_COLOR.fence
-      // One leveled foundation height for the whole homestead (averaged front-to-back), so the pads,
-      // fence, crops and house all sit flush — no per-cell flutter or slope clipping.
+      // The HOUSE keeps one leveled foundation height (a real slab); everything else — garden, farm,
+      // driveway, fence — follows the smoothed per-cell terrain like real fields and paths do. The old
+      // single homestead height left the downhill half of a sloped parcel hanging in the air.
       const hcx = lot.houseZone.x + (lot.houseZone.w - 1) / 2, hcy = lot.houseZone.y + (lot.houseZone.d - 1) / 2
-      const fcx = lot.farm.x + (lot.farm.w - 1) / 2, fcy = lot.farm.y + (lot.farm.d - 1) / 2
-      const py = Math.max(0, (gy(hcx, hcy) + gy(fcx, fcy)) / 2)
+      const py = gy(hcx, hcy)
       // surveyed homestead ground (drawn whether or not it is built, so the borders read immediately).
       // Distinct pad heights (garden < farm < house < driveway) avoid coplanar z-fighting.
       padRect(lot.houseZone.x, lot.houseZone.y, lot.houseZone.w, lot.houseZone.d, 0.05, lot.built ? 0x6b5a44 : 0x5c5140, py)
-      padRect(lot.garden.x, lot.garden.y, lot.garden.w, lot.garden.d, 0.038, 0x4f6f33, py)
-      padRect(lot.farm.x, lot.farm.y, lot.farm.w, lot.farm.d, 0.044, 0x6e4a30, py)
-      for (const d of lot.driveway) padCell(d.x, d.y, 0.056, BLOCK_COLOR.path, py)
-      padCell(lot.gate.x, lot.gate.y, 0.056, BLOCK_COLOR.path, py)
-      // the visible parcel border — a fence/hedge/wall ring, raised clear of the pads
-      for (const f of lot.fence) block(f.x, f.y, 0.26, 0.9, 0.26, 0.06, fenceColor, py)
+      for (let yy = lot.garden.y; yy < lot.garden.y + lot.garden.d; yy++) for (let xx = lot.garden.x; xx < lot.garden.x + lot.garden.w; xx++) padCell(xx, yy, 0.038, 0x4f6f33)
+      for (let yy = lot.farm.y; yy < lot.farm.y + lot.farm.d; yy++) for (let xx = lot.farm.x; xx < lot.farm.x + lot.farm.w; xx++) padCell(xx, yy, 0.044, 0x6e4a30)
+      for (const d of lot.driveway) padCell(d.x, d.y, 0.056, BLOCK_COLOR.path)
+      padCell(lot.gate.x, lot.gate.y, 0.056, BLOCK_COLOR.path)
+      // the visible parcel border — a fence/hedge/wall ring riding the land, raised clear of the pads
+      for (const f of lot.fence) block(f.x, f.y, 0.26, 0.9, 0.26, 0.06, fenceColor)
 
       if (!lot.built) continue
-      // worked homestead: farm furrows (alternating crop colour by row)
+      // worked homestead: farm furrows (alternating crop colour by row) riding their own field cells
       for (let yy = lot.farm.y; yy < lot.farm.y + lot.farm.d; yy++) {
         for (let xx = lot.farm.x; xx < lot.farm.x + lot.farm.w; xx++) {
-          block(xx, yy, 0.82, 0.5, 0.82, 0.05, yy % 2 === 0 ? BLOCK_COLOR.crop : BLOCK_COLOR.cropAlt, py)
+          block(xx, yy, 0.82, 0.5, 0.82, 0.05, yy % 2 === 0 ? BLOCK_COLOR.crop : BLOCK_COLOR.cropAlt)
         }
       }
       // garden veg beds on alternate cells
       for (let yy = lot.garden.y; yy < lot.garden.y + lot.garden.d; yy++) {
         for (let xx = lot.garden.x; xx < lot.garden.x + lot.garden.w; xx++) {
-          if ((xx + yy) % 2 === 0) block(xx, yy, 0.78, 0.38, 0.78, 0.05, BLOCK_COLOR.crop, py)
+          if ((xx + yy) % 2 === 0) block(xx, yy, 0.78, 0.38, 0.78, 0.05, BLOCK_COLOR.crop)
         }
       }
       // a fruit tree at one garden corner + a well at the other
       const tx = lot.garden.x, ty = lot.garden.y
-      block(tx, ty, 0.28, 1.1, 0.28, 0.05, BLOCK_COLOR.trunk, py)
-      block(tx, ty, 0.95, 0.95, 0.95, 0.05 + BH * 1.1, BLOCK_COLOR.leaf, py)
-      block(lot.garden.x + lot.garden.w - 1, lot.garden.y + lot.garden.d - 1, 0.6, 0.7, 0.6, 0.05, BLOCK_COLOR.well, py)
+      block(tx, ty, 0.28, 1.1, 0.28, 0.05, BLOCK_COLOR.trunk)
+      block(tx, ty, 0.95, 0.95, 0.95, 0.05 + BH * 1.1, BLOCK_COLOR.leaf)
+      block(lot.garden.x + lot.garden.w - 1, lot.garden.y + lot.garden.d - 1, 0.6, 0.7, 0.6, 0.05, BLOCK_COLOR.well)
 
-      // the house, set back and centred in its house-zone, grown to fill it. Floor the origin so the
-      // block grid stays aligned to cells (no half-cell offset when zone and house widths differ in parity).
+      // the house, set back and centred in its house-zone, grown to fill it.
       const doorDir: DoorDir = lot.doorY < lot.y ? 'n' : 's'
-      const cacheKey = `${lot.id}:${doorDir}:${lot.houseZone.w}x${lot.houseZone.d}`
-      let house = this.voxelCache.get(cacheKey)
-      if (!house) {
-        house = buildVoxelHouse(lot.houseSeed, doorDir, { maxW: lot.houseZone.w, maxD: lot.houseZone.d })
-        this.voxelCache.set(cacheKey, house)
-      }
-      const originX = lot.houseZone.x + Math.floor((lot.houseZone.w - house.w) / 2)
-      const originY = lot.houseZone.y + Math.floor((lot.houseZone.d - house.d) / 2)
-      for (const b of house.blocks) {
-        if (v >= VOX_CAP) break
-        this.dummy.position.set(this.wx(originX + b.x), py + 0.05 + b.z * BH + BH / 2, this.wz(originY + b.y))
-        this.dummy.rotation.set(0, 0, 0)
-        this.dummy.scale.set(1, 1, 1)
-        this.dummy.updateMatrix()
-        this.voxelMesh.setMatrixAt(v, this.dummy.matrix)
-        col.setHex(BLOCK_COLOR[b.kind])
-        this.voxelMesh.setColorAt(v, col)
-        v++
-      }
+      // Spec 077 — every built house raises a FANCY BRICK home through the merged greedy-meshed path:
+      // an authored blueprint when the parcel carries one (P3/P4), else a deterministic defaultBlueprint
+      // from the house seed. The script compiles to the fine micro-occupancy and greedy-meshes to ONE
+      // merged geometry with the masonry tint banding baked into the vertex colours.
+      this.addMergedHouse(lot.houseZone, lot.blueprint ?? defaultBlueprint(lot.houseSeed, doorDir), lot.houseSeed, py)
     }
 
     this.lotPadMesh.count = p
@@ -1426,6 +1495,30 @@ export class PlanetRenderer {
     this.voxelMesh.count = v
     this.voxelMesh.instanceMatrix.needsUpdate = true
     if (this.voxelMesh.instanceColor) this.voxelMesh.instanceColor.needsUpdate = true
+  }
+
+  /** Spec 077 P2 — compile a blueprint to its micro-occupancy, greedy-mesh it to ONE merged BufferGeometry,
+   *  and parent it at the house-zone's min-corner. The mesh is built in tile-local units (small vertex
+   *  coordinates): each micro-block is 1/n of a plot cell across, voxelY tall, so a 2-storey home is a
+   *  sensible height. The merged geometry reads as fancy brick masonry — the per-course tint banding is
+   *  carried in the vertex colours and the flat per-quad normals keep every face crisp. */
+  private addMergedHouse(zone: Zone, script: string, seed: number, groundY: number): void {
+    let compiled
+    try {
+      compiled = compileBlueprint(script, { w: zone.w, d: zone.d, seed })
+    } catch {
+      return // a malformed script never crashes the renderer — the lot simply draws no house
+    }
+    const VOXEL_Y = 0.22 // micro-block height in world units: gives each storey real presence so a home isn't squat
+    const { geometry } = greedyMesh(compiled.blocks, { n: compiled.n, cell: 1, voxelY: VOXEL_Y })
+    const mesh = new THREE.Mesh(geometry, this.mergedHouseMat)
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    mesh.frustumCulled = false
+    // Parent at the house-zone's min-corner: cell `zone.x` spans world [wx(zone.x)-0.5, +0.5], and the mesh's
+    // local origin is the micro-grid corner, so offset by half a cell to seat it flush on the zone.
+    mesh.position.set(this.wx(zone.x) - 0.5, groundY + 0.05, this.wz(zone.y) - 0.5)
+    this.mergedHouseGroup.add(mesh)
   }
 
   /** P1 — step the camera INTO a citizen for a live first-person view (the operator looking through their bot's
@@ -1444,15 +1537,71 @@ export class PlanetRenderer {
     return this.fpCitizenId
   }
 
+  /** Spec 078 — build Joe the Crab as ONE merged, vertex-coloured BufferGeometry (so a single
+   *  vertexColors + flatShading material draws him). Local space: origin at the ground plane, FRONT = +Z
+   *  (the shared avatar heading rotation then faces his eyes + claws down his travel direction). Locked to
+   *  his portrait: an orange-red shell, two stalked eyes, two pincer claws, six legs, a blue-white headset
+   *  with exactly one yellow lightning bolt on a single earcup. */
+  private makeCrabGeometry(): THREE.BufferGeometry {
+    const parts: THREE.BufferGeometry[] = []
+    const tint = new THREE.Color()
+    const add = (
+      g: THREE.BufferGeometry, hex: number,
+      pos: [number, number, number], rot?: [number, number, number], scale?: [number, number, number],
+    ) => {
+      if (scale) g.scale(scale[0], scale[1], scale[2])
+      if (rot) { g.rotateX(rot[0]); g.rotateY(rot[1]); g.rotateZ(rot[2]) }
+      g.translate(pos[0], pos[1], pos[2])
+      const count = g.attributes.position!.count
+      const colors = new Float32Array(count * 3)
+      tint.setHex(hex)
+      for (let i = 0; i < count; i++) { colors[i * 3] = tint.r; colors[i * 3 + 1] = tint.g; colors[i * 3 + 2] = tint.b }
+      g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+      parts.push(g)
+    }
+    const SHELL = 0xe2562f, SHELL_DK = 0xc23f1f, EYE_W = 0xf6f6f6, EYE_P = 0x101010
+    const BAND = 0xdfe7f2, CUP = 0x2f6fd0, BOLT = 0xf4c020
+    // shell — a flattened dome, wider across (x) than deep (z)
+    add(new THREE.SphereGeometry(0.30, 14, 10), SHELL, [0, 0.26, 0], undefined, [1.25, 0.6, 1.0])
+    // eyes — two forward stalks (+z) each capped with a white eyeball + dark pupil
+    for (const s of [-1, 1]) {
+      add(new THREE.CylinderGeometry(0.024, 0.024, 0.16, 6), SHELL_DK, [s * 0.12, 0.36, 0.18], [0.55, 0, 0])
+      add(new THREE.SphereGeometry(0.062, 8, 6), EYE_W, [s * 0.12, 0.46, 0.25])
+      add(new THREE.SphereGeometry(0.03, 6, 6), EYE_P, [s * 0.12, 0.47, 0.30])
+    }
+    // claws — an upper arm reaching forward-out + a two-prong pincer (mirrored)
+    for (const s of [-1, 1]) {
+      add(new THREE.BoxGeometry(0.10, 0.10, 0.26), SHELL, [s * 0.30, 0.18, 0.22])
+      add(new THREE.BoxGeometry(0.12, 0.16, 0.12), SHELL, [s * 0.34, 0.20, 0.40])
+      add(new THREE.BoxGeometry(0.05, 0.05, 0.16), SHELL_DK, [s * 0.34, 0.26, 0.50])
+      add(new THREE.BoxGeometry(0.05, 0.05, 0.13), SHELL_DK, [s * 0.34, 0.16, 0.49])
+    }
+    // legs — three per side, thin cylinders splayed down-out to the ground
+    for (const s of [-1, 1]) {
+      for (const dz of [-0.16, 0.02, 0.18]) {
+        add(new THREE.CylinderGeometry(0.02, 0.02, 0.26, 5), SHELL_DK, [s * 0.34, 0.10, dz], [0, 0, s * 0.95])
+      }
+    }
+    // headset — a half-torus band arching over the top (side to side) + two earcups
+    add(new THREE.TorusGeometry(0.28, 0.03, 6, 18, Math.PI), BAND, [0, 0.27, 0])
+    for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 14), CUP, [s * 0.28, 0.27, 0], [0, 0, Math.PI / 2])
+    // exactly ONE yellow lightning accent, on the +x earcup only (matches his portrait)
+    add(new THREE.BoxGeometry(0.05, 0.11, 0.025), BOLT, [0.32, 0.30, 0], [0, 0, 0.35])
+    const merged = mergeGeometries(parts, false)
+    for (const p of parts) p.dispose()
+    return merged
+  }
+
   /** P1 — draw the citizen avatars at their live roster positions. The one the operator owns glows cyan; the
-   *  citizen currently being stepped-into is hidden (the camera is inside it). */
+   *  citizen currently being stepped-into is hidden (the camera is inside it). Spec 078 — citizens whose
+   *  kind is 'crab' (Joe) draw into the crab mesh instead of the human capsule + head. */
   private updateAvatars() {
-    if (!this.avatarMesh || !this.avatarHeadMesh || !this.avatarSource) return
+    if (!this.avatarMesh || !this.avatarHeadMesh || !this.crabMesh || !this.avatarSource) return
     const list = this.avatarSource()
     const t = this.sim.state.terrain
     const n = Math.min(list.length, 64)
     const col = new THREE.Color()
-    let drawn = 0
+    let drawn = 0, crab = 0
     for (let i = 0; i < n; i++) {
       const a = list[i]!
       if (a.id === this.fpCitizenId) continue // hide the avatar we are looking out of
@@ -1461,17 +1610,24 @@ export class PlanetRenderer {
       this.dummy.rotation.set(0, -a.heading + Math.PI / 2, 0)
       this.dummy.scale.set(1, 1, 1)
       this.dummy.updateMatrix()
-      this.avatarMesh.setMatrixAt(drawn, this.dummy.matrix)
-      this.avatarHeadMesh.setMatrixAt(drawn, this.dummy.matrix)
-      col.setHex(a.isOperator ? 0x66e0ff : a.hasPod ? 0x9f86d8 : 0xc0b0e0)
-      this.avatarMesh.setColorAt(drawn, col)
-      drawn++
+      if (a.kind === 'crab') {
+        this.crabMesh.setMatrixAt(crab, this.dummy.matrix)
+        crab++
+      } else {
+        this.avatarMesh.setMatrixAt(drawn, this.dummy.matrix)
+        this.avatarHeadMesh.setMatrixAt(drawn, this.dummy.matrix)
+        col.setHex(a.isOperator ? 0x66e0ff : a.hasPod ? 0x9f86d8 : 0xc0b0e0)
+        this.avatarMesh.setColorAt(drawn, col)
+        drawn++
+      }
     }
     this.avatarMesh.count = drawn
     this.avatarMesh.instanceMatrix.needsUpdate = true
     if (this.avatarMesh.instanceColor) this.avatarMesh.instanceColor.needsUpdate = true
     this.avatarHeadMesh.count = drawn
     this.avatarHeadMesh.instanceMatrix.needsUpdate = true
+    this.crabMesh.count = crab
+    this.crabMesh.instanceMatrix.needsUpdate = true
   }
 
   /** Spec 073 — the Porter Sheds made visible: goods pile up as crates (materials) + sacks (food) beside each shed, growing and

@@ -32,12 +32,25 @@ must read as deliberate low-poly architecture, NOT minecraft cubes.
 
 ## Rules and data
 
-- Sub-cell grid resolution N = 4 subdivisions per axis per plot cell (4x4x4 = 64 micro-blocks per
-  cell). Detailed enough for thin walls, steps and recessed doors; cheap enough to greedy-mesh under
-  50ms and stay under VOX_CAP 6000. N = 8 is rejected (blows the budget across five homesteads).
+- Sub-cell grid resolution: a config tunable HOUSE_VOXEL_N, default 6 (6x6x6 = 216 micro-blocks per
+  cell), able to rise to 8 for the finest brick detail. The block COUNT no longer drives draw calls
+  because greedy meshing collapses a flat wall to a few quads regardless of N, so the old VOX_CAP
+  budget concern is gone — the finer grid exists for masonry detail, not performance. Fine enough that
+  a single brick is a small block and a wall is several brick courses tall.
+- AESTHETIC GOAL: FANCY BRICK HOUSES. The operator wants nice, detailed homes that read as MASONRY,
+  not flat low-poly planes and not chunky minecraft cubes. So walls are built from small bricks with
+  per-course (or per-brick) COLOUR VARIATION and a brick-bond offset, optionally a subtle mortar
+  recess, so the merged surface reads as brickwork. Greedy meshing is for PERFORMANCE ONLY (one merged
+  geometry per house) and must NOT flatten the brick detail — preserve the per-course colour banding
+  via vertex colours (or a brick pattern), so the wall still looks like bricks after merging.
+- MULTI-STOREY + FANCY FACADES. wallH carries floors: the bot may stack 1 to 3 storeys, so a modest
+  footprint becomes a real house. Facades get framed windows, a proper panelled door, a peaked or
+  hipped roof with eaves, optional corner trim or beams and a chimney. A 9x6 footprint times 2 to 3
+  brick storeys is a substantial home WITHOUT needing a bigger map.
 - Block kinds extend the existing union (floor wall window roof door bed table plus the homestead
-  kinds) with micro-architecture kinds: step, beam, glassRail, water (pools), tile (patio). Each maps
-  to a colour in BLOCK_COLOR and a 3-bit code in the packed occupancy grid (air = 0).
+  kinds) with brick + brickAlt (two tints for the bond) and micro-architecture kinds: step, beam,
+  glassRail, water (pools), tile (patio), trim, chimney. Each maps to a colour in BLOCK_COLOR and a
+  small code in the packed occupancy grid (air = 0).
 - Room kinds, exactly five: living, bedroom, garage, patio, pool. Each RoomSpec carries name, kind,
   x, y, w, d in plot-cell coordinates plus furniture hints. pool fills its floor with water and a tile
   rim; patio is roofless tile plus a low glassRail; garage is a wide door with no interior walls;
@@ -105,3 +118,147 @@ stored script.
 - P7 (optional) — Headless container parity (a thin Node service exposing compile/validate/report).
 
 Each slice ships on mechanics/dev, passes typecheck plus vitest, and is visible on :5188.
+
+## Progress log (the /goal loop appends one entry per slice)
+
+### 2026-06-10 — Slice: wrap-up + founder-plot protection
+DONE
+- P0 (DSL), P1 (compiler), P2 (greedy mesher + merged brick render) shipped earlier on this PR.
+- Brick-house shape fix: the mesher had the storey scale on the wrong axis (compiler is Z-up), so every
+  house rendered tipped on its side as a tall slab; fixed with a Z-up to Y-up rotation + peaked hipped
+  roofs, dark shingle colour, cottage default footprint.
+- Spec 078: Joe the Crab is a permanent founding resident — reserved shore parcel (Parcel.reservedFor),
+  authored 077 house, roaming crab avatar, crab-height first-person.
+- This slice: founder plots are first-class — the HUD shows Joe the Crab 🦀 · Founder with a tooltip,
+  Assign/Demolish/Evict are hidden for reserved plots, and demolishLot refuses them at the API level
+  (demolishLotAndCitizen inherits the guard). PR #40 body text prepared in .pr40-body.tmp (gh CLI is
+  unauthenticated here — apply with gh auth login then gh pr edit 40 --body-file .pr40-body.tmp).
+- Verified live on :5188 (HUD row text + buttons + API guard probed in-page); typecheck clean, 578 tests.
+
+NEXT
+- P3 builder route: /builder.html + routes/builderMain.tsx — a 2D top-down floor-plan editor + live 3D
+  greedy-meshed preview over the shared cores; URL-seeded (citizenId/lotId/w/d/seed); every control
+  carries data-build-action; Accept validates + postMessages blueprint_saved with the DSL.
+- Then P4 game wiring, backend blueprint persistence, per-citizen variety (no two houses alike), and the
+  capped bot self-design loop.
+
+### 2026-06-10 — Slice: P3 the House Builder route
+DONE
+- builder.html + src/colony/builder/ — a visual house designer over the SAME shared cores the game
+  renders with (blueprintScript parse/validate, houseBuilder compile, voxelMesh greedy mesh), so the
+  preview is pixel-for-pixel what the game will raise.
+- blueprintEdit.ts: the PURE edit grammar (defaultDesign, addRoom, removeRoom, moveRoom, resizeRoom,
+  toggleWin, setRoomKind, cycleDoor, setWallH) — every UI control and every future bot action maps to
+  one clamped immutable function; 8 new node tests are the behavioural contract.
+- BuilderApp: 2D top-down SVG floor plan (rooms colour-coded, click to select, door marker), full
+  control row (move/resize/window/kind/delete, door cycle, storeys), live validation + material
+  estimate, the DSL script visible, live 3D orbitable brick preview; URL-seeded
+  (citizenId/lotId/w/d/seed, optional bp to re-edit); Accept posts blueprint_saved {citizenId, lotId,
+  script} to the opener. Every control carries data-build-action for Playwright/bot driving.
+- Bot-burst hardening found by driving the UI exactly as a bot would: synchronous click bursts
+  collapsed to one edit via stale React closures — fixed with functional setState plus a ref-backed
+  selection, then re-verified with a worst-case no-yield burst (pool driven corner-to-corner, clamps
+  exact).
+- vite build now ships builder.html (multipage rollup input).
+- Verified live on :5188: full bot drive (add pool/patio, move runs, storey up, accept) produced the
+  exact expected DSL and the postMessage; typecheck clean, 586 tests pass (30 files).
+
+NEXT
+- P4 game wiring: a Build House button on an owned unbuilt homestead opens /builder.html with the
+  plot's real w/d/seed; the game listens for blueprint_saved, validates the script, stores it on the
+  parcel (+ citizen), raises the house from it; re-opening passes bp= so the stored script loads for
+  editing. After that: backend persistence of the blueprint via the /kooker proxy.
+
+### 2026-06-10 — Slice: Roads v2 (operator feedback — roads and paths sucked)
+DONE
+- Planning: developBlock no longer stamps rigid straight block frames across whatever terrain is
+  there. Each frame EDGE is routed with the same least-cost pathfinder the residential street uses
+  (cellOk + slopeWeight 0.6), so roads contour around water, dips and steep ground; on flat land the
+  cheapest route IS the straight line so the clean grid survives. Straight-line fallback (laying only
+  good cells) when an edge cannot be routed.
+- Rendering: shared road-corner heights are RELAXED toward their network neighbours (two passes) so
+  grades ease in and out; every boundary edge gets an embankment SKIRT dropping toward the ground so
+  a bed crossing a hollow reads as built-up earthworks, never a floating plank; surface recoloured
+  from asphalt black to warm packed earth with a faint emissive so it stays readable under the void
+  sky instead of crushing to a black gash.
+- 4 new planner tests (dry roads, mostly-buildable ground, determinism, connectedness); 590 tests
+  green; verified live on :5188 with a worst-case straight line injected across the steepest coastal
+  run — the ribbon now hugs and grades the hill with centre dashes, no float, no gash.
+
+NEXT
+- Builder house massing (operator: you can do better): pools/patios should read as OUTDOOR amenities
+  beside a clean house mass, not brick shafts punched through the roof — suppress the perimeter brick
+  ring around roofless rooms on the house edge, slim the roof shell, brighter builder preview light.
+- Then P4 game wiring (Build House button + blueprint storage), backend persistence, per-citizen
+  variety, bot self-design.
+
+### 2026-06-10 — Slice: house massing — pools and patios are real backyards now
+DONE
+- CARVE semantics in the compiler: the LAST room placed OWNS its cells (a deterministic owner grid).
+  A pool dropped onto a bedroom now takes those cells with it — the bedroom's dividers and the roof
+  retreat, so an outdoor room is an open-air cut into the mass, never a brick shaft under a roof hole.
+- Edge pools/patios get a LOW GARDEN WALL (about a third of a storey) on the outer face instead of
+  full-height brick or nothing, so a backyard pool reads as a walled backyard.
+- Dividers, roof bounds, chimney anchoring and amenity surfaces (water, tile, rails) are all
+  owner-aware; the chimney never anchors on a carved-away room.
+- Builder preview polish: brighter hemisphere + sun light, and the initial camera frames the WHOLE
+  house + yard from any pane size (it was cropping to a wall close-up on narrow windows).
+- New compiler test pins the carve contract (water present, nothing above the garden wall in pool
+  columns, no roof overhead). 591 tests green; verified live in the builder with the operator's exact
+  design — the pool corner now reads as a tiled backyard pool open to the sky.
+
+NEXT
+- P4 game wiring: Build House button on an owned unbuilt homestead opens /builder.html seeded with the
+  plot's real houseZone w/d + houseSeed + citizenId/lotId (bp= for re-edit, already supported by the
+  page); the game validates the blueprint_saved postMessage, stores the script on the parcel +
+  citizen, and raises the house. Then backend persistence via the /kooker proxy.
+
+### 2026-06-10 — Slice: P4 game wiring — Design and Re-design from the plot
+DONE
+- runtime.builderUrl(lotId) builds the House Builder URL from the plot's REAL house-zone tile count,
+  houseSeed and owner citizen id, riding the stored blueprint along as bp= so re-opening loads the
+  citizen's current design; runtime.openBuilder(lotId) opens it as a popup.
+- The runtime listens for the blueprint_saved postMessage (same-origin only): the script is validated
+  with validateBlueprint, stored on the parcel AND the owning citizen record, and the house is raised
+  (or rebuilt — the renderer keys its rebuild on the blueprint, so a re-design re-renders live). An
+  invalid script is rejected and never overwrites the stored design. A failed materials/labour gate
+  keeps the blueprint stored for the Build button to raise later.
+- HUD: every owned plot row gets a Design (unbuilt) / Re-design (built, including Joe's founder plot)
+  button.
+- Verified live on :5188: real-click on Re-design opened the builder popup; the accept path was driven
+  with the exact popup message — Joe's blueprint changed on lot + citizen, garbage was rejected, and
+  his house visibly re-rendered as the new one-storey design. 591 tests green.
+
+NEXT
+- P4.5 backend persistence: save the accepted blueprint DSL to the citylife/kooker backend via the
+  /kooker proxy (best-effort, never blocks, like spawnCitizenSubUser); restore on load so a reload
+  regenerates the IDENTICAL house from the stored DSL; localStorage fallback when offline.
+
+### 2026-06-10 — Slice: P4.5 blueprint persistence — a design survives reload
+DONE
+- bot/blueprintStore.ts: two fail-soft layers. LOCAL — a localStorage map keyed by lot id (the
+  settlers saveColony pattern), written on every accepted design. BACKEND — PUT/GET
+  /kooker/api/v1/citylife/blueprints as the logged-in player (the spawnCitizenSubUser best-effort
+  pattern): never blocks, tolerates 404 while the kooker-side endpoint ships separately, and WINS
+  over local on restore (cross-device truth). Every write AND read is gated by validateBlueprint +
+  isPublicSafe, so a corrupt or unsafe stored string can never reach the compiler or the backend.
+- runtime: applyBlueprint persists both layers; restoreBlueprints() (constructor, after seedJoe)
+  re-applies the local map immediately and overlays the backend map when it answers — stored designs
+  raise their houses again on boot.
+- 6 new node tests (localStorage shim): exact round-trip, multi-lot + clear, invalid/unsafe writes
+  refused, tampered storage dropped on load, backend-wins merge. 597 tests green.
+- LIVE ACCEPTANCE VERIFIED on :5188: applied a distinctive design (garage + back-left pool) to Joe's
+  plot via the real blueprint_saved path, hard-reloaded — the lot carries the byte-identical script,
+  the citizen record carries it, and the house stands regenerated from the DSL (screenshot judged).
+- Remaining out-of-process piece: the kooker-side /api/v1/citylife/blueprints endpoint (a
+  kooker-service-user PR, same shape as the citizen-spawn endpoint); until it lands the backend save
+  logs a deferred warning and the local layer carries persistence.
+- Also this session: dev server now binds 127.0.0.1 by default (security, 0e716e3), gateway-URL docs
+  aligned with reality (d1f1876), homestead ground follows the land (9d727b6), multi-agent lane docs
+  (3b7cd65 — delegation experiment since retired by the operator).
+
+NEXT
+- P5 variety: a deterministic per-citizen design generator (seeded from citizenId/houseSeed) varying
+  footprint, room mix, storeys, door, patio/pool/garage so the street is VISIBLY diverse; the
+  newcomer flow uses it instead of one shared defaultBlueprint; uniqueness test over many seeds; a
+  street screenshot must show no two houses alike.

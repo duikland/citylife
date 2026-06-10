@@ -5,8 +5,10 @@ import http from 'node:http'
 import https from 'node:https'
 
 // Vite + Vitest config. Sim/engine tests run in the node environment (no DOM).
-// The kooker gateway URL is kept OUT of this public repo — set KOOKER_GATEWAY in .env.local
-// (see .env.example). Browser -> Vite proxy -> kooker APISIX gateway (avoids CORS).
+// Dev reads KOOKER_GATEWAY from .env.local (see .env.example); the deploy image bakes the public
+// gateway as its default (Dockerfile). The gateway is the same public endpoint the kooker web app
+// calls from browsers — never put credentials or internal cluster hostnames in this repo.
+// Browser -> Vite proxy -> kooker APISIX gateway (avoids CORS).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const kookerGateway = env.KOOKER_GATEWAY || 'http://localhost:8081'
@@ -19,9 +21,20 @@ export default defineConfig(({ mode }) => {
     : new http.Agent({ family: 4 })
   return {
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        // Multipage: the colony game plus the spec-077 House Builder (town.html is the legacy v1 page).
+        input: { index: 'index.html', builder: 'builder.html', town: 'town.html' },
+      },
+    },
     server: {
       port: 5188,
-      host: true,
+      // SECURITY: bind to localhost only by default. A DEV build can auto-login with the operator
+      // creds from .env.local, and a VITE_CITYLIFE_PAT is reachable in the dev runtime, so a server
+      // bound to 0.0.0.0 would let any device on the same LAN open it, auto-login as the operator and
+      // spend the operator's inference. Opt into LAN exposure deliberately with VITE_LAN=1 (e.g. to
+      // test from a phone). Deployed bundles are unaffected (DEV is false, creds are nginx-injected).
+      host: env.VITE_LAN === '1' || env.VITE_LAN === 'true' ? true : '127.0.0.1',
       proxy: {
         '/kooker': {
           target: kookerGateway,

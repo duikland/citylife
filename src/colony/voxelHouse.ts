@@ -9,6 +9,8 @@ export type BlockKind =
   | 'floor' | 'wall' | 'window' | 'roof' | 'door' | 'bed' | 'table'
   // Homestead surroundings (spec 076) — the renderer draws these as 1-cell blocks too.
   | 'soil' | 'crop' | 'cropAlt' | 'grass' | 'fence' | 'hedge' | 'stone' | 'path' | 'trunk' | 'leaf' | 'well'
+  // Fancy-brick house builder (spec 077) — masonry courses plus micro-architecture the compiler emits.
+  | 'brick' | 'brickAlt' | 'step' | 'beam' | 'glassRail' | 'water' | 'tile' | 'trim' | 'chimney'
 export type DoorDir = 'n' | 's' | 'e' | 'w'
 
 export interface Block {
@@ -90,7 +92,7 @@ export const BLOCK_COLOR: Record<BlockKind, number> = {
   floor: 0x6b5a44,
   wall: 0xd9c2a0,
   window: 0x8fd0e6,
-  roof: 0xb24a3a,
+  roof: 0x4a4640,
   door: 0x5a3a22,
   bed: 0x4d8fe0,
   table: 0x8a6a3a,
@@ -106,4 +108,14 @@ export const BLOCK_COLOR: Record<BlockKind, number> = {
   trunk: 0x5a3f28,
   leaf: 0x3d7a3f,
   well: 0x8a8580,
+  // Fancy-brick house builder (spec 077): two brick tints for the bond, plus micro-architecture.
+  brick: 0xa8543a,
+  brickAlt: 0x97462f,
+  step: 0x8a857c,
+  beam: 0x6b4a2e,
+  glassRail: 0xa9dceb,
+  water: 0x3f7fb0,
+  tile: 0xc2b59b,
+  trim: 0xe8e0d0,
+  chimney: 0x7a4030,
 }

@@ -7,6 +7,7 @@
 // the sea. Everything is a pure, deterministic function of the terrain so the layout is reproducible
 // and unit-testable.
 import type { Terrain } from './terrain'
+import type { DoorDir } from './voxelHouse'
 import { cellOk, leastCostPath, type Cell } from './pathfind'
 
 export type FenceType = 'fence' | 'hedge' | 'wall'
@@ -35,8 +36,16 @@ export interface Parcel {
   doorX: number
   doorY: number
   ownerCitizenId?: string
+  /** Spec 078 — a permanently reserved FOUNDER parcel (Joe the Crab). Never auto-assigned to a newcomer
+   *  and not freed by ordinary demolition. */
+  reservedFor?: string
   built: boolean
   houseSeed: number
+  /** Spec 077 — the citizen's authored house blueprint script (the DSL from blueprintScript.ts). When set
+   *  on a BUILT parcel the renderer compiles it and draws the fancy greedy-meshed brick house; with none it
+   *  falls back to the legacy per-block instanced cottage. P3/P4 will store the bot/human-authored script
+   *  here; until then defaultBlueprint() seeds a deterministic one so the merged render path is exercised. */
+  blueprint?: string
   fenceType: FenceType
   /** The house build-zone (the voxel house sits here, set back from the street). */
   houseZone: Zone
@@ -81,8 +90,10 @@ interface ParcelSize {
   gardenDepth: number
   farmDepth: number
 }
-const BIG: ParcelSize = { W: 11, D: 14, setback: 2, houseDepth: 5, gardenDepth: 3, farmDepth: 2 }
-const COMPACT: ParcelSize = { W: 9, D: 11, setback: 1, houseDepth: 4, gardenDepth: 2, farmDepth: 2 }
+// houseDepth bumped (spec 077) so the bot has room for a fancy multi-storey brick home; the depth
+// budget D is unchanged (the garden/farm give up one cell each), so the homestead still reads whole.
+const BIG: ParcelSize = { W: 11, D: 14, setback: 2, houseDepth: 6, gardenDepth: 2, farmDepth: 2 }
+const COMPACT: ParcelSize = { W: 9, D: 11, setback: 1, houseDepth: 5, gardenDepth: 2, farmDepth: 1 }
 const GAP = 3 // empty green cells between adjacent parcels along the street (beyond each fence)
 const MAX_PER_SIDE = 3 // a band of up to 3 large homesteads per side of the spine
 // Offset of the parcel's front fence from the spine centre: carriageway half (1) + verge (1) + 1.
@@ -329,4 +340,25 @@ export function makeNeighborhood(t: Terrain): Neighborhood {
   }
   if (best) return assemble(trimCorridor(t, best.corridor, best.parcels), best.parcels)
   return { spine: [], carriage: [], verge: [], street: [], parcels: [], lots: [] }
+}
+
+/** Spec 077 P2 — a deterministic, valid fallback BLUEPRINT for a built parcel so the fancy greedy-meshed
+ *  brick render path runs before the builder route (P3) and blueprint storage (P4) exist. Pure: a fixed
+ *  function of the parcel seed + its house-zone footprint + door facing. The layout is a real little home —
+ *  a living room across the front, a bedroom to one side, and a patio out back — sized to the zone so the
+ *  rooms tile it with no gaps. The compiler scales these abstract units onto the zone tile count.
+ */
+export function defaultBlueprint(seed: number, doorDir: DoorDir): string {
+  // Abstract blueprint footprint. Keep it small + sane (the compiler scales to the real zone w/d); a 2-storey
+  // wall gives the masonry several brick courses tall. A back patio keeps the home open + interesting.
+  const w = 6
+  const d = 5
+  const wallH = (((seed >>> 6) & 1) === 0) ? 1 : 2 // cosy 1 to 2 storey cottages, never towers
+  // A solid little home: a living room across the front, a bedroom beside it, filling the whole
+  // footprint so the house reads as a deep cottage under a peaked roof (no shallow open patio slab).
+  const rooms = [
+    `room{kind:living x:0 y:0 w:4 d:5 win:1}`,
+    `room{kind:bedroom x:4 y:0 w:2 d:5 win:1}`,
+  ]
+  return `house{w:${w} d:${d} wallH:${wallH} door:${doorDir}} ${rooms.join(' ')}`
 }

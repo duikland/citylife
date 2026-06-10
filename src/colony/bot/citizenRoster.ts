@@ -43,6 +43,12 @@ export interface Citizen {
   heading: number
   /** P1 — walk speed in cells per second. */
   spd: number
+  /** Spec 078 — avatar body kind. Ordinary citizens are 'human'; Joe the founder is a 'crab'. Drives
+   *  which instanced mesh the renderer draws them with and the first-person eye height. */
+  kind: 'human' | 'crab'
+  /** Spec 077 P4 — the citizen's authored house blueprint (the DSL script accepted in the builder).
+   *  Mirrors the parcel's stored script; the backend persistence slice syncs from here. */
+  blueprint?: string
 }
 
 /** Public-safe slice of a Citizen for the HUD / UI / save file. Excludes any field that could carry
@@ -102,8 +108,46 @@ export class CitizenRoster {
       target: { x: plot.x, y: plot.y },
       heading: 0,
       spd: 0.8,
+      kind: 'human',
     }
     this.byHousehold.set(h.id, c)
+    return c
+  }
+
+  /** Spec 078 — seed a permanent FOUNDER citizen (Joe the Crab) that is NOT tied to an approved
+   *  household. Idempotent on the fixed citizen id and public-safety screened like any other record, so
+   *  calling it every runtime construction is safe. Returns the citizen (existing or freshly seeded). */
+  seedFounder(opts: {
+    id: string
+    householdId: string
+    displayName: string
+    plotId: string
+    plotName: string
+    home: { x: number; y: number }
+    kind: 'human' | 'crab'
+    nowMs: number
+    spd?: number
+  }): Citizen | null {
+    if (!isPublicSafe(opts.displayName) || !isPublicSafe(opts.plotName)) return null
+    const existing = this.byId(opts.id)
+    if (existing) return existing
+    const c: Citizen = {
+      id: opts.id,
+      householdId: opts.householdId,
+      displayName: opts.displayName,
+      plotId: opts.plotId,
+      plotName: opts.plotName,
+      homeXY: { x: opts.home.x, y: opts.home.y },
+      hasPod: false,
+      tokensSpentLifetime: 0,
+      bornAtMs: opts.nowMs,
+      pos: { x: opts.home.x, y: opts.home.y },
+      target: { x: opts.home.x, y: opts.home.y },
+      heading: 0,
+      spd: opts.spd ?? 0.7,
+      kind: opts.kind,
+    }
+    this.byHousehold.set(opts.householdId, c)
     return c
   }
 
@@ -169,8 +213,8 @@ export class CitizenRoster {
   }
 
   /** P1 — live avatar render data for the renderer (public-safe: name + position only, never the gateway URL). */
-  avatars(): { id: string; displayName: string; x: number; y: number; heading: number; hasPod: boolean }[] {
-    return Array.from(this.byHousehold.values()).map((c) => ({ id: c.id, displayName: c.displayName, x: c.pos.x, y: c.pos.y, heading: c.heading, hasPod: c.hasPod }))
+  avatars(): { id: string; displayName: string; x: number; y: number; heading: number; hasPod: boolean; kind: 'human' | 'crab' }[] {
+    return Array.from(this.byHousehold.values()).map((c) => ({ id: c.id, displayName: c.displayName, x: c.pos.x, y: c.pos.y, heading: c.heading, hasPod: c.hasPod, kind: c.kind }))
   }
 
   /** Token-thrift accounting: charge this citizen for inference they just spent. */
