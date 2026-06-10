@@ -74,6 +74,14 @@ describe('house builder — the blueprint compiler (spec 077 P1)', () => {
     expect(h.blocks.length).toBeLessThan(HOUSE_VOXEL_BUDGET)
   })
 
+  it('stays under the voxel budget for the worst real case (a 3-storey home on a BIG plot)', () => {
+    // The in-game default blueprint picks wallH 3 for some seeds; on the BIG house-zone (9 wide x 6 deep)
+    // this is the largest house the colony actually raises, so it must also fit under the budget.
+    const script = 'house{w:6 d:5 wallH:3 door:s} room{kind:living x:0 y:0 w:4 d:3 win:1} room{kind:bedroom x:4 y:0 w:2 d:3 win:1} room{kind:patio x:0 y:3 w:6 d:2 win:0}'
+    const h = compileBlueprint(script, { w: 9, d: 6, seed: 12345 })
+    expect(h.blocks.length).toBeLessThan(HOUSE_VOXEL_BUDGET)
+  })
+
   it('every emitted block kind has a colour in BLOCK_COLOR', () => {
     const h = compileBlueprint(EXAMPLE, TYPICAL_OPTS)
     for (const b of h.blocks) expect(typeof BLOCK_COLOR[b.kind]).toBe('number')

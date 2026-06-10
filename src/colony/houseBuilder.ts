@@ -14,8 +14,11 @@ import type { Block, BlockKind, DoorDir } from './voxelHouse'
  *  that a single brick is small and a wall is several courses tall. Tunable (the spec allows up to 8). */
 export const HOUSE_VOXEL_N = 6
 
-/** A soft budget the compiled house must stay under so the instanced renderer stays cheap (P1). */
-export const HOUSE_VOXEL_BUDGET = 6000
+/** A soft compile-cost budget the compiled house stays under (occupancy memory + mesh-gen time). With
+ *  P2 greedy meshing a house draws as ONE merged geometry regardless of block count, so this is no longer
+ *  a draw-call cap — it just bounds how large a single house may get. A big 3-storey brick home on a large
+ *  plot lands near 7000 micro-blocks, so the cap sits comfortably above that. */
+export const HOUSE_VOXEL_BUDGET = 12000
 
 export interface CompileOpts {
   /** houseZone width in plot cells (tiles along the street). */

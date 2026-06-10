@@ -19,7 +19,7 @@ import type { Neighborhood } from '../neighborhood'
 import { buildVoxelHouse, BLOCK_COLOR, type VoxelHouse, type DoorDir } from '../voxelHouse'
 import { compileBlueprint } from '../houseBuilder'
 import { greedyMesh } from './voxelMesh'
-import type { Zone } from '../neighborhood'
+import { defaultBlueprint, type Zone } from '../neighborhood'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
 export type CameraPreset = 'street' | 'district' | 'planet'
@@ -1419,33 +1419,11 @@ export class PlanetRenderer {
 
       // the house, set back and centred in its house-zone, grown to fill it.
       const doorDir: DoorDir = lot.doorY < lot.y ? 'n' : 's'
-      // Spec 077 P2 — a parcel that carries a BLUEPRINT raises a FANCY BRICK house: compile the script to the
-      // fine micro-occupancy and greedy-mesh it to ONE merged geometry (masonry banding baked into the vertex
-      // colours), parented at the house-zone origin. A parcel with NO blueprint keeps the legacy per-block
-      // instanced cottage, so nothing regresses while the builder (P3) and script storage (P4) are still to come.
-      if (lot.blueprint) {
-        this.addMergedHouse(lot.houseZone, lot.blueprint, lot.houseSeed, py)
-        continue
-      }
-      const cacheKey = `${lot.id}:${doorDir}:${lot.houseZone.w}x${lot.houseZone.d}`
-      let house = this.voxelCache.get(cacheKey)
-      if (!house) {
-        house = buildVoxelHouse(lot.houseSeed, doorDir, { maxW: lot.houseZone.w, maxD: lot.houseZone.d })
-        this.voxelCache.set(cacheKey, house)
-      }
-      const originX = lot.houseZone.x + Math.floor((lot.houseZone.w - house.w) / 2)
-      const originY = lot.houseZone.y + Math.floor((lot.houseZone.d - house.d) / 2)
-      for (const b of house.blocks) {
-        if (v >= VOX_CAP) break
-        this.dummy.position.set(this.wx(originX + b.x), py + 0.05 + b.z * BH + BH / 2, this.wz(originY + b.y))
-        this.dummy.rotation.set(0, 0, 0)
-        this.dummy.scale.set(1, 1, 1)
-        this.dummy.updateMatrix()
-        this.voxelMesh.setMatrixAt(v, this.dummy.matrix)
-        col.setHex(BLOCK_COLOR[b.kind])
-        this.voxelMesh.setColorAt(v, col)
-        v++
-      }
+      // Spec 077 — every built house raises a FANCY BRICK home through the merged greedy-meshed path:
+      // an authored blueprint when the parcel carries one (P3/P4), else a deterministic defaultBlueprint
+      // from the house seed. The script compiles to the fine micro-occupancy and greedy-meshes to ONE
+      // merged geometry with the masonry tint banding baked into the vertex colours.
+      this.addMergedHouse(lot.houseZone, lot.blueprint ?? defaultBlueprint(lot.houseSeed, doorDir), lot.houseSeed, py)
     }
 
     this.lotPadMesh.count = p
