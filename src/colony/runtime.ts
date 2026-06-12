@@ -6,7 +6,7 @@ import { Biome } from './terrain'
 import { autoGrow, freeLabour, housingCapacity, wateredFraction, provisionedFraction, housingTierCounts, healthFraction, cultureFraction, colonyLiveability, surveyAvailable, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, pollutedFraction, commute, maintenanceStatus, storageStatus, incidentStatus, levyStatus, feverStatus, housewaresFraction, unrestStatus, wageStatus, feastStatus, callFeast, liaisonStatus, fulfillRequest, spireStatus, fundSpireStage, frontStatus, foundersStatus, importStatus, solaceStatus, arrearsStatus, rosterStatus, departureStatus, educationStatus, prosperityStatus, turbinePower, waterStatus, toolStatus, seedStatus, confidenceStatus, birthStatus, footprintStatus, veinStatus, calendarStatus, seasonStatus, ledgerStatus, rimfishStatus, driedFishStatus, duskcapStatus, bathhouseStatus, libraryStatus, wasteStatus, securityStatus, dietVarietyStatus, labourStatus, planterStatus, stallStatus, galleryStatus, porterStatus, avatarStatus, fireStatus, reclaimStatus, festivalStatus, reserveParcelLand, mergeAvenue, type ImportGood } from './build'
 import { registerSettler as kookerRegister, generateName as randomSettlerName, type KookerCard } from './kooker'
 import { addSettler, saveColony, restoreColony, clearColony } from './settlers'
-import { bankDeposits, balance as ledgerBalance, post as ledgerPost, CURRENCY } from './ledger'
+import { walletDeposits, walletCount, balance as ledgerBalance, post as ledgerPost, CURRENCY } from './ledger'
 import { plotPriceKook, kookToZar, starterDeposit } from './land'
 import { MockBackend, type CityLifeBackend, type Decision } from './backend'
 import type { Household, HouseholdOverrides } from './newcomers'
@@ -90,7 +90,7 @@ export interface ColonyUiState {
   colonists: number
   colony: { treasury: number; materials: number; components: number; food: number; reels: number; fibre: number; linen: number; folios: number; skilled: number; freeLabour: number; capacity: number; watered: number; provisioned: number; health: number; culture: number; cultureFuelled: boolean; liveability: number; smog: number; commute: { demand: number; capacity: number; congested: boolean }; maintenance: { worst: number; needing: number; sheds: number }; storage: { fill: number; full: boolean; tightest: string }; incidents: { active: number; capacity: number }; levy: { active: boolean; rate: 'low' | 'normal' | 'high' }; wage: { active: boolean; rate: 'low' | 'standard' | 'generous'; payroll: number }; feast: { active: boolean; daysLeft: number; canCall: boolean }; liaison: { active: boolean; standing: number; request: { good: string; amount: number; daysLeft: number } | null; canFulfil: boolean }; spire: { stage: number; total: number; progress: number; building: boolean; complete: boolean }; front: { timerDays: number; incoming: boolean; braced: boolean; watching: boolean; established: boolean }; founders: { active: boolean; seated: number; notable: { name: string; role: string } | null }; imports: { active: boolean; order: ImportGood | null; perDay: number; dailySpend: number }; solace: { coverage: number; shrines: number }; education: { coverage: number; schools: number }; prosperity: { active: boolean; score: number; rank: number; rankName: string; recognised: boolean }; water: { stored: number; cap: number; cisterns: number; dry: boolean }; tools: { stored: number; cap: number; cribs: number; short: boolean }; seed: { stored: number; cap: number; lofts: number; short: boolean }; arrears: { office: boolean; debt: number; ceiling: number; strain: boolean; unmanaged: boolean }; roster: { active: boolean; mode: 'essentials' | 'balanced' | 'industry' }; departures: { pressure: number; atRisk: boolean; cause: string }; confidence: { confidence: number; factor: number; slowed: boolean; halted: boolean }; births: { children: number; homes: number; growing: boolean }; footprint: { radius: number; claims: number; maxClaims: number; progress: number; camp: boolean; atEdge: boolean }; veins: { mines: number; poorest: number }; calendar: { year: number; month: number; monthsToFounders: number; office: boolean }; season: { name: string; modifier: number; solarModifier: number; active: boolean }; ledger: { ageYears: number; onset: number; turning: boolean; lastPassings: number; hall: boolean }; rimfish: { stock: number; docks: number; varied: boolean }; driedFish: { stock: number; cap: number; racks: number }; duskcap: { stock: number; cellars: number }; bathhouse: { hygiene: number; baths: number; drawBonus: number; climbBonus: number }; library: { libraries: number; lending: boolean; foliosPerDay: number }; waste: { level: number; posts: number; harmful: boolean; fevered: boolean }; security: { active: boolean; lossPerDay: number; nooks: number; guarded: boolean }; labour: { active: boolean; unemployment: number; covered: number; penalty: number; dragging: boolean }; planters: { squares: number; blooming: number }; stalls: { stalls: number; open: boolean; coinPerDay: number }; gallery: { galleries: number; open: boolean; coinPerDay: number }; porter: { sheds: number; working: boolean; porters: number }; avatar: { foundries: number; staffed: boolean; capacity: number }; fire: { posts: number; active: number; risk: number; watered: boolean }; reclaim: { plants: number; perDay: number; active: boolean }; festival: { board: boolean; cheerDays: number; bonus: number; active: boolean }; diet: { counters: number; covered: number; served: number; standing: number; share: number; varied: boolean; bonus: number }; fever: { level: number; contained: boolean }; housewares: number; order: { unrest: number; warded: boolean }; surveyed: boolean; trade: number; tiers: [number, number, number]; buildings: number; building: number; load: number; jobs: number; employed: number; pollution: number }
   settlers: { count: number; recent: { id: number; name: string }[] }
-  bank: { currency: string; deposits: number; accounts: number; recent: { id: number; memo: string }[]; sync: { pending: number; synced: number; lastError: string | null } }
+  bank: { currency: string; deposits: number; depositsZar: number; accounts: number; landOffice: number; recent: { id: number; memo: string }[]; sync: { pending: number; synced: number; lastError: string | null } }
   border: { households: Household[]; bots: Bot[]; botSource: string; plots: Plot[] }
   citizens: { count: number; awake: number; list: CitizenPublic[]; wallets: Record<string, number> }
   firstPerson: { active: boolean; citizenId: string | null; citizenName: string | null; operatorCitizenId: string | null; view: FirstPersonView | null; narration: string | null; narrating: boolean }
@@ -529,12 +529,7 @@ export class ColonyRuntime {
       { account: 'arrivals', amount: -dep },
     ])
     // Spec 085 P1 — seed the citizen's REAL ledger wallet to match (best-effort, never blocks).
-    this.mirror({ kind: 'deposit', txnId: this.lastLedgerTxnId(), citizenId, amount: dep })
-  }
-
-  /** The id of the most-recently posted in-game ledger txn (post() unshifts it to the head). */
-  private lastLedgerTxnId(): number {
-    return this.sim.state.ledger.txns[0]?.id ?? 0
+    this.mirror({ kind: 'deposit', citizenId, amount: dep })
   }
 
   /** Spec 085 P1 — mirror an in-game money move onto the real kooker-service-ledger as the signed-in
@@ -581,7 +576,7 @@ export class ColonyRuntime {
       { account: 'land', amount: price },
     ])
     // Spec 085 P1 — mirror the land payment onto the real ledger (citizen -> city land office).
-    this.mirror({ kind: 'purchase', txnId: this.lastLedgerTxnId(), citizenId, amount: price })
+    this.mirror({ kind: 'purchase', citizenId, lotId, amount: price })
     this.assignLot(citizenId, lotId)
     this.kbPost(citizenId, 'event', `Bought the deed to ${c.plotName} for ${price} city coin. The land is theirs.`)
     return true
@@ -797,7 +792,7 @@ export class ColonyRuntime {
         { account: `citizen:${VIW_ID}`, amount: session.agreedPrice ?? 0 },
       ])
       // Spec 085 P1 — mirror the build fee onto the real ledger (client -> the builder, Viw).
-      this.mirror({ kind: 'commission', txnId: this.lastLedgerTxnId(), fromCitizenId: lot.ownerCitizenId, toCitizenId: VIW_ID, amount: session.agreedPrice ?? 0 })
+      this.mirror({ kind: 'commission', fromCitizenId: lot.ownerCitizenId, toCitizenId: VIW_ID, lotId, amount: session.agreedPrice ?? 0 })
       this.kbPost(lot.ownerCitizenId, 'event', `Shook hands with Viw the Builder — a home for ${session.agreedPrice} city coin. The crew starts this week.`)
       this.kbPost(VIW_ID, 'event', `Booked a build for ${clientFirst} — ${session.agreedPrice} city coin, crew on site.`)
     } else {
@@ -1229,14 +1224,22 @@ export class ColonyRuntime {
         pollution: Math.round(s.pollution),
       },
       settlers: { count: s.settlers.length, recent: s.settlers.slice(-6).reverse().map((x) => ({ id: x.kookerId, name: x.name })) },
-      bank: {
-        currency: CURRENCY,
-        deposits: Math.round(bankDeposits(s.ledger)),
-        accounts: s.settlers.length,
-        recent: s.ledger.txns.slice(0, 6).map((tx) => ({ id: tx.id, memo: tx.memo })),
-        // Spec 085 P1 — the real-ledger mirror's queue health (pending/synced/last error).
-        sync: (() => { const st = this.ledgerSyncStatus(); return { pending: st.pending, synced: st.synced, lastError: st.lastError } })(),
-      },
+      bank: (() => {
+        // Spec 085 — the bank panel reads the ACTIVE ₭ economy (citizen wallets), not the retired
+        // settler accounts. deposits = ₭ held by residents, landOffice = ₭ paid for deeds, plus the
+        // ZAR bridge and the real-ledger mirror's queue health.
+        const held = Math.round(walletDeposits(s.ledger))
+        const st = this.ledgerSyncStatus()
+        return {
+          currency: CURRENCY,
+          deposits: held,
+          depositsZar: kookToZar(held, COLONY.economy.land),
+          accounts: walletCount(s.ledger),
+          landOffice: Math.round(ledgerBalance(s.ledger, 'land')),
+          recent: s.ledger.txns.slice(0, 6).map((tx) => ({ id: tx.id, memo: tx.memo })),
+          sync: { pending: st.pending, synced: st.synced, lastError: st.lastError },
+        }
+      })(),
       border: { households: this.backend.households(), bots: this.botService.bots, botSource: this.botService.source, plots: this.cityPlan.plots },
       citizens: {
         count: this.citizens.size(),

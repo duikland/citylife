@@ -14,7 +14,9 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
   login gate in dev). Restart with `npm run dev` run in the background if it's dead.
 - **Stack:** React 19 + TypeScript + Vite + plain three.js. Tests: **vitest** (node env). Pure
   deterministic sim — **no `Math.random` / `Date.now()` in the sim tick**; everything seeded.
-- **Verify a slice:** `npx tsc --noEmit` (typecheck) + `npx vitest run` (currently **688 tests**).
+- **Verify a slice:** `npx tsc --noEmit` (typecheck) + `npx vitest run` (currently **692 tests**). NOTE
+  Vite HMR does NOT re-instantiate the singleton `ColonyRuntime`, so after editing runtime/uiState do a
+  full page reload before live-checking `window.__colony` — a hot-swap alone shows stale state.
   Then LIVE on :5188 — drive `window.__colony` via JS evals (see §6). NOTE: Chrome CDP **screenshots
   are broken this session** (`clip.scale` error) — verify with JS evals + `read_console_messages`,
   not screenshots.

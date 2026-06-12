@@ -46,9 +46,9 @@ function harness(opts?: { failAt?: (n: number) => { ok: boolean; status: number 
   return { deps, sent, retries }
 }
 
-const DEPOSIT: LedgerMove = { kind: 'deposit', txnId: 1, citizenId: 'citizen_dax', amount: 700 }
-const PURCHASE: LedgerMove = { kind: 'purchase', txnId: 2, citizenId: 'citizen_dax', amount: 196 }
-const COMMISSION: LedgerMove = { kind: 'commission', txnId: 3, fromCitizenId: 'citizen_dax', toCitizenId: 'citizen_viw', amount: 472 }
+const DEPOSIT: LedgerMove = { kind: 'deposit', citizenId: 'citizen_dax', amount: 700 }
+const PURCHASE: LedgerMove = { kind: 'purchase', citizenId: 'citizen_dax', lotId: 'lot_3', amount: 196 }
+const COMMISSION: LedgerMove = { kind: 'commission', fromCitizenId: 'citizen_dax', toCitizenId: 'citizen_viw', lotId: 'lot_3', amount: 472 }
 
 describe('ledgerSync pure request builders', () => {
   it('depositBody seeds the citizen wallet with their arrival balance', () => {
@@ -63,10 +63,10 @@ describe('ledgerSync pure request builders', () => {
   })
 
   it('purchaseBody balances (CREDIT citizen == DEBIT land office) and is LAND_PURCHASE', () => {
-    const b = purchaseBody('82', 'citizen_dax', 196, 'citylife:2')
+    const b = purchaseBody('82', 'citizen_dax', 196, 'citylife:purchase:citizen_dax:lot_3')
     expect(b.appName).toBe('citylife')
     expect(b.transactionType).toBe('LAND_PURCHASE')
-    expect(b.reference).toBe('citylife:2')
+    expect(b.reference).toBe('citylife:purchase:citizen_dax:lot_3')
     expect(b.initiatorId).toBe('82')
     expect(b.entries).toEqual([
       { ownerId: 'citizen_dax', walletType: 'DEFAULT', entryType: 'CREDIT', amount: 196 },
@@ -78,7 +78,7 @@ describe('ledgerSync pure request builders', () => {
   })
 
   it('commissionBody pays the builder and is BUILD_FEE', () => {
-    const b = commissionBody('82', 'citizen_dax', 'citizen_viw', 472, 'citylife:3')
+    const b = commissionBody('82', 'citizen_dax', 'citizen_viw', 472, 'citylife:build:citizen_dax:lot_3')
     expect(b.transactionType).toBe('BUILD_FEE')
     expect(b.entries).toEqual([
       { ownerId: 'citizen_dax', walletType: 'DEFAULT', entryType: 'CREDIT', amount: 472 },
@@ -86,9 +86,15 @@ describe('ledgerSync pure request builders', () => {
     ])
   })
 
-  it('moveRef is the deterministic in-game txn id', () => {
-    expect(moveRef(DEPOSIT)).toBe('citylife:1')
-    expect(moveRef(COMMISSION)).toBe('citylife:3')
+  it('moveRef is content-addressed by the economic identity, stable across ledger resets', () => {
+    expect(moveRef(DEPOSIT)).toBe('citylife:deposit:citizen_dax')
+    expect(moveRef(PURCHASE)).toBe('citylife:purchase:citizen_dax:lot_3')
+    expect(moveRef(COMMISSION)).toBe('citylife:build:citizen_dax:lot_3')
+  })
+
+  it('a different citizen or lot yields a distinct ref (no false dedup after a reload)', () => {
+    expect(moveRef({ kind: 'deposit', citizenId: 'citizen_mara', amount: 700 })).toBe('citylife:deposit:citizen_mara')
+    expect(moveRef({ kind: 'purchase', citizenId: 'citizen_mara', lotId: 'lot_4', amount: 230 })).toBe('citylife:purchase:citizen_mara:lot_4')
   })
 })
 
@@ -133,7 +139,7 @@ describe('LedgerSync drain — happy path', () => {
       expect(s.headers.Authorization).toMatch(/^Bearer /)
       expect(s.headers['X-Kooker-User-Id']).toBe('82')
     }
-    expect(sync.status()).toMatchObject({ pending: 0, synced: 3, lastError: null, lastSyncedRef: 'citylife:3' })
+    expect(sync.status()).toMatchObject({ pending: 0, synced: 3, lastError: null, lastSyncedRef: 'citylife:build:citizen_dax:lot_3' })
   })
 })
 
@@ -153,7 +159,7 @@ describe('LedgerSync dedup', () => {
   it('ignores a non-positive amount (the service rejects it anyway)', async () => {
     const { deps, sent } = harness()
     const sync = new LedgerSync(deps)
-    sync.notice({ kind: 'commission', txnId: 9, fromCitizenId: 'a', toCitizenId: 'b', amount: 0 })
+    sync.notice({ kind: 'commission', fromCitizenId: 'a', toCitizenId: 'b', lotId: 'lot_9', amount: 0 })
     await sync.drain()
     expect(sent).toHaveLength(0)
     expect(sync.status().pending).toBe(0)
