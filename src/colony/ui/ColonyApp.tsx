@@ -321,6 +321,16 @@ export function ColonyApp() {
               {row('Showrooms', 'showroom')}
               {row('Stores', 'store')}
               {row('Kiosks', 'kiosk')}
+              {ui.commerce.free > 0 && (
+                <button
+                  className="immigbtn"
+                  disabled={!ui.commerce.canClaim}
+                  onClick={() => runtime.claimNextShop()}
+                  title={ui.commerce.canClaim ? 'The wealthiest resident who can afford it takes the cheapest shop plot' : 'No resident can afford a free shop plot yet'}
+                >
+                  🛒 Open a shop{ui.commerce.cheapest ? ` · ${ui.commerce.cheapest.kind} ${ui.bank.currency}${ui.commerce.cheapest.price.toLocaleString()}` : ''}
+                </button>
+              )}
             </>
           )
         })()}

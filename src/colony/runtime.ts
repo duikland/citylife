@@ -24,7 +24,7 @@ import { dreamBrief, negotiate, briefToBlueprint, seededBudget, VIW_SEED, type N
 import { createProfile, addPost, type KbProfile, type PostKind } from './social/kookerbook'
 import { loadKookerbookLocal, saveProfileLocal, saveProfileBackend, fetchKookerbookBackend, mergeKookerbook } from './bot/kookerbookStore'
 import { getLedgerSync, type LedgerMove, type SyncStatus } from './bot/ledgerSync'
-import { makeCommercialDistrict, type CommercialDistrict, type ShopKind } from './commerce/district'
+import { makeCommercialDistrict, type CommercialDistrict, type ShopKind, type ShopParcel } from './commerce/district'
 import { createRadio, tuneTo, toggleOn as radioToggleOn, toggleMuted as radioToggleMuted, spinHouseAd, type RadioState } from './radio'
 import { buildShareCard, headlineFor, shareStats, siteLabel, DEFAULT_TAGLINE, CARD_ID, type CardFormat } from './social/shareCard'
 
@@ -96,7 +96,7 @@ export interface ColonyUiState {
   citizens: { count: number; awake: number; list: CitizenPublic[]; wallets: Record<string, number> }
   firstPerson: { active: boolean; citizenId: string | null; citizenName: string | null; operatorCitizenId: string | null; view: FirstPersonView | null; narration: string | null; narrating: boolean }
   neighborhood: { lots: { id: string; built: boolean; owner: string | null; ownerId: string | null; reserved: boolean; price: number | null; priceZar: number | null }[]; free: number; built: number; houseCost: number; canAfford: boolean; buildHint: string }
-  commerce: { plots: number; free: number; byKind: { kiosk: number; store: number; showroom: number }; parcels: { id: string; kind: ShopKind; price: number; priceZar: number; built: boolean; owner: string | null }[] }
+  commerce: { plots: number; free: number; byKind: { kiosk: number; store: number; showroom: number }; canClaim: boolean; cheapest: { kind: ShopKind; price: number } | null; parcels: { id: string; kind: ShopKind; price: number; priceZar: number; built: boolean; owner: string | null }[] }
   radio: RadioState
   courier: { on: boolean; headline: string } // spec 016 — the colony's own news, when a Broadcast Mast is up
   tv: boolean
@@ -294,6 +294,12 @@ export class ColonyRuntime {
             const freeLot = this.neighborhood.lots.find((l) => !l.ownerCitizenId && !l.reservedFor)
             if (freeLot && this.purchaseLot(citizen.id, freeLot.id)) {
               this.commissionLot(freeLot.id) // Viw raises a home for the remaining purse
+            }
+            // Spec 079 P1 — if the newcomer can still afford a shop plot after their home, they take
+            // one on the high street: the city's first shopkeepers grow from the same arrivals.
+            const shop = this.cheapestFreeShop()
+            if (shop && this.walletK(citizen.id) >= this.shopPriceK(shop.kind)) {
+              this.buyCommercialShop(citizen.id, shop.id)
             }
           }
           // Spec 076 — mint the real kooker sub-user + Hermes pod for this citizen, owned by the player
@@ -567,6 +573,57 @@ export class ColonyRuntime {
     return COLONY.commerce.plotPriceK[kind]
   }
 
+  /** Spec 079 P1 — the cheapest still-free shop plot, deterministic (lowest price, then lowest plot
+   *  index). The tie-break compares the NUMERIC suffix, not the string, so shop_9 sorts before shop_10. */
+  cheapestFreeShop(): ShopParcel | null {
+    const free = (this.commercialDistrict?.parcels ?? []).filter((p) => !p.ownerCitizenId)
+    if (free.length === 0) return null
+    const idx = (id: string) => parseInt(id.split('_')[1] ?? '0', 10)
+    return free.reduce((best, p) => {
+      const dp = this.shopPriceK(p.kind), db = this.shopPriceK(best.kind)
+      return dp < db || (dp === db && idx(p.id) < idx(best.id)) ? p : best
+    })
+  }
+
+  /** Spec 079 P1 — BUY A SHOP PLOT: a citizen takes a free high-street plot with their ₭ wallet.
+   *  Gated on funds; the price moves citizen -> the city land office on the in-game ledger and mirrors
+   *  to the real kooker-service-ledger (LAND_PURCHASE, keyed by the shop id, distinct from a homestead
+   *  deed), ownership is set, and the deed posts to their Kookerbook page. The HUD Buy action + the
+   *  arrival path both use it. */
+  buyCommercialShop(citizenId: string, shopId: string): boolean {
+    const shop = this.commercialDistrict?.parcels.find((p) => p.id === shopId)
+    const c = this.citizens.byId(citizenId)
+    if (!shop || !c || shop.ownerCitizenId) return false
+    const price = this.shopPriceK(shop.kind)
+    // Gate on the EXACT ledger balance (walletK rounds, which could let a fractional balance overspend).
+    if (ledgerBalance(this.sim.state.ledger, `citizen:${citizenId}`) < price) return false
+    // Atomic: only claim the plot if the double-entry actually posts (a never-balanced txn is rejected).
+    const posted = ledgerPost(this.sim.state.ledger, `${c.displayName} takes a ${shop.kind} plot on the high street for ${price} ${CURRENCY}`, [
+      { account: `citizen:${citizenId}`, amount: -price },
+      { account: 'land', amount: price },
+    ])
+    if (!posted) return false
+    this.mirror({ kind: 'purchase', citizenId, lotId: shop.id, amount: price })
+    shop.ownerCitizenId = citizenId
+    this.kbPost(citizenId, 'event', `Took a ${shop.kind} plot on the high street for ${price} city coin. Open for business soon.`)
+    this.emit()
+    return true
+  }
+
+  /** Spec 079 P1 — the HUD Buy action: the wealthiest shopless citizen who can afford it claims the
+   *  cheapest free shop. Deterministic; returns the new owner's id, or null when nobody can afford one. */
+  claimNextShop(): string | null {
+    const shop = this.cheapestFreeShop()
+    if (!shop) return null
+    const price = this.shopPriceK(shop.kind)
+    const owned = new Set((this.commercialDistrict?.parcels ?? []).filter((p) => p.ownerCitizenId).map((p) => p.ownerCitizenId!))
+    const buyer = this.citizens.list()
+      .filter((c) => !owned.has(c.id) && this.walletK(c.id) >= price)
+      .sort((a, b) => this.walletK(b.id) - this.walletK(a.id) || (a.id < b.id ? -1 : 1))[0]
+    if (!buyer) return null
+    return this.buyCommercialShop(buyer.id, shop.id) ? buyer.id : null
+  }
+
   /** The ₭ price of a plot: its buildable area + a waterfront premium (spec 085). Reserved founder
    *  plots are not for sale (Infinity). */
   plotPriceK(lot: Lot): number {
@@ -584,7 +641,8 @@ export class ColonyRuntime {
     const c = this.citizens.byId(citizenId)
     if (!lot || !c || lot.ownerCitizenId || lot.reservedFor) return false
     const price = this.plotPriceK(lot)
-    if (!Number.isFinite(price) || this.walletK(citizenId) < price) return false
+    // Gate on the EXACT balance (walletK rounds — a fractional balance could otherwise overspend).
+    if (!Number.isFinite(price) || ledgerBalance(this.sim.state.ledger, `citizen:${citizenId}`) < price) return false
     ledgerPost(this.sim.state.ledger, `${c.displayName} buys ${c.plotName} for ${price} ${CURRENCY}`, [
       { account: `citizen:${citizenId}`, amount: -price },
       { account: 'land', amount: price },
@@ -863,6 +921,9 @@ export class ColonyRuntime {
     const c = this.citizens.byId(citizenId)
     if (!c) return false
     for (const l of this.neighborhood.lots) if (l.ownerCitizenId === citizenId) { l.ownerCitizenId = undefined; l.built = false }
+    // Spec 079 P1 — free any high-street shop plot they held too, so it returns to the market (else
+    // the plot is stranded as a ghost owner: counted not-free but unclaimable).
+    for (const p of this.commercialDistrict?.parcels ?? []) if (p.ownerCitizenId === citizenId) { p.ownerCitizenId = undefined; p.built = false }
     if (this.fpCitizenId === citizenId) this.exitFirstPerson()
     if (c.hasPod) void this.teardownPod(citizenId)
     this.citizens.remove(citizenId)
@@ -1306,7 +1367,17 @@ export class ColonyRuntime {
         })
         const byKind = { kiosk: 0, store: 0, showroom: 0 }
         for (const p of parcels) byKind[p.kind]++
-        return { plots: parcels.length, free: parcels.filter((p) => !p.owner).length, byKind, parcels }
+        // Spec 079 P1 — the Buy action's gate: the cheapest free shop + whether any shopless citizen
+        // can afford it (so the button enables only when a real claim is possible).
+        const cheap = this.cheapestFreeShop()
+        const cheapest = cheap ? { kind: cheap.kind, price: this.shopPriceK(cheap.kind) } : null
+        const owners = new Set((this.commercialDistrict?.parcels ?? []).filter((p) => p.ownerCitizenId).map((p) => p.ownerCitizenId!))
+        const richestShopless = Math.max(0, ...this.citizens.list().filter((c) => !owners.has(c.id)).map((c) => this.walletK(c.id)))
+        const canClaim = !!cheapest && richestShopless >= cheapest.price
+        // free is counted off the underlying ownerCitizenId (not the display-name owner, which would
+        // read free for a ghost/removed owner) so it always agrees with cheapestFreeShop.
+        const free = (this.commercialDistrict?.parcels ?? []).filter((p) => !p.ownerCitizenId).length
+        return { plots: parcels.length, free, byKind, canClaim, cheapest, parcels }
       })(),
       radio: this.radio,
       courier: (() => {

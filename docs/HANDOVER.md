@@ -93,9 +93,11 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
    deterministic fallback intact). Off-machine inference, fits the lean-dev constraint. **Recommended next.**
 3. **079 — commercial plots + shops (P0 DONE 2026-06-13).** `commerce/district.ts` surveys a vibrant
    neon high street (10 shop plots: kiosk/store/showroom, priced 220/420/720 ₭) on the reserved 40×30
-   land bank; the renderer raises glowing market stalls that flare at dusk. NEXT: **079-P1** — buy a
-   shop plot with ₭ (in-game debit mirrored via `bot/ledgerSync.ts`, a LAND_PURCHASE), then **P2** real
-   shop massing via the voxel core. See `docs/specs/079` P0 log + `docs/research/2026-06-13-district-concept.md`.
+   land bank; the renderer raises glowing market stalls that flare at dusk. **P1 DONE** — shops are
+   buyable: `runtime.buyCommercialShop` / `claimNextShop` debit ₭ (citizen -> land office) mirrored to
+   the real ledger as a LAND_PURCHASE, a funds-gated HUD "Open a shop" button, arrivals claim a shop
+   when affordable. NEXT: **079-P2** real shop massing via the voxel core (replace the placeholder
+   stall). See `docs/specs/079` P0+P1 log + `docs/research/2026-06-13-district-concept.md`.
 4. **082-P3** narration + generated portraits (via the existing kooker image-gen APIs, off-machine).
 5. **Named deferrals from 084:** road-following citizen walks (citizens cut across lawns today),
    gravel driveway ribbons, foliage chunk-bucketing.
@@ -104,6 +106,17 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
 
 - **Codex is active + reliable** (`D:\infra\codex\`): built the ledger (kooker-service-ledger PRs,
   CX-3 hardening) and the password rotation. Just closed the ledger auth bypass.
+- **CROSS-AGENT RENDERER LANE (2026-06-13):** Codex is taking the **Founders Lighthouse + Rockery
+  Beach** shore-render slice (`sim.ts` StructureKind `lighthouse` + a deterministic shore placement,
+  `PlanetRenderer.makeStructure` + static shore props, placement tests). Claude owns **commerce**
+  (`commerce/*`, the commercial render block in `PlanetRenderer`). BOTH edit `PlanetRenderer.ts`, so:
+  (a) Codex works in his OWN clone/branch off `main` (a different dev port), NOT this worktree;
+  (b) lowest-friction is to merge PR #42 first, then Codex branches fresh (zero conflict); (c) Codex
+  should factor the lighthouse + shore props into their own `render/shoreProps.ts` so the
+  `PlanetRenderer.ts` diff is a couple of call-sites; (d) Claude keeps 079-P1+ OUT of the renderer
+  (runtime/ledger/HUD only) until the lighthouse lands. The two places don't overlap in-world (shore
+  vs the inland avenue). NB the existing red shore beacon is the ROCKET/dropship nav beacon, not a
+  lighthouse — keep them distinct.
 - **Antigravity is DEAD to us** — leaving this machine (resource hunger). Its delegated work
   (`kooker-service-social` = the Kookerbook backend) won't be picked up; Kookerbook stays on its
   local layer as designed. Don't watch `origin/antigravity/*`.

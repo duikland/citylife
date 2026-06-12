@@ -191,8 +191,27 @@ DONE
   sign emissive flares to 1.46 at dusk, no console errors. Screenshots are broken this session, so
   verified via scene introspection (mesh count, materials, emissive, positions) per the visual standard.
 NEXT
-- P1: buy a shop plot with city coin — the in-game ledger debit (citizen -> the city) mirrored to
-  the real kooker-service-ledger via bot/ledgerSync.ts (now live, spec 085 P1), plus the HUD Buy
-  action and an arrivals path that claims a shop when funds allow.
 - P2: raise the shop massing through the shared voxel core (compileBlueprint + greedyMesh) on a
   bought plot, gated on materials, replacing the placeholder stall with real shop architecture.
+
+### 2026-06-13 — Slice P1: the high street is buyable, on the live ledger
+DONE
+- runtime.buyCommercialShop(citizenId, shopId): a citizen takes a free high-street plot with their ₭
+  wallet. Gated on funds; the price moves citizen -> the city land office on the in-game double-entry
+  ledger (the same `land` account residential deeds use) and MIRRORS to the real
+  kooker-service-ledger via bot/ledgerSync.ts as a LAND_PURCHASE, keyed by the shop id
+  (citylife:purchase:<citizen>:<shop_N>, distinct from a homestead deed). Ownership is set and a
+  Kookerbook deed event posts. cheapestFreeShop() + claimNextShop() (the wealthiest shopless citizen
+  takes the cheapest free plot) drive the HUD Buy action; the arrival path also claims a shop when a
+  newcomer can still afford one after their home.
+- HUD: the Commercial district panel gains a funds-gated "Open a shop" button (canClaim + the cheapest
+  free kind/price surfaced in uiState.commerce); the free count drops + ownership shows as plots sell.
+- 6 node tests (cheapest is the kiosk, the buy debits + credits + conserves to zero + records
+  ownership, the mirror posts a content-addressed shop purchase, double-buy + unaffordable rejected,
+  claimNextShop is deterministic, the uiState reflects ownership + the gate). 703 green, tsc clean.
+- LIVE on :5188: claimNextShop -> Viw (787 ₭, wealthiest) took the cheapest kiosk (220 ₭) -> his
+  wallet 567, the land office +220, the ledger nets to zero, free 10 -> 9, and the sale mirrored to
+  the real ledger (lastSyncedRef citylife:purchase:citizen_viw:shop_2, no error).
+NEXT
+- P2: the bought plot raises real shop massing (the placeholder neon stall becomes architecture);
+  P3 the listing DSL + storefront + the checkout that posts a sale to the real ledger.
