@@ -125,6 +125,21 @@ DONE
   status read synced:5 pending:0 lastError:null; the persisted synced-set restored across a reload
   with no duplicate posts. No ledgerSync errors (the 404s are the still-unimplemented social /
   blueprint / sub-user backends).
+### 2026-06-13 — P1 follow-up: the HUD reads the ₭ economy + a cross-reload idempotency fix
+DONE
+- The City Bank HUD panel (was the legacy settler "Kookerverse Bank") now reads the ACTIVE ₭
+  economy: Residents hold (Σ citizen wallets), the ZAR bridge, Wallets (count), Land office (the
+  `land` account), and the real-ledger sync line (✓ N synced / ⏳ pending). The dollar Treasury
+  readout is left untouched pending an operator call on the old colony-sim layer. ledger.ts gains
+  walletDeposits + walletCount; both node-tested.
+- Found by live verify: a cross-reload idempotency collision. The in-game ledger resets to founders
+  on each boot (it is not persisted in the citizen flow), so txn ids restart at 1, while the sync
+  synced-set persists — a `citylife:<txnId>` reference therefore collided with a stale synced ref
+  and SILENTLY skipped genuinely-new activity after any reload. Fixed by content-addressing the
+  reference on the economic identity instead: deposit -> `citylife:deposit:<citizenId>`, purchase ->
+  `citylife:purchase:<citizenId>:<lotId>`, build -> `citylife:build:<citizenId>:<lotId>`. A real
+  re-post (a founder re-seed) dedups; a new citizen/lot posts. LIVE-verified: a post-reload arrival
+  now syncs (synced 2 founders -> 5 after the arrival, no ledger errors). 692 tests green, tsc clean.
 NEXT
 - P2: a commercial plot tier (079), priced higher, for shops on bought commercial land — the
   storefront + checkout posts to this same sync as LAND_PURCHASE/TRANSFER.

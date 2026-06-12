@@ -293,9 +293,17 @@ export function ColonyApp() {
         )}
         <button className="immigbtn" onClick={() => setBorderOpen(true)}>🛂 Border Control</button>
 
-        <h2 style={{ marginTop: 18 }}>Kookerverse Bank</h2>
-        <div className="row"><span>Deposits</span><b>{ui.bank.currency}{ui.bank.deposits.toLocaleString()}</b></div>
-        <div className="row"><span>Accounts</span><b>{ui.bank.accounts}</b></div>
+        <h2 style={{ marginTop: 18 }}>City Bank · {ui.bank.currency}</h2>
+        <div className="row"><span>Residents hold</span><b>{ui.bank.currency}{ui.bank.deposits.toLocaleString()}</b></div>
+        <div className="row"><span>≈ in rand</span><b>R{ui.bank.depositsZar.toLocaleString()}</b></div>
+        <div className="row"><span>Wallets</span><b>{ui.bank.accounts}</b></div>
+        <div className="row"><span>Land office</span><b>{ui.bank.currency}{ui.bank.landOffice.toLocaleString()}</b></div>
+        <div className="row">
+          <span>Real ledger</span>
+          {ui.bank.sync.pending > 0 || ui.bank.sync.lastError
+            ? <b style={{ color: '#e0a14d' }}>⏳ {ui.bank.sync.pending} pending · {ui.bank.sync.synced} synced</b>
+            : <b style={{ color: '#39d353' }}>✓ {ui.bank.sync.synced} synced</b>}
+        </div>
         {ui.bank.recent.length > 0 && (
           <div className="ledger">{ui.bank.recent.map((tx) => <div key={tx.id} className="ledger-row">{tx.memo}</div>)}</div>
         )}

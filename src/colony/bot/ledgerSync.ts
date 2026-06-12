@@ -28,9 +28,9 @@ const QUEUE_CAP = 500 // drop-oldest backstop if the player stays signed out for
 const SYNCED_CAP = 2000 // bound the dedup memory; only the most recent references are worth keeping
 
 export type LedgerMove =
-  | { kind: 'deposit'; txnId: number; citizenId: string; amount: number }
-  | { kind: 'purchase'; txnId: number; citizenId: string; amount: number }
-  | { kind: 'commission'; txnId: number; fromCitizenId: string; toCitizenId: string; amount: number }
+  | { kind: 'deposit'; citizenId: string; amount: number }
+  | { kind: 'purchase'; citizenId: string; lotId: string; amount: number }
+  | { kind: 'commission'; fromCitizenId: string; toCitizenId: string; lotId: string; amount: number }
 
 export interface SyncStatus {
   pending: number
@@ -39,10 +39,17 @@ export interface SyncStatus {
   lastSyncedRef: string | null
 }
 
-/** The stable reference for a move — the in-game ledger txn id. Doubles as the human-readable memo
- *  on the real ledger and as the client-side idempotency key (the service has none of its own). */
+/** The stable reference for a move — CONTENT-ADDRESSED by the economic event's natural identity, not
+ *  the in-game txn id. The in-game ledger resets to founders on each boot (it isn't persisted in the
+ *  citizen flow) so txn ids restart at 1, while the synced-set persists across reloads; a volatile
+ *  id would therefore collide with a stale synced ref and silently skip genuinely-new activity. A
+ *  citizen's one-time deposit, their purchase of a given lot, and their build on a given lot each
+ *  have a stable identity, so a real re-post is deduped while distinct events never collide. Doubles
+ *  as the human-readable memo on the real ledger and the client-side idempotency key. */
 export function moveRef(move: LedgerMove): string {
-  return `citylife:${move.txnId}`
+  if (move.kind === 'deposit') return `citylife:deposit:${move.citizenId}`
+  if (move.kind === 'purchase') return `citylife:purchase:${move.citizenId}:${move.lotId}`
+  return `citylife:build:${move.fromCitizenId}:${move.lotId}`
 }
 
 function amountOf(move: LedgerMove): number {
@@ -124,9 +131,10 @@ export function userIdFromToken(token: string): string | null {
 function isLedgerMove(v: unknown): v is LedgerMove {
   if (!v || typeof v !== 'object') return false
   const m = v as Record<string, unknown>
-  if (typeof m['txnId'] !== 'number' || typeof m['amount'] !== 'number') return false
-  if (m['kind'] === 'deposit' || m['kind'] === 'purchase') return typeof m['citizenId'] === 'string'
-  if (m['kind'] === 'commission') return typeof m['fromCitizenId'] === 'string' && typeof m['toCitizenId'] === 'string'
+  if (typeof m['amount'] !== 'number') return false
+  if (m['kind'] === 'deposit') return typeof m['citizenId'] === 'string'
+  if (m['kind'] === 'purchase') return typeof m['citizenId'] === 'string' && typeof m['lotId'] === 'string'
+  if (m['kind'] === 'commission') return typeof m['fromCitizenId'] === 'string' && typeof m['toCitizenId'] === 'string' && typeof m['lotId'] === 'string'
   return false
 }
 

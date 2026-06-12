@@ -39,11 +39,26 @@ export function post(ledger: Ledger, memo: string, entries: LedgerEntry[]): bool
   return true
 }
 
-/** Total Kook held by the Kookerverse bank across every settler account. */
+/** Total Kook held by the Kookerverse bank across every settler account (legacy colony-sim path). */
 export function bankDeposits(ledger: Ledger): number {
   let sum = 0
   for (const k of Object.keys(ledger.accounts)) if (k.startsWith('settler:')) sum += ledger.accounts[k]!
   return sum
+}
+
+/** Spec 085 — total ₭ held across every citizen wallet: the active land economy's money (the
+ *  settler accounts above are the retired colony-sim path; the migration spine uses `citizen:`). */
+export function walletDeposits(ledger: Ledger): number {
+  let sum = 0
+  for (const k of Object.keys(ledger.accounts)) if (k.startsWith('citizen:')) sum += ledger.accounts[k]!
+  return sum
+}
+
+/** How many citizen wallets exist on the ledger — the count of funded residents (spec 085). */
+export function walletCount(ledger: Ledger): number {
+  let n = 0
+  for (const k of Object.keys(ledger.accounts)) if (k.startsWith('citizen:')) n++
+  return n
 }
 
 export function settlerAccounts(ledger: Ledger): { id: number; balance: number }[] {
