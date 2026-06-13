@@ -28,6 +28,8 @@ import { makeCommercialDistrict, type CommercialDistrict, type ShopKind, type Sh
 import { cellOk, leastCostPath, type Cell } from './pathfind'
 import { createRadio, tuneTo, toggleOn as radioToggleOn, toggleMuted as radioToggleMuted, spinHouseAd, type RadioState } from './radio'
 import { buildShareCard, headlineFor, shareStats, siteLabel, DEFAULT_TAGLINE, CARD_ID, type CardFormat } from './social/shareCard'
+import { commercialFrontageExclusion, makeRaceTrack } from './racing/track'
+import { newRaceState, stepRace, type RaceInput, type RaceMode, type RaceState } from './racing/race'
 
 // Spec 078 — Joe the Crab, the founding resident. Fixed id + birth stamp + house so he is deterministic,
 // always present from sol zero, and survives reloads with no new save format. His house is an authored 077
@@ -96,6 +98,7 @@ export interface ColonyUiState {
   border: { households: Household[]; bots: Bot[]; botSource: string; plots: Plot[] }
   citizens: { count: number; awake: number; list: CitizenPublic[]; wallets: Record<string, number> }
   firstPerson: { active: boolean; citizenId: string | null; citizenName: string | null; operatorCitizenId: string | null; view: FirstPersonView | null; narration: string | null; narrating: boolean }
+  race: { mode: RaceMode; available: boolean; countdownMs: number; timeMs: number; finishedMs: number | null; bestMs: number | null; checkpoint: number; checkpoints: number; offTrack: boolean }
   neighborhood: { lots: { id: string; built: boolean; owner: string | null; ownerId: string | null; reserved: boolean; price: number | null; priceZar: number | null }[]; free: number; built: number; houseCost: number; canAfford: boolean; buildHint: string }
   commerce: { plots: number; free: number; byKind: { kiosk: number; store: number; showroom: number }; canClaim: boolean; cheapest: { kind: ShopKind; price: number } | null; parcels: { id: string; kind: ShopKind; price: number; priceZar: number; built: boolean; owner: string | null }[] }
   radio: RadioState
@@ -151,6 +154,10 @@ export class ColonyRuntime {
   private fpCitizenId: string | null = null
   // First-person locomotion — which movement keys are held while you walk your bot around.
   private fpKeys = new Set<string>()
+  private raceState: RaceState | null = null
+  private raceInput: RaceInput = {}
+  private bestRaceMs: number | null = null
+  private readonly worldSeed: number
   /** Spec 084 S6 / 079 — the reserved shop-district land bank at the avenue's inland end. */
   commercialReserve: { x: number; y: number; w: number; h: number } | null = null
   /** Spec 079 P0 — the surveyed commercial high street + shop plots within the reserve. */
@@ -163,6 +170,7 @@ export class ColonyRuntime {
   private fpNarrating = false
 
   constructor(seed: number = COLONY.render.seed) {
+    this.worldSeed = seed
     this.sim = new ColonySim(seed)
     restoreColony(this.sim.state) // re-place settlers + restore the Kookerverse ledger
     this.cityPlan = makeCityPlan(this.sim.state.terrain)
@@ -529,6 +537,70 @@ export class ColonyRuntime {
     if (!m) return
     if (down) this.fpKeys.add(m)
     else this.fpKeys.delete(m)
+  }
+
+  startRace(): boolean {
+    if (this.fpCitizenId) this.exitFirstPerson()
+    const track = makeRaceTrack(this.sim.state, {
+      commercialCenter: this.raceCommercialCenter(),
+      lighthouse: this.sim.state.structures.find((s) => s.kind === 'lighthouse'),
+      seed: this.worldSeed,
+      excludeCells: commercialFrontageExclusion(this.commercialDistrict),
+    })
+    if (!track) return false
+    this.raceInput = {}
+    this.raceState = newRaceState(track)
+    this.renderer?.setRaceState(this.raceState)
+    this.emit()
+    return true
+  }
+
+  exitRace(): void {
+    if (!this.raceState) return
+    this.raceState = null
+    this.raceInput = {}
+    this.renderer?.setRaceState(null)
+    this.emit()
+  }
+
+  setRaceKey(key: string, down: boolean): void {
+    const map: Record<string, keyof RaceInput> = {
+      keyw: 'accelerate', arrowup: 'accelerate',
+      keys: 'brake', arrowdown: 'brake',
+      keya: 'steerLeft', arrowleft: 'steerLeft',
+      keyd: 'steerRight', arrowright: 'steerRight',
+      shiftleft: 'handbrake', shiftright: 'handbrake',
+    }
+    const m = map[key.toLowerCase()]
+    if (!m) return
+    this.raceInput = { ...this.raceInput, [m]: down }
+  }
+
+  private raceCommercialCenter(): { x: number; y: number } | null {
+    const street = this.commercialDistrict?.street
+    if (street && street.length > 0) {
+      let sx = 0, sy = 0
+      for (const c of street) { sx += c.x; sy += c.y }
+      return { x: sx / street.length, y: sy / street.length }
+    }
+    const r = this.commercialReserve
+    return r ? { x: r.x + r.w / 2, y: r.y + r.h / 2 } : null
+  }
+
+  private raceTick(dtReal: number): void {
+    const cur = this.raceState
+    if (!cur) return
+    if (cur.mode === 'finished' || cur.mode === 'idle') {
+      this.renderer?.setRaceState(cur)
+      return
+    }
+    const next = stepRace(cur, this.raceInput, dtReal * 1000)
+    this.raceState = next
+    this.renderer?.setRaceState(next)
+    if (next.mode === 'finished' && next.finishedMs !== null) {
+      this.bestRaceMs = this.bestRaceMs === null ? next.finishedMs : Math.min(this.bestRaceMs, next.finishedMs)
+      this.emit()
+    }
   }
 
   /** A cell is walkable if it is on the island (in-bounds, not water). */
@@ -1307,6 +1379,7 @@ export class ColonyRuntime {
     if (this.fpCitizenId) this.renderer.enterFirstPerson(this.fpCitizenId)
     this.renderer.setNeighborhood(this.neighborhood) // spec 075 — lot pads + voxel homes
     this.renderer.setCommercialDistrict(this.commercialDistrict) // spec 079 — the vibrant shop strip
+    this.renderer.setRaceState(this.raceState)
     this.running = true
     this.lastFrame = performance.now()
     this.lastUi = this.lastFrame
@@ -1337,6 +1410,7 @@ export class ColonyRuntime {
     if (this.fpCitizenId) this.driveFirstPerson(dtReal) // walk your bot with WASD when stepped in
     this.citizens.stepAvatars(dtReal) // P1 — walk the avatars in real time toward their targets
     this.wanderIdleCitizens(dtReal) // keep the citizens strolling so watch mode is never frozen
+    this.raceTick(dtReal)
     this.renderer?.frame()
     if (now - this.lastUi > 200) {
       this.lastUi = now
@@ -1497,6 +1571,21 @@ export class ColonyRuntime {
         const c = this.fpCitizenId ? this.citizens.byId(this.fpCitizenId) : null
         const view = this.fpCitizenId ? firstPersonView(this.sim.state, this.fpCitizenId, this.citizens) : null
         return { active: this.fpCitizenId !== null, citizenId: this.fpCitizenId, citizenName: c?.displayName ?? null, operatorCitizenId: opId, view, narration: this.fpNarration, narrating: this.fpNarrating }
+      })(),
+      race: (() => {
+        const r = this.raceState
+        if (!r) return { mode: 'idle' as RaceMode, available: s.roadKind.size > 0, countdownMs: 0, timeMs: 0, finishedMs: null, bestMs: this.bestRaceMs, checkpoint: 0, checkpoints: 0, offTrack: false }
+        return {
+          mode: r.mode,
+          available: true,
+          countdownMs: Math.max(0, Math.ceil(r.countdownMs)),
+          timeMs: Math.round(r.raceTimeMs),
+          finishedMs: r.finishedMs === null ? null : Math.round(r.finishedMs),
+          bestMs: this.bestRaceMs === null ? null : Math.round(this.bestRaceMs),
+          checkpoint: Math.min(r.checkpoints.length, Math.max(0, r.nextCheckpoint)),
+          checkpoints: r.checkpoints.length,
+          offTrack: r.offTrack,
+        }
       })(),
       neighborhood: (() => {
         const lots = this.neighborhood.lots.map((l) => {

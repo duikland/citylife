@@ -11,6 +11,13 @@ import { FirstPersonPanel } from './FirstPersonPanel'
 import './colony.css'
 
 const pad = (n: number) => String(n).padStart(2, '0')
+const raceTime = (ms: number | null) => {
+  if (ms === null) return '--'
+  const m = Math.floor(ms / 60000)
+  const s = Math.floor((ms % 60000) / 1000)
+  const d = Math.floor((ms % 1000) / 100)
+  return `${m}:${String(s).padStart(2, '0')}.${d}`
+}
 
 function useRuntime(): ColonyRuntime {
   const ref = useRef<ColonyRuntime | null>(null)
@@ -76,11 +83,22 @@ export function ColonyApp() {
   // When stepped into a bot (first person), W/A/S/D or the arrow keys WALK it around.
   useEffect(() => {
     const MOVE = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
+    const RACE_MOVE = new Set([...MOVE, 'ShiftLeft', 'ShiftRight'])
     // 'KeyW' -> 'w', 'ArrowUp' -> 'arrowup' (runtime.setFpKey lowercases + maps these to fwd/back/left/right)
     const norm = (code: string) => (code.startsWith('Arrow') ? code.toLowerCase() : code.slice(3))
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (runtime.getUiState().race.mode !== 'idle') {
+        if (RACE_MOVE.has(e.code)) {
+          e.preventDefault()
+          runtime.setRaceKey(e.code, true)
+        } else if (e.code === 'Escape') {
+          e.preventDefault()
+          runtime.exitRace()
+        }
+        return
+      }
       if (runtime.getUiState().firstPerson.active) {
         // Continuous WASD / arrow-key locomotion — hold to walk the bot, release to stop (keyup handler).
         if (MOVE.has(e.code)) {
@@ -103,6 +121,7 @@ export function ColonyApp() {
       }
     }
     const onKeyUp = (e: KeyboardEvent) => {
+      if (RACE_MOVE.has(e.code)) runtime.setRaceKey(e.code, false)
       if (MOVE.has(e.code)) runtime.setFpKey(norm(e.code), false)
     }
     window.addEventListener('keydown', onKey)
@@ -125,6 +144,18 @@ export function ColonyApp() {
         </div>
       )}
       <FirstPersonPanel runtime={runtime} fp={ui.firstPerson} />
+      {ui.race.mode !== 'idle' && (
+        <div style={{ position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)', zIndex: 52, display: 'flex', gap: 10, alignItems: 'center', background: 'rgba(10,14,28,0.82)', border: '1px solid #33415f', borderRadius: 8, padding: '8px 14px', backdropFilter: 'blur(4px)', color: '#d8e6ff', fontSize: 13 }}>
+          <b style={{ color: '#ffcf66' }}>Road Rally</b>
+          {ui.race.mode === 'countdown'
+            ? <span>{Math.ceil(ui.race.countdownMs / 1000)}</span>
+            : <span>{raceTime(ui.race.finishedMs ?? ui.race.timeMs)}</span>}
+          <span style={{ color: ui.race.offTrack ? '#e0a14d' : '#8fb6d8' }}>{ui.race.checkpoint}/{ui.race.checkpoints}</span>
+          {ui.race.bestMs !== null && <span style={{ color: '#8fd0a6' }}>Best {raceTime(ui.race.bestMs)}</span>}
+          <button style={{ padding: '3px 10px' }} onClick={() => runtime.startRace()}>Restart</button>
+          <button style={{ padding: '3px 10px' }} onClick={() => runtime.exitRace()}>Exit</button>
+        </div>
+      )}
 
       <header className="topbar">
         <div className="brand">
@@ -157,6 +188,16 @@ export function ColonyApp() {
               {v.label}
             </button>
           ))}
+        </div>
+        <div className="group">
+          <button
+            className={ui.race.mode !== 'idle' ? 'on' : ''}
+            disabled={!ui.race.available}
+            onClick={() => { if (ui.race.mode === 'idle') runtime.startRace(); else runtime.exitRace() }}
+            title="Road Rally"
+          >
+            Road Rally
+          </button>
         </div>
         <div className="group">
           <button className={ui.zonesVisible ? 'on' : ''} disabled={!ui.colony.surveyed} onClick={() => runtime.toggleZones()} title={ui.colony.surveyed ? 'Liveability map — tint homes cyan (thriving) to amber (starved)' : 'Build a Civic Pulse Survey Office to unlock the liveability map'}>
