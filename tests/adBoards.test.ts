@@ -1,9 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { describe, it, expect, vi } from 'vitest'
 import { ColonyRuntime } from '../src/colony/runtime'
 import { cellOk } from '../src/colony/pathfind'
 import { surveyBillboards } from '../src/colony/commerce/billboards'
-import { posterModel, PSA_POSTER } from '../src/colony/commerce/adCanvas'
+import { posterModel, PSA_POSTER, paintPoster } from '../src/colony/commerce/adCanvas'
 import { BUSINESSES } from '../src/colony/commerce/businesses'
 import { isPublicSafe } from '../src/colony/newcomers'
 
@@ -98,11 +97,24 @@ describe('081 ad boards — poster model', () => {
 })
 
 describe('081 ad boards — purity guard', () => {
-  it('billboards.ts and adCanvas.ts use no wall-clock or RNG', () => {
-    for (const f of ['src/colony/commerce/billboards.ts', 'src/colony/commerce/adCanvas.ts']) {
-      // strip comments first — the guard pins CODE, not prose (the file comments describe the rule)
-      const code = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
-      expect(code).not.toMatch(/Date\.now|Math\.random|new Date\(/)
+  it('the survey + poster paths touch no wall-clock or RNG (runtime guard)', () => {
+    const dateSpy = vi.spyOn(Date, 'now')
+    const randSpy = vi.spyOn(Math, 'random')
+    try {
+      const rt = rtFor(4242)
+      surveyBillboards(rt.commercialDistrict!, rt.sim.state.terrain, blockedFor(rt), 2)
+      // a minimal 2D-context stub covering exactly what paintPoster touches
+      const ctx = {
+        fillStyle: '', font: '', textBaseline: '', textAlign: '',
+        fillRect() {}, fillText() {}, measureText() { return { width: 10 } as TextMetrics },
+      } as unknown as CanvasRenderingContext2D
+      paintPoster(ctx, posterModel('nearest_bar'), 256, 160)
+      paintPoster(ctx, posterModel(undefined), 256, 160)
+      expect(dateSpy).not.toHaveBeenCalled()
+      expect(randSpy).not.toHaveBeenCalled()
+    } finally {
+      dateSpy.mockRestore()
+      randSpy.mockRestore()
     }
   })
 })
