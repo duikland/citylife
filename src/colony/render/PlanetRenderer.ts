@@ -18,6 +18,8 @@ import { homeLiveability, surveyAvailable, liveabilityTint, porterStatus } from 
 import type { Neighborhood } from '../neighborhood'
 import type { CommercialDistrict, ShopParcel } from '../commerce/district'
 import { BUSINESSES, type Business, type Emblem } from '../commerce/businesses'
+import { surveyBillboards } from '../commerce/billboards'
+import { posterModel, paintPoster } from '../commerce/adCanvas'
 import { buildVoxelHouse, BLOCK_COLOR, type VoxelHouse, type DoorDir } from '../voxelHouse'
 import { compileBlueprint, VOXEL_Y } from '../houseBuilder'
 import { greedyMesh } from './voxelMesh'
@@ -1544,9 +1546,10 @@ export class PlanetRenderer {
       child.traverse((o) => {
         const m = o as THREE.Mesh
         if (m.geometry) m.geometry.dispose()
+        const disposeMat = (x: THREE.Material) => { (x as THREE.MeshStandardMaterial).map?.dispose(); x.dispose() } // free the board CanvasTextures too
         const mat = m.material as THREE.Material | THREE.Material[] | undefined
-        if (Array.isArray(mat)) mat.forEach((x) => x.dispose())
-        else mat?.dispose()
+        if (Array.isArray(mat)) mat.forEach(disposeMat)
+        else if (mat) disposeMat(mat)
       })
     }
     this.commercialGroup.clear()
@@ -1701,6 +1704,39 @@ export class PlanetRenderer {
         const bush = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 7), leafMat); bush.position.y = 0.3
         planter.add(tub, bush)
         this.commercialGroup.add(planter)
+      }
+      // Spec 081 P0 — AD BOARDS at the strip approaches. Each board is a post pair + frame + a screen
+      // plane carrying a CanvasTexture painted by adCanvas (a deterministic poster for one real shop, or
+      // the welcome PSA when none). Placement is the pure surveyBillboards (collision-checked against
+      // roads + shop footprints); the screen faces inward down the strip and glows softly after dark
+      // (emissive under the bloom threshold). Disposed with the group — texture too (see the teardown).
+      const boardBlocked = new Set<string>(this.sim.state.roadSet)
+      for (const p of d.parcels) for (let yy = p.y; yy < p.y + p.h; yy++) for (let xx = p.x; xx < p.x + p.w; xx++) boardBlocked.add(`${xx},${yy}`)
+      const shopById = new Map(d.parcels.map((p) => [p.id, p]))
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x3a3f4a, roughness: 0.7 })
+      for (const site of surveyBillboards(d, t, boardBlocked)) {
+        const by = Math.max(0, t.worldY(Math.round(site.x), Math.round(site.y)))
+        const grp = new THREE.Group()
+        grp.position.set(this.wx(site.x), by, this.wz(site.y))
+        grp.rotation.y = site.faceX === 1 ? Math.PI / 2 : -Math.PI / 2 // a +z plane turned to face along the street
+        for (const px of [-0.7, 0.7]) {
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.8, 6), postMat)
+          post.position.set(px, 0.9, 0); post.castShadow = true; grp.add(post)
+        }
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(1.95, 1.32, 0.12), postMat)
+        frame.position.set(0, 2.1, 0); frame.castShadow = true; grp.add(frame)
+        const shop = site.shopId ? shopById.get(site.shopId) : undefined
+        const cv = document.createElement('canvas'); cv.width = 256; cv.height = 160
+        const ctx = cv.getContext('2d')
+        if (ctx) paintPoster(ctx, posterModel(shop?.business), cv.width, cv.height)
+        const tex = new THREE.CanvasTexture(cv)
+        const screen = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.78, 1.12),
+          new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.35, roughness: 0.6 }),
+        )
+        screen.position.set(0, 2.1, 0.07)
+        grp.add(screen)
+        this.commercialGroup.add(grp)
       }
     }
   }
