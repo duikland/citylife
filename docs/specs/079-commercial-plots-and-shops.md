@@ -233,9 +233,16 @@ DONE
 - 5 node tests (marquee-to-biggest-plots, determinism, exactly-one-seating, live district tagging,
   public-safe names). 711 green, tsc clean. Live-verified on :5188: 10 plots themed by app, the
   Nearest bar shows its counter + stools + patrons, distinct neon per business.
+### 2026-06-13 — Loop iteration 2: signature props per marquee business
+DONE
+- renderer buildBusinessProps(): each marquee storefront gets distinct, recognisable props — the
+  Nearest bar a radar mast + dish, four glowing colour vials, and a little bar-chart sign (the
+  concept-café look on top of its counter + stools); Sprout a row of plant sprouts + shrubs;
+  Sportifine a green pitch + goal + ball; Chef Ott a striped market awning + food crates + a chimney.
+  Generic plots keep the simple themed stall. 711 green, tsc clean, verified live.
 NEXT (loop)
-- bespoke structures for Sprout/Sportifine/Chef Ott (greenhouse, pitch, kitchen-market), the radar
-  dish + colour vials + bar-chart signage on the bar, and live bots walking to + sitting at the bar.
+- live bots walking to + sitting at the bar (sim behaviour); then commerce relocates to the shore by
+  the lighthouse (086-P1) once Codex's lighthouse lands.
 
 ### 2026-06-13 — Fix: stalls were landing on homestead plots
 DONE

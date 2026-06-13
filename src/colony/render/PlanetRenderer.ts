@@ -17,7 +17,7 @@ import { cellZone, ZONE_COLOR, VIBE_COLOR, type Plot } from '../cityPlan'
 import { homeLiveability, surveyAvailable, liveabilityTint, porterStatus } from '../build'
 import type { Neighborhood } from '../neighborhood'
 import type { CommercialDistrict, ShopParcel } from '../commerce/district'
-import { BUSINESSES, type Emblem } from '../commerce/businesses'
+import { BUSINESSES, type Business, type Emblem } from '../commerce/businesses'
 import { buildVoxelHouse, BLOCK_COLOR, type VoxelHouse, type DoorDir } from '../voxelHouse'
 import { compileBlueprint, VOXEL_Y } from '../houseBuilder'
 import { greedyMesh } from './voxelMesh'
@@ -1536,8 +1536,47 @@ export class PlanetRenderer {
         }
       }
 
+      // Signature props give each marquee app a distinct, recognisable place (the bar's radar dish +
+      // vials + bar-chart, Sprout's plants, Sportifine's pitch, Chef Ott's market awning + crates).
+      if (biz?.marquee) g.add(this.buildBusinessProps(biz, bodyW, bodyD, wallH, front))
+
       this.commercialGroup.add(g)
     })
+  }
+
+  /** Signature props for a marquee storefront, positioned relative to its plot centre. `front` is the
+   *  +z/-z direction of the street the plot faces. Keeps each app's site recognisable from afar. */
+  private buildBusinessProps(biz: Business, bodyW: number, bodyD: number, wallH: number, front: number): THREE.Object3D {
+    const grp = new THREE.Group()
+    const glow = (hex: number, ei = 0.5) => new THREE.MeshStandardMaterial({ color: hex, emissive: hex, emissiveIntensity: ei, roughness: 0.4 })
+    const matte = (hex: number) => new THREE.MeshStandardMaterial({ color: hex, roughness: 0.8 })
+    const frontZ = front * (bodyD / 2)
+    if (biz.id === 'nearest_bar') {
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.0, 6), matte(0x9aa3b2))
+      mast.position.set(bodyW * 0.35, wallH + 0.5, -frontZ * 0.6)
+      const dish = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.2, 18, 1, true), glow(biz.palette, 0.7))
+      dish.position.set(bodyW * 0.35, wallH + 1.05, -frontZ * 0.6); dish.rotation.x = Math.PI * 0.8
+      grp.add(mast, dish)
+      const vials = [0xff2d95, 0x18e0ff, 0xffc233, 0x7bff4d]
+      vials.forEach((cv, k) => { const v = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8), glow(cv, 0.85)); v.position.set((k - 1.5) * 0.18, wallH + 0.25, frontZ * 0.6); grp.add(v) })
+      ;[0.3, 0.5, 0.4, 0.6].forEach((h, k) => { const b = new THREE.Mesh(new THREE.BoxGeometry(0.08, h, 0.06), glow(biz.palette, 0.6)); b.position.set(-bodyW * 0.5 - 0.16, wallH * 0.4 + h / 2, (k - 1.5) * 0.12); grp.add(b) })
+    } else if (biz.id === 'sprout_nursery') {
+      for (let k = 0; k < 5; k++) { const c = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.34, 7), matte(0x3fae5a)); c.position.set((k - 2) * 0.28, 0.17, frontZ + front * 0.6); grp.add(c) }
+      for (const sx of [-bodyW * 0.3, bodyW * 0.3]) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 7), matte(0x2f8f49)); s.position.set(sx, wallH + 0.2, frontZ * 0.4); grp.add(s) }
+    } else if (biz.id === 'sportifine_club') {
+      const pitch = new THREE.Mesh(new THREE.BoxGeometry(bodyW * 0.9, 0.04, 1.2), matte(0x2e8b3e)); pitch.position.set(0, 0.02, frontZ + front * 0.85); grp.add(pitch)
+      const postMat = glow(0xf6f6f6, 0.2)
+      const gl = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), postMat); gl.position.set(-0.4, 0.25, frontZ + front * 1.4)
+      const gr = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), postMat); gr.position.set(0.4, 0.25, frontZ + front * 1.4)
+      const gt = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.05, 0.05), postMat); gt.position.set(0, 0.5, frontZ + front * 1.4)
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), matte(0xf0f0f0)); ball.position.set(0.1, 0.1, frontZ + front * 0.45)
+      grp.add(gl, gr, gt, ball)
+    } else if (biz.id === 'chef_market') {
+      const awning = new THREE.Mesh(new THREE.BoxGeometry(bodyW * 1.1, 0.08, 0.7), glow(0xff6a3d, 0.4)); awning.position.set(0, wallH * 0.82, frontZ + front * 0.35); awning.rotation.x = front * 0.25; grp.add(awning)
+      for (let k = 0; k < 3; k++) { const cr = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), matte(0x9c6b3f)); cr.position.set((k - 1) * 0.3, 0.11, frontZ + front * 0.7); grp.add(cr) }
+      const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.4, 8), matte(0x5a5f6a)); chimney.position.set(-bodyW * 0.3, wallH + 0.2, -frontZ * 0.4); grp.add(chimney)
+    }
+    return grp
   }
 
   /** A small, distinctive rooftop emblem per business kind (positioned at the group origin by the
