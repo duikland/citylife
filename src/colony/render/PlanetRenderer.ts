@@ -1713,11 +1713,15 @@ export class PlanetRenderer {
         add(new THREE.CylinderGeometry(0.02, 0.02, 0.26, 5), SHELL_DK, [s * 0.34, 0.10, dz], [0, 0, s * 0.95])
       }
     }
-    // headset — a half-torus band arching over the top (side to side) + two earcups
-    add(new THREE.TorusGeometry(0.28, 0.03, 6, 18, Math.PI), BAND, [0, 0.27, 0])
-    for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 14), CUP, [s * 0.28, 0.27, 0], [0, 0, Math.PI / 2])
-    // exactly ONE yellow lightning accent, on the +x earcup only (matches his portrait)
-    add(new THREE.BoxGeometry(0.05, 0.11, 0.025), BOLT, [0.32, 0.30, 0], [0, 0, 0.35])
+    // headset — an ELLIPTICAL band that hugs the flattened shell side-to-side (a circular torus
+    // arched too high and sat narrower than the head, so it read as a floating ring with the earcups
+    // buried). Scaled to the shell's own [1.25, 0.6] profile so its ends meet the earcups on the
+    // sides and its crown rests just over the dome.
+    add(new THREE.TorusGeometry(0.30, 0.038, 8, 22, Math.PI), BAND, [0, 0.26, 0], undefined, [1.25, 0.68, 1.0])
+    // earcups — chunky discs seated ON the sides of the head (x just past the shell edge), facing out
+    for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.10, 0.10, 0.07, 16), CUP, [s * 0.38, 0.26, 0.02], [0, 0, Math.PI / 2])
+    // exactly ONE yellow lightning accent on the +x earcup's OUTER face (matches his portrait)
+    add(new THREE.BoxGeometry(0.022, 0.13, 0.06), BOLT, [0.42, 0.27, 0.02], [0, 0, 0.4])
     const merged = mergeGeometries(parts, false)
     for (const p of parts) p.dispose()
     return merged
