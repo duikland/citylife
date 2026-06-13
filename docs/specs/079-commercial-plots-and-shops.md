@@ -1,6 +1,6 @@
 # Spec 079 — Commercial plots and shops
 
-- status: proposed
+- status: building (P0 done 2026-06-13)
 - proposed-by: irwin (operator directive) + claude (architect, commerce + bot-computers design workflow)
 - date: 2026-06-10
 - depends-on: 075 (citizen accounts + owned Hermes), 076 (bot login + homesteads), 077 (bot house builder)
@@ -163,4 +163,164 @@ reload and a device switch, and its wallet balance grows with sales.
   creation, and the mission brief POSTed to the bot over its existing OTA channel (BOT_BASE_URL,
   gateway-token auth). Replaces the manual half of P9 with one admin click.
 
-Each slice ships on mechanics/dev, passes typecheck plus vitest, and is visible on :5188.
+Each slice ships on the rolling branch, passes typecheck plus vitest, and is visible on :5188.
+
+## Progress log
+
+### 2026-06-13 — Slice P0: the commercial high street, surveyed + lit (vibrant-first)
+DONE
+- src/colony/commerce/district.ts (pure): makeCommercialDistrict(terrain, reserve) surveys a high
+  street down the reserve midline + shop plots (kiosk 4x4 / store 6x5 / showroom 8x6) flanking it on
+  both sides, every cell gated through cellOk (the shared land contract), collision-checked against a
+  claimed set, deterministic in (terrain, reserve) — no Date.now, no Math.random. 5 node tests:
+  plots placed, every footprint on-land + inside the reserve, no overlap, door on the street-facing
+  front row, replays identically.
+- config.commerce: per-kind plot prices in city coin (kiosk 220 / store 420 / showroom 720, a
+  premium tier over residential land) + build materials; the ZAR bridge reuses economy.land.
+- runtime: surveys the district on boot off the existing commercialReserve (the 40x30 land bank at
+  the avenue's inland end), exposes it in uiState.commerce (plots, free, byKind, priced parcels), and
+  hands it to the renderer. A shopPriceK(kind) helper.
+- renderer: every shop plot raises a VIBRANT NEON market stall — a dark slate shopfront, a glowing
+  awning canopy, and a bright signage panel facing the street. The neon palette
+  (magenta/cyan/amber/lime/violet/orange) cycles per stall and the signs flare brighter after dark
+  via the day/night hook, so the strip becomes the lit heart of the city at dusk — the district
+  concept-art look (docs/research/2026-06-13-district-concept.md). HUD gains a Commercial district
+  panel (plots + per-kind prices).
+- 697 tests green, tsc clean. LIVE on :5188: 10 plots surveyed (2 showroom / 4 store / 4 kiosk)
+  priced 720/420/220 city coin (R18,000 / 10,500 / 5,500), 10 stalls rendered into the scene, the
+  sign emissive flares to 1.46 at dusk, no console errors. Screenshots are broken this session, so
+  verified via scene introspection (mesh count, materials, emissive, positions) per the visual standard.
+NEXT
+- P2: raise the shop massing through the shared voxel core (compileBlueprint + greedyMesh) on a
+  bought plot, gated on materials, replacing the placeholder stall with real shop architecture.
+
+### 2026-06-13 — Slice P1: the high street is buyable, on the live ledger
+DONE
+- runtime.buyCommercialShop(citizenId, shopId): a citizen takes a free high-street plot with their ₭
+  wallet. Gated on funds; the price moves citizen -> the city land office on the in-game double-entry
+  ledger (the same `land` account residential deeds use) and MIRRORS to the real
+  kooker-service-ledger via bot/ledgerSync.ts as a LAND_PURCHASE, keyed by the shop id
+  (citylife:purchase:<citizen>:<shop_N>, distinct from a homestead deed). Ownership is set and a
+  Kookerbook deed event posts. cheapestFreeShop() + claimNextShop() (the wealthiest shopless citizen
+  takes the cheapest free plot) drive the HUD Buy action; the arrival path also claims a shop when a
+  newcomer can still afford one after their home.
+- HUD: the Commercial district panel gains a funds-gated "Open a shop" button (canClaim + the cheapest
+  free kind/price surfaced in uiState.commerce); the free count drops + ownership shows as plots sell.
+- 6 node tests (cheapest is the kiosk, the buy debits + credits + conserves to zero + records
+  ownership, the mirror posts a content-addressed shop purchase, double-buy + unaffordable rejected,
+  claimNextShop is deterministic, the uiState reflects ownership + the gate). 703 green, tsc clean.
+- LIVE on :5188: claimNextShop -> Viw (787 ₭, wealthiest) took the cheapest kiosk (220 ₭) -> his
+  wallet 567, the land office +220, the ledger nets to zero, free 10 -> 9, and the sale mirrored to
+  the real ledger (lastSyncedRef citylife:purchase:citizen_viw:shop_2, no error).
+NEXT
+- P2: the bought plot raises real shop massing (the placeholder neon stall becomes architecture);
+  P3 the listing DSL + storefront + the checkout that posts a sale to the real ledger.
+
+### 2026-06-13 — Themed commercial economy (loop iteration 1): each plot fronts a real kooker app
+DONE
+- src/colony/commerce/businesses.ts (pure): a catalog of THEMED businesses, each fronting a real
+  kooker app — The Nearest (energy/radar) as a BAR with seating, Chef Ott's Market (kitchen +
+  exercise), Sportifine Club (sports), Sprout Greenhouse (plant companion), plus generic Trading
+  Post / Corner Kiosk. assignBusinesses() deterministically gives the marquee apps the biggest plots
+  first (the bar lands on the largest, for its counter + stools); the rest fill generic. district.ts
+  tags every surveyed plot with its business.
+- renderer: each storefront is themed by its business — the business palette drives the neon
+  awning + sign, and a distinct rooftop emblem (radar dish / leaf / ball / pot / crate / tag) reads
+  the app at a glance. The Nearest bar gets a wooden counter + three stools with seated patrons on
+  the street side (the concept-café look; live bot pathing-to-sit is a later iteration).
+- Operator rule honoured: plots stay FOR SALE and are NOT pre-built — this is their business
+  identity/destiny, the builder raises the structure when a bot buys in (see project_citylife_commerce).
+- 5 node tests (marquee-to-biggest-plots, determinism, exactly-one-seating, live district tagging,
+  public-safe names). 711 green, tsc clean. Live-verified on :5188: 10 plots themed by app, the
+  Nearest bar shows its counter + stools + patrons, distinct neon per business.
+### 2026-06-13 — Loop iteration 2: signature props per marquee business
+DONE
+- renderer buildBusinessProps(): each marquee storefront gets distinct, recognisable props — the
+  Nearest bar a radar mast + dish, four glowing colour vials, and a little bar-chart sign (the
+  concept-café look on top of its counter + stools); Sprout a row of plant sprouts + shrubs;
+  Sportifine a green pitch + goal + ball; Chef Ott a striped market awning + food crates + a chimney.
+  Generic plots keep the simple themed stall. 711 green, tsc clean, verified live.
+### 2026-06-13 — Loop iteration 3: live bots gather at the Nearest bar after dark
+DONE
+- runtime wanderIdleCitizens(): after dark, an idle citizen near the bar claims a free stool and stays
+  seated until day, when the bar empties and they return to strolling. barSeats() computes the three
+  stool cells in front of the Nearest parcel (street side), cached, matching the three rendered stools.
+  barOccupied/barSeatBy track who holds which seat; day clears them. Render-loop cosmetic (Math.random
+  like the existing stroll), never the deterministic sim tick.
+- renderer: removed the two static patron spheres from the bar build so the live bots taking the
+  stools are not doubled by painted-on patrons. The counter + three empty stools stay.
+- 711 green, tsc clean. Live-verified on :5188 — forced night, both citizens claimed distinct stools,
+  walked to them and sat (pos == seat cell); the third stool stays free with only two citizens; by day
+  they release and stroll. Camera framed the bar front showing the radar mast, counter and seated bots.
+### 2026-06-13 — Loop iteration 4: Joe the Crab tends the Nearest (the exact concept-image look)
+DONE
+- renderer: a static crab keeper stands behind the Nearest counter, reusing the founder crab geometry
+  (the headset-fixed makeCrabGeometry) on a hidden duckboard riser so his headset, eyes and claws clear
+  the counter as he serves the patrons across it — the unmistakable Joe-at-the-bar look the operator
+  asked for. He faces the street side (the crab faces +z by default; rotate y by pi when side flips).
+  Citizen-Joe stays a separate founder; this is the bar mascot keeper. Disposed with the rest of the
+  commercial group on rebuild.
+- tsc clean, render-only (no test delta). Live-verified on :5188 — close shot of the bar front shows
+  the crab keeper over the wooden counter, orange shell + blue earcup headset + claws, no console errors.
+### 2026-06-13 — Loop iteration 5: bespoke storefronts for Sprout, Sportifine and Chef Ott
+DONE
+- renderer buildBusinessProps() enriched each marquee app into a characterful place (cheap static meshes,
+  all emissive < 0.9 so nothing trips the bloom threshold):
+  - Sprout — a terracotta planter trough of flowering sprouts (pink/yellow/white/blue blooms), potted
+    bushes flanking the door, a white trellis arch with green vines, roof shrubs. Reads as a lush nursery.
+  - Sportifine — the green pitch + goal + ball, plus two floodlight poles with glowing lamp heads, a
+    stepped grandstand in the club colour, and a corner flag. Reads as a sports club.
+  - Chef Ott — the striped awning + produce crates now carry colourful goods, a glowing grill under the
+    smoking chimney, an outdoor bistro table with stools, and a kettlebell (the app's exercise side).
+- tsc clean, render-only. Live-verified on :5188 — framed all three storefronts street-side; each is
+  distinct and busy, no console errors.
+### 2026-06-13 — Loop iteration 6: commerce moves to the shore beside the lighthouse (086-P1)
+DONE
+- The commercial district now fronts the Founders Lighthouse on the coast (see docs/specs/086 Slice P1
+  for the reserve-search + connector details). The themed storefronts (Nearest with Joe, Sprout,
+  Sportifine, Chef Ott) carry over unchanged — they just sit on the seaside now, a scenic promenade by
+  the landmark. LIVE seed 4242: reserve (117,234), district 52 cells off the lighthouse, road-connected
+  to the founders (BFS), no shop on the tower, no console errors. tsc clean.
+### 2026-06-13 — Loop iteration 7: a lit seaside promenade (street lamps along the high street)
+DONE
+- renderer buildCommercialDistrict(): after the shopfronts, a lamp-post pass lines the high street on
+  alternating verges (every ~5 street cells) — a dark pole + arm + a warm head that glows after dark
+  (emissive 0.82, under the 0.9 bloom threshold so it reads as warmth, not a halo). Turns the relocated
+  coastal strip into a lit promenade by the lighthouse. Cheap static meshes, disposed with the group.
+- tsc clean, render-only. Live-verified on :5188 at night (forced 21:30) — the lamps line the strip and
+  glow warm beneath the neon storefronts; no console errors.
+### 2026-06-13 — Loop iteration 8: promenade furniture (benches + planters) — commerce vision COMPLETE
+DONE
+- renderer buildCommercialDistrict(): after the lamps, a furniture pass adds benches (seat + backrest +
+  legs, facing the street) and leafy planters along the high-street verges, on the opposite phase to the
+  lamps so the strip reads as a strolled promenade, not just a lit one. Cheap static meshes, disposed
+  with the group. (Sea-facing boardwalk to the lighthouse was considered + dropped: the waterline is ~16
+  cells north behind the shop row, so it would hide behind the shops and risk clashing with Codex's
+  rockery boulders — the on-street furniture is the higher-value, lower-risk touch.)
+- tsc clean, render-only. Live-verified on :5188 — looking down the high street: paved road with
+  centre-line, lamps + benches + planters lining both verges, neon storefronts flanking, the SEA
+  alongside. Reads as a seaside commercial promenade. No console errors.
+- COMMERCE VISION COMPLETE: distributed city -> scattered hamlets + roads -> four characterful app
+  storefronts (Joe tending the Nearest, Sprout, Sportifine, Chef Ott) -> live bots at the bar after dark
+  -> relocated to the scenic lighthouse shore (086-P1) -> lit + furnished promenade. All on FOR-SALE
+  plots; no premature builds.
+NEXT
+- FUNCTIONAL milestone (not decoration): bots actually move in and buy commercial plots over time
+  (079-P1 buyCommercialShop + the migration spine drives it). Recommend the operator redirect the loop
+  here, or to a different spec. Further visual polish is now marginal.
+
+### 2026-06-13 — Fix: stalls were landing on homestead plots
+DONE
+- Operator live-screenshot caught neon stalls sitting ON residential gardens/fields: the 40x30
+  reserve was anchored at a FIXED offset off the avenue end, which dropped it straight onto the
+  inland homestead band, and the survey only checked terrain (cellOk), not the existing parcels.
+- Two-part fix: (1) the survey now takes a `blocked` set (every homestead footprint + driveway +
+  the carriage + verge) and refuses any shop cell in it — the same collision discipline the homestead
+  survey uses; (2) the reserve is no longer a fixed offset — runtime SEARCHES past the avenue's inland
+  terminus, in the avenue's own inland direction (a deterministic step/perp sweep), for the 40x30 rect
+  with the most clear (dry, unbuilt, non-road) ground; the clearest wins, or null if nowhere near the
+  end is open enough (graceful — no district, no crash).
+- Tests rewritten to drive the REAL ColonyRuntime boot (no reconstruction drift) with a new assertion
+  that NO shop footprint lands on a homestead cell, across seeds 4242/42/7. 706 green, tsc clean.
+- LIVE on :5188 (seed 4242): reserve relocated to (376,363); 10 shops in two tidy rows flanking the
+  high street, shopFootprintCellsOnResidential = 0, 10 stalls rendered, no console errors.

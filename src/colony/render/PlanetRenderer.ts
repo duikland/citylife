@@ -16,11 +16,14 @@ import { gridOrigin } from '../grid'
 import { cellZone, ZONE_COLOR, VIBE_COLOR, type Plot } from '../cityPlan'
 import { homeLiveability, surveyAvailable, liveabilityTint, porterStatus } from '../build'
 import type { Neighborhood } from '../neighborhood'
+import type { CommercialDistrict, ShopParcel } from '../commerce/district'
+import { BUSINESSES, type Business, type Emblem } from '../commerce/businesses'
 import { buildVoxelHouse, BLOCK_COLOR, type VoxelHouse, type DoorDir } from '../voxelHouse'
 import { compileBlueprint, VOXEL_Y } from '../houseBuilder'
 import { greedyMesh } from './voxelMesh'
 import { buildChunkedTerrain, type ChunkedTerrain } from './terrainChunks'
 import { defaultBlueprint, streetDoorDir, type Zone } from '../neighborhood'
+import { buildShoreProps, type ShorePropsLayer } from './shoreProps'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
 export type CameraPreset = 'street' | 'district' | 'planet'
@@ -116,6 +119,12 @@ export class PlanetRenderer {
   private mergedHouseGroup = new THREE.Group()
   private mergedHouseMat!: THREE.MeshStandardMaterial
   private lastNbhdSig = ''
+  // Spec 079 P0 — the vibrant commercial strip: a group of neon market-stall composites surveyed
+  // along the high street, rebuilt when the district changes. The sign materials glow brighter after
+  // dark (the day/night hook) so the strip reads as the awake heart of the city at dusk.
+  private commercialDistrict?: CommercialDistrict
+  private commercialGroup = new THREE.Group()
+  private commercialSignMats: THREE.MeshStandardMaterial[] = []
   // Spec 084 S1 — per-lot house mesh key (blueprint + foundation height) for incremental rebuilds.
   private lotHouseKey = new Map<string, string>()
   private settlerGroup = new THREE.Group()
@@ -143,6 +152,7 @@ export class PlanetRenderer {
   private lastCarT = 0
   // Pulsing red nav beacon at the rocket nose — material ref so frame() can blink it.
   private beaconMat: THREE.MeshStandardMaterial | null = null
+  private shoreProps: ShorePropsLayer | null = null
 
   private N: number
   private R: number
@@ -433,6 +443,7 @@ export class PlanetRenderer {
     const t = this.sim.state.terrain
     const group = new THREE.Group()
     for (const s of this.sim.state.structures) {
+      if (s.kind === 'lighthouse') continue
       const mesh = this.makeStructure(s)
       const baseY = Math.max(0.05, t.worldY(s.x, s.y))
       mesh.position.set(this.wx(s.x), baseY, this.wz(s.y))
@@ -440,6 +451,15 @@ export class PlanetRenderer {
       group.add(mesh)
     }
     this.scene.add(group)
+    this.shoreProps = buildShoreProps({
+      terrain: t,
+      structures: this.sim.state.structures,
+      roadSet: this.sim.state.roadSet,
+      occupied: this.sim.state.occupied,
+      wx: (x) => this.wx(x),
+      wz: (y) => this.wz(y),
+    })
+    if (this.shoreProps) this.scene.add(this.shoreProps.group)
   }
 
   private makeStructure(s: SeedStructure): THREE.Object3D {
@@ -468,7 +488,7 @@ export class PlanetRenderer {
       cap.position.y = 1.4
       box.castShadow = true
       g.add(box, cap)
-    } else {
+    } else if (s.kind === 'rocket') {
       // rocket / dropship (landed)
       const body = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.1, 5, 16), new THREE.MeshStandardMaterial({ color: 0xdfe3e9, roughness: 0.4, metalness: 0.3 }))
       body.position.y = 2.5
@@ -1236,6 +1256,9 @@ export class PlanetRenderer {
     const cmat = this.carsMesh.material as THREE.MeshStandardMaterial
     cmat.emissive.setHex(0xfff0d0)
     cmat.emissiveIntensity = night * 0.5
+    // Spec 079 — the commercial signage glows day and night, and flares brighter after dark so the
+    // market strip becomes the lit heart of the city at dusk (the concept-art look).
+    for (const sm of this.commercialSignMats) sm.emissiveIntensity = 0.7 + night * 0.9
   }
 
   frame() {
@@ -1252,6 +1275,7 @@ export class PlanetRenderer {
       const blink = Math.max(0, Math.sin((performance.now() / 1000) * 2.4))
       this.beaconMat.emissiveIntensity = 0.35 + blink * blink * 2.6
     }
+    this.shoreProps?.update(this.sim.state.clock.daylight, performance.now())
     if (this.fpCitizenId && this.avatarSource) {
       // P1 — first-person: park the camera at the citizen's eye and look down their heading. OrbitControls is off.
       const a = this.avatarSource().find((x) => x.id === this.fpCitizenId)
@@ -1418,6 +1442,285 @@ export class PlanetRenderer {
   setNeighborhood(n: Neighborhood): void {
     this.neighborhood = n
     this.lastNbhdSig = '' // force a rebuild on the next frame
+  }
+
+  /** Spec 079 P0 — hand the renderer the surveyed commercial district; it raises a neon market stall
+   *  on every shop plot. Rebuilt once here (the survey is static for the world's lifetime). */
+  setCommercialDistrict(d: CommercialDistrict | null | undefined): void {
+    this.commercialDistrict = d ?? undefined
+    this.buildCommercialDistrict()
+  }
+
+  // The neon palette for the strip — saturated signage that pops against the calm residential teal.
+  private static readonly NEON = [0xff2d95, 0x18e0ff, 0xffc233, 0x7bff4d, 0xb24dff, 0xff6a3d]
+  // Shop massing by kind: how tall the body stands (showroom is the anchor, the kiosk a low cart).
+  private static readonly SHOP_WALL_H: Record<ShopParcel['kind'], number> = { kiosk: 0.9, store: 1.25, showroom: 1.7 }
+
+  /** Raise a vibrant neon market stall on each surveyed shop plot: a dark counter body, a glowing
+   *  awning canopy, and a bright signage panel facing the street. Disposes any prior build first. */
+  private buildCommercialDistrict(): void {
+    // Tear down a previous build (geometry + materials) so re-survey/reload never leaks GPU memory.
+    for (const child of this.commercialGroup.children) {
+      child.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (m.geometry) m.geometry.dispose()
+        const mat = m.material as THREE.Material | THREE.Material[] | undefined
+        if (Array.isArray(mat)) mat.forEach((x) => x.dispose())
+        else mat?.dispose()
+      })
+    }
+    this.commercialGroup.clear()
+    this.commercialSignMats = []
+    this.scene.add(this.commercialGroup)
+    const d = this.commercialDistrict
+    if (!d) return
+    const t = this.sim.state.terrain
+
+    d.parcels.forEach((p, i) => {
+      // Spec 079 — each plot fronts a real kooker app: its business sets the neon palette, a rooftop
+      // emblem, and (the Nearest bar) a counter + stools where bots can sit. Plots stay for-sale.
+      const biz = p.business ? BUSINESSES[p.business] : undefined
+      const neon = biz?.palette ?? PlanetRenderer.NEON[i % PlanetRenderer.NEON.length]!
+      const wallH = PlanetRenderer.SHOP_WALL_H[p.kind]
+      const bodyW = p.w * 0.82
+      const bodyD = p.h * 0.82
+      const cx = p.x + (p.w - 1) / 2
+      const cy = p.y + (p.h - 1) / 2
+      const baseY = Math.max(0, t.worldY(Math.round(cx), Math.round(cy)))
+      const front = -p.side // +z when the plot fronts the street to its -y side
+
+      const g = new THREE.Group()
+      g.position.set(this.wx(cx), baseY, this.wz(cy))
+
+      // Body — a dark slate shopfront so the neon reads against it.
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(bodyW, wallH, bodyD),
+        new THREE.MeshStandardMaterial({ color: 0x2b3040, roughness: 0.7, metalness: 0.1 }),
+      )
+      body.position.y = wallH / 2
+      body.castShadow = true
+
+      // Awning — a glowing neon canopy slightly oversailing the body.
+      const canopy = new THREE.Mesh(
+        new THREE.BoxGeometry(bodyW * 1.08, 0.16, bodyD * 1.08),
+        new THREE.MeshStandardMaterial({ color: neon, roughness: 0.4, emissive: neon, emissiveIntensity: 0.45 }),
+      )
+      canopy.position.y = wallH + 0.08
+      canopy.castShadow = true
+
+      // Signage — a bright panel standing above the STREET-FACING front edge.
+      const frontZ = front * (bodyD / 2 + 0.12)
+      const signMat = new THREE.MeshStandardMaterial({ color: neon, emissive: neon, emissiveIntensity: 0.7, roughness: 0.3 })
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(bodyW * 0.62, 0.5, 0.1), signMat)
+      sign.position.set(0, wallH + 0.5, frontZ)
+      this.commercialSignMats.push(signMat)
+      g.add(body, canopy, sign)
+
+      // Rooftop emblem — a distinct shape per business so the app reads at a glance.
+      if (biz) {
+        const em = this.makeBusinessEmblem(biz.emblem, neon)
+        em.position.y = wallH + 0.5
+        g.add(em)
+      }
+
+      // The bar's seating: a counter + stools on the street side. The stools are left empty here —
+      // real citizens walk over and occupy them after dark (runtime.wanderIdleCitizens), so we must
+      // NOT draw static patron spheres or they'd double up with the live bots taking the seats.
+      if (biz?.seating) {
+        const counter = new THREE.Mesh(
+          new THREE.BoxGeometry(bodyW * 0.9, 0.5, 0.22),
+          new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.85 }),
+        )
+        counter.position.set(0, 0.25, front * (bodyD / 2 + 0.45))
+        counter.castShadow = true
+        g.add(counter)
+        const stoolMat = new THREE.MeshStandardMaterial({ color: 0x3a3f4a, roughness: 0.7 })
+        const n = 3
+        for (let k = 0; k < n; k++) {
+          const sx = (k - (n - 1) / 2) * (bodyW * 0.9 / n)
+          const stool = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.42, 10), stoolMat)
+          stool.position.set(sx, 0.21, front * (bodyD / 2 + 0.78))
+          stool.castShadow = true
+          g.add(stool)
+        }
+        // Joe the Crab tends the Nearest — the signature "Joe at the bar" look from the concept image:
+        // his headset, eyes and claws clear the counter as he serves the patrons across it. A static
+        // prop reusing the founder crab geometry; he stands on a hidden duckboard riser behind the
+        // counter and faces the street side. (Citizen-Joe is separate; this is the bar's mascot keeper.)
+        const riser = 0.36
+        const board = new THREE.Mesh(
+          new THREE.BoxGeometry(bodyW * 0.5, riser, 0.32),
+          new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.9 }),
+        )
+        board.position.set(0, riser / 2, front * (bodyD / 2 + 0.18))
+        g.add(board)
+        const keeper = new THREE.Mesh(
+          this.makeCrabGeometry(),
+          new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.6, metalness: 0.05 }),
+        )
+        keeper.scale.setScalar(1.25)
+        keeper.position.set(0, riser, front * (bodyD / 2 + 0.18))
+        if (front < 0) keeper.rotation.y = Math.PI // the crab faces +z by default; turn him to face the street side
+        keeper.castShadow = true
+        g.add(keeper)
+      }
+
+      // Signature props give each marquee app a distinct, recognisable place (the bar's radar dish +
+      // vials + bar-chart, Sprout's plants, Sportifine's pitch, Chef Ott's market awning + crates).
+      if (biz?.marquee) g.add(this.buildBusinessProps(biz, bodyW, bodyD, wallH, front))
+
+      this.commercialGroup.add(g)
+    })
+
+    // 086-P1 polish — a seaside PROMENADE: warm lamp posts line the high street on alternating verges,
+    // glowing after dark so the coastal strip by the lighthouse reads as a lit boardwalk. Cheap static
+    // posts; the head emissive stays below the bloom threshold (warmth, not a halo). Disposed with the
+    // group on rebuild like every other commercial mesh.
+    const street = d.street
+    if (street.length > 0) {
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0x2f343d, roughness: 0.7 })
+      const headMat = new THREE.MeshStandardMaterial({ color: 0xffe6b0, emissive: 0xffd9a0, emissiveIntensity: 0.82, roughness: 0.4 }) // warm, but under the 0.9 bloom threshold
+      for (let i = 0; i < street.length; i += 5) {
+        const c = street[i]!
+        const by = Math.max(0, t.worldY(Math.round(c.x), Math.round(c.y)))
+        const side = Math.floor(i / 5) % 2 === 0 ? 1 : -1 // alternate verges down the strip
+        const lamp = new THREE.Group()
+        lamp.position.set(this.wx(c.x), by, this.wz(c.y + side * 1.4))
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.4, 6), poleMat)
+        pole.position.y = 0.7; pole.castShadow = true
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.3), poleMat)
+        arm.position.set(0, 1.4, side * 0.15)
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), headMat)
+        head.position.set(0, 1.38, side * 0.3)
+        lamp.add(pole, arm, head)
+        this.commercialGroup.add(lamp)
+      }
+      // promenade FURNITURE between the lamps — a few benches + leafy planters on the verges so the
+      // strip feels strolled, not just lit. Placed on a different phase/offset from the lamps.
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.85 })
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x3a3f4a, roughness: 0.7 })
+      const planterMat = new THREE.MeshStandardMaterial({ color: 0x8a6a44, roughness: 0.9 })
+      const leafMat = new THREE.MeshStandardMaterial({ color: 0x3fae5a, roughness: 0.8 })
+      for (let i = 3; i < street.length; i += 8) {
+        const c = street[i]!
+        const by = Math.max(0, t.worldY(Math.round(c.x), Math.round(c.y)))
+        const side = Math.floor(i / 8) % 2 === 0 ? -1 : 1 // opposite phase to the lamps
+        const fz = this.wz(c.y + side * 1.5)
+        // a bench facing the street (backrest on the verge side)
+        const bench = new THREE.Group()
+        bench.position.set(this.wx(c.x), by, fz)
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.22), woodMat); seat.position.y = 0.2; seat.castShadow = true
+        const back = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.18, 0.04), woodMat); back.position.set(0, 0.3, side * 0.09)
+        for (const lx of [-0.24, 0.24]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.18), legMat); leg.position.set(lx, 0.1, 0); bench.add(leg) }
+        bench.add(seat, back)
+        this.commercialGroup.add(bench)
+        // a leafy planter just along from the bench
+        const planter = new THREE.Group()
+        planter.position.set(this.wx(c.x + 1.1), by, fz)
+        const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.11, 0.2, 10), planterMat); tub.position.y = 0.1; tub.castShadow = true
+        const bush = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 7), leafMat); bush.position.y = 0.3
+        planter.add(tub, bush)
+        this.commercialGroup.add(planter)
+      }
+    }
+  }
+
+  /** Signature props for a marquee storefront, positioned relative to its plot centre. `front` is the
+   *  +z/-z direction of the street the plot faces. Keeps each app's site recognisable from afar. */
+  private buildBusinessProps(biz: Business, bodyW: number, bodyD: number, wallH: number, front: number): THREE.Object3D {
+    const grp = new THREE.Group()
+    const glow = (hex: number, ei = 0.5) => new THREE.MeshStandardMaterial({ color: hex, emissive: hex, emissiveIntensity: ei, roughness: 0.4 })
+    const matte = (hex: number) => new THREE.MeshStandardMaterial({ color: hex, roughness: 0.8 })
+    const frontZ = front * (bodyD / 2)
+    if (biz.id === 'nearest_bar') {
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.0, 6), matte(0x9aa3b2))
+      mast.position.set(bodyW * 0.35, wallH + 0.5, -frontZ * 0.6)
+      const dish = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.2, 18, 1, true), glow(biz.palette, 0.7))
+      dish.position.set(bodyW * 0.35, wallH + 1.05, -frontZ * 0.6); dish.rotation.x = Math.PI * 0.8
+      grp.add(mast, dish)
+      const vials = [0xff2d95, 0x18e0ff, 0xffc233, 0x7bff4d]
+      vials.forEach((cv, k) => { const v = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8), glow(cv, 0.85)); v.position.set((k - 1.5) * 0.18, wallH + 0.25, frontZ * 0.6); grp.add(v) })
+      ;[0.3, 0.5, 0.4, 0.6].forEach((h, k) => { const b = new THREE.Mesh(new THREE.BoxGeometry(0.08, h, 0.06), glow(biz.palette, 0.6)); b.position.set(-bodyW * 0.5 - 0.16, wallH * 0.4 + h / 2, (k - 1.5) * 0.12); grp.add(b) })
+    } else if (biz.id === 'sprout_nursery') {
+      // A lush little nursery: a terracotta planter trough of flowering sprouts, potted bushes flanking
+      // the door, a leafy trellis arch over the entrance, and shrubs on the roof.
+      const leaf = matte(0x3fae5a), leafDk = matte(0x2f8f49), terra = matte(0xb5663a)
+      const blooms = [0xff7eb6, 0xffd23f, 0xf6f6f6, 0xff5ca8, 0x7bd0ff]
+      const trough = new THREE.Mesh(new THREE.BoxGeometry(bodyW * 0.9, 0.16, 0.26), terra); trough.position.set(0, 0.08, frontZ + front * 0.55); grp.add(trough)
+      for (let k = 0; k < 5; k++) {
+        const stem = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.34, 7), leaf); stem.position.set((k - 2) * 0.28, 0.32, frontZ + front * 0.55); grp.add(stem)
+        const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), glow(blooms[k % blooms.length]!, 0.3)); bloom.position.set((k - 2) * 0.28, 0.52, frontZ + front * 0.55); grp.add(bloom)
+      }
+      for (const sx of [-bodyW * 0.34, bodyW * 0.34]) {
+        const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, 0.18, 10), terra); pot.position.set(sx, 0.09, frontZ + front * 0.3); grp.add(pot)
+        const bush = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 7), leafDk); bush.position.set(sx, 0.28, frontZ + front * 0.3); grp.add(bush)
+      }
+      const archMat = matte(0xd8d2c4)
+      for (const sx of [-0.5, 0.5]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.9, 0.05), archMat); post.position.set(sx, 0.45, frontZ + front * 0.15); grp.add(post) }
+      const archTop = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.05, 0.05), archMat); archTop.position.set(0, 0.9, frontZ + front * 0.15); grp.add(archTop)
+      for (let k = 0; k < 4; k++) { const vine = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), leaf); vine.position.set((k - 1.5) * 0.3, 0.88, frontZ + front * 0.15); grp.add(vine) }
+      for (const sx of [-bodyW * 0.3, bodyW * 0.3]) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 7), leafDk); s.position.set(sx, wallH + 0.2, -frontZ * 0.3); grp.add(s) }
+    } else if (biz.id === 'sportifine_club') {
+      // A proper club: a green pitch with goal + ball, two floodlight poles, a stepped grandstand and a
+      // corner flag in the club colour.
+      const pitch = new THREE.Mesh(new THREE.BoxGeometry(bodyW * 0.9, 0.04, 1.2), matte(0x2e8b3e)); pitch.position.set(0, 0.02, frontZ + front * 0.85); grp.add(pitch)
+      const postMat = glow(0xf6f6f6, 0.2)
+      const gl = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), postMat); gl.position.set(-0.4, 0.25, frontZ + front * 1.35)
+      const gr = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), postMat); gr.position.set(0.4, 0.25, frontZ + front * 1.35)
+      const gt = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.05, 0.05), postMat); gt.position.set(0, 0.5, frontZ + front * 1.35)
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), matte(0xf0f0f0)); ball.position.set(0.1, 0.1, frontZ + front * 0.5)
+      grp.add(gl, gr, gt, ball)
+      const poleMat = matte(0x9aa3b2)
+      for (const sx of [-bodyW * 0.45, bodyW * 0.45]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.2, 6), poleMat); pole.position.set(sx, 0.6, frontZ + front * 1.25); grp.add(pole)
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.06), glow(0xfff3c0, 0.7)); lamp.position.set(sx, 1.18, frontZ + front * 1.25); grp.add(lamp)
+      }
+      const standMat = matte(biz.palette)
+      for (let s = 0; s < 3; s++) { const step = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 0.18), standMat); step.position.set(-bodyW * 0.5 - 0.25, 0.06 + s * 0.12, frontZ + front * (0.5 + s * 0.18)); grp.add(step) }
+      const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.4, 5), poleMat); flagPole.position.set(bodyW * 0.4, 0.2, frontZ + front * 0.45); grp.add(flagPole)
+      const flag = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.02), glow(biz.palette, 0.5)); flag.position.set(bodyW * 0.4 + 0.09, 0.34, frontZ + front * 0.45); grp.add(flag)
+    } else if (biz.id === 'chef_market') {
+      // A restaurant-market: a striped awning, a produce stall, a glowing grill under a smoking chimney,
+      // an outdoor bistro table, and a kettlebell — the nod to the chef app's exercise side.
+      const wood = matte(0x9c6b3f)
+      const awning = new THREE.Mesh(new THREE.BoxGeometry(bodyW * 1.1, 0.08, 0.7), glow(0xff6a3d, 0.4)); awning.position.set(0, wallH * 0.82, frontZ + front * 0.35); awning.rotation.x = front * 0.25; grp.add(awning)
+      const produce = [0xe23b2f, 0x7bff4d, 0xffc233]
+      for (let k = 0; k < 3; k++) {
+        const cr = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), wood); cr.position.set((k - 1) * 0.32, 0.11, frontZ + front * 0.7); grp.add(cr)
+        for (let j = 0; j < 3; j++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), matte(produce[k % 3]!)); f.position.set((k - 1) * 0.32 + (j - 1) * 0.06, 0.25, frontZ + front * 0.7); grp.add(f) }
+      }
+      const grill = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.26), matte(0x3a3f4a)); grill.position.set(bodyW * 0.32, 0.12, frontZ + front * 0.55); grp.add(grill)
+      const embers = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 0.22), glow(0xff5a1f, 0.7)); embers.position.set(bodyW * 0.32, 0.22, frontZ + front * 0.55); grp.add(embers)
+      const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.4, 8), matte(0x5a5f6a)); chimney.position.set(-bodyW * 0.3, wallH + 0.2, -frontZ * 0.4); grp.add(chimney)
+      for (let k = 0; k < 3; k++) { const puff = new THREE.Mesh(new THREE.SphereGeometry(0.08 + k * 0.02, 6, 5), matte(0xcfd3da)); puff.position.set(-bodyW * 0.3, wallH + 0.5 + k * 0.18, -frontZ * 0.4); grp.add(puff) }
+      const table = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.04, 12), wood); table.position.set(-bodyW * 0.32, 0.34, frontZ + front * 0.7)
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.34, 6), matte(0x5a5f6a)); leg.position.set(-bodyW * 0.32, 0.17, frontZ + front * 0.7); grp.add(table, leg)
+      for (const sx of [-0.22, 0.22]) { const stool = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.26, 8), matte(0x3a3f4a)); stool.position.set(-bodyW * 0.32 + sx, 0.13, frontZ + front * 0.72); grp.add(stool) }
+      const kb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 7), matte(0x2b3040)); kb.position.set(bodyW * 0.34, 0.1, frontZ + front * 0.88)
+      const handle = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.015, 6, 10, Math.PI), matte(0x2b3040)); handle.position.set(bodyW * 0.34, 0.18, frontZ + front * 0.88); grp.add(kb, handle)
+    }
+    return grp
+  }
+
+  /** A small, distinctive rooftop emblem per business kind (positioned at the group origin by the
+   *  caller). Glows in the business palette so each storefront reads from District view. */
+  private makeBusinessEmblem(emblem: Emblem, neon: number): THREE.Object3D {
+    const glow = (hex: number, ei = 0.5) => new THREE.MeshStandardMaterial({ color: hex, emissive: hex, emissiveIntensity: ei, roughness: 0.4 })
+    if (emblem === 'dish') {
+      const grp = new THREE.Group()
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.22, 6), new THREE.MeshStandardMaterial({ color: 0x9aa3b2 }))
+      post.position.y = 0.11
+      const dish = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.12, 16, 1, true), glow(neon, 0.65))
+      dish.position.y = 0.3
+      dish.rotation.x = Math.PI * 0.85
+      grp.add(post, dish)
+      return grp
+    }
+    if (emblem === 'leaf') { const m = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 7), glow(0x49c46a, 0.35)); m.position.y = 0.15; return m }
+    if (emblem === 'ball') { const m = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), new THREE.MeshStandardMaterial({ color: 0xf6f6f6, roughness: 0.5 })); m.position.y = 0.14; return m }
+    if (emblem === 'pot') { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.07, 0.16, 10), glow(neon, 0.4)); m.position.y = 0.08; return m }
+    if (emblem === 'crate') { const m = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), glow(neon, 0.35)); m.position.y = 0.1; return m }
+    const tag = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.04), glow(neon, 0.6)); tag.position.y = 0.1; return tag
   }
 
   /** Spec 076 — draw the homestead neighbourhood: the spine carriageway + verge ribbon, then each
@@ -1631,11 +1934,15 @@ export class PlanetRenderer {
         add(new THREE.CylinderGeometry(0.02, 0.02, 0.26, 5), SHELL_DK, [s * 0.34, 0.10, dz], [0, 0, s * 0.95])
       }
     }
-    // headset — a half-torus band arching over the top (side to side) + two earcups
-    add(new THREE.TorusGeometry(0.28, 0.03, 6, 18, Math.PI), BAND, [0, 0.27, 0])
-    for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 14), CUP, [s * 0.28, 0.27, 0], [0, 0, Math.PI / 2])
-    // exactly ONE yellow lightning accent, on the +x earcup only (matches his portrait)
-    add(new THREE.BoxGeometry(0.05, 0.11, 0.025), BOLT, [0.32, 0.30, 0], [0, 0, 0.35])
+    // headset — an ELLIPTICAL band that hugs the flattened shell side-to-side (a circular torus
+    // arched too high and sat narrower than the head, so it read as a floating ring with the earcups
+    // buried). Scaled to the shell's own [1.25, 0.6] profile so its ends meet the earcups on the
+    // sides and its crown rests just over the dome.
+    add(new THREE.TorusGeometry(0.30, 0.038, 8, 22, Math.PI), BAND, [0, 0.26, 0], undefined, [1.25, 0.68, 1.0])
+    // earcups — chunky discs seated ON the sides of the head (x just past the shell edge), facing out
+    for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.10, 0.10, 0.07, 16), CUP, [s * 0.38, 0.26, 0.02], [0, 0, Math.PI / 2])
+    // exactly ONE yellow lightning accent on the +x earcup's OUTER face (matches his portrait)
+    add(new THREE.BoxGeometry(0.022, 0.13, 0.06), BOLT, [0.42, 0.27, 0.02], [0, 0, 0.4])
     const merged = mergeGeometries(parts, false)
     for (const p of parts) p.dispose()
     return merged
@@ -1784,6 +2091,7 @@ export class PlanetRenderer {
     window.removeEventListener('resize', this.onResize)
     this.controls.dispose()
     this.composer.dispose()
+    this.shoreProps?.dispose()
     this.renderer.dispose()
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement)

@@ -293,12 +293,47 @@ export function ColonyApp() {
         )}
         <button className="immigbtn" onClick={() => setBorderOpen(true)}>🛂 Border Control</button>
 
-        <h2 style={{ marginTop: 18 }}>Kookerverse Bank</h2>
-        <div className="row"><span>Deposits</span><b>{ui.bank.currency}{ui.bank.deposits.toLocaleString()}</b></div>
-        <div className="row"><span>Accounts</span><b>{ui.bank.accounts}</b></div>
+        <h2 style={{ marginTop: 18 }}>City Bank · {ui.bank.currency}</h2>
+        <div className="row"><span>Residents hold</span><b>{ui.bank.currency}{ui.bank.deposits.toLocaleString()}</b></div>
+        <div className="row"><span>≈ in rand</span><b>R{ui.bank.depositsZar.toLocaleString()}</b></div>
+        <div className="row"><span>Wallets</span><b>{ui.bank.accounts}</b></div>
+        <div className="row"><span>Land office</span><b>{ui.bank.currency}{ui.bank.landOffice.toLocaleString()}</b></div>
+        <div className="row">
+          <span>Real ledger</span>
+          {ui.bank.sync.pending > 0 || ui.bank.sync.lastError
+            ? <b style={{ color: '#e0a14d' }}>⏳ {ui.bank.sync.pending} pending · {ui.bank.sync.synced} synced</b>
+            : <b style={{ color: '#39d353' }}>✓ {ui.bank.sync.synced} synced</b>}
+        </div>
         {ui.bank.recent.length > 0 && (
           <div className="ledger">{ui.bank.recent.map((tx) => <div key={tx.id} className="ledger-row">{tx.memo}</div>)}</div>
         )}
+
+        {ui.commerce.plots > 0 && (() => {
+          const priceOf = (kind: 'kiosk' | 'store' | 'showroom') => ui.commerce.parcels.find((p) => p.kind === kind)?.price ?? 0
+          const row = (label: string, kind: 'kiosk' | 'store' | 'showroom') =>
+            ui.commerce.byKind[kind] > 0 ? (
+              <div className="row"><span>{label}</span><b>{ui.bank.currency}{priceOf(kind).toLocaleString()} ×{ui.commerce.byKind[kind]}</b></div>
+            ) : null
+          return (
+            <>
+              <h2 style={{ marginTop: 18 }}>Commercial district</h2>
+              <div className="row"><span>Shop plots</span><b>{ui.commerce.plots} · {ui.commerce.free} free</b></div>
+              {row('Showrooms', 'showroom')}
+              {row('Stores', 'store')}
+              {row('Kiosks', 'kiosk')}
+              {ui.commerce.free > 0 && (
+                <button
+                  className="immigbtn"
+                  disabled={!ui.commerce.canClaim}
+                  onClick={() => runtime.claimNextShop()}
+                  title={ui.commerce.canClaim ? 'The wealthiest resident who can afford it takes the cheapest shop plot' : 'No resident can afford a free shop plot yet'}
+                >
+                  🛒 Open a shop{ui.commerce.cheapest ? ` · ${ui.commerce.cheapest.kind} ${ui.bank.currency}${ui.commerce.cheapest.price.toLocaleString()}` : ''}
+                </button>
+              )}
+            </>
+          )
+        })()}
       </aside>
 
       <div className="hint">

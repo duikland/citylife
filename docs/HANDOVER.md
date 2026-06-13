@@ -14,7 +14,12 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
   login gate in dev). Restart with `npm run dev` run in the background if it's dead.
 - **Stack:** React 19 + TypeScript + Vite + plain three.js. Tests: **vitest** (node env). Pure
   deterministic sim — **no `Math.random` / `Date.now()` in the sim tick**; everything seeded.
-- **Verify a slice:** `npx tsc --noEmit` (typecheck) + `npx vitest run` (currently **688 tests**).
+- **Verify a slice:** `npx tsc --noEmit` (typecheck) + `npx vitest run` (currently **711 tests**). NOTE
+  Vite HMR does NOT re-instantiate the singleton `ColonyRuntime`, so after editing runtime/uiState do a
+  full page reload before live-checking `window.__colony` — a hot-swap alone shows stale state.
+- **Active branch is now `feat/commercial-visuals`** (fresh from `main` after PR #41 merged; PR #42
+  carries the HUD/sync follow-up). `mechanics/dev` on the remote is the stale pre-squash orphan —
+  don't push to it. The rolling lane convention continues on `feat/commercial-visuals`.
   Then LIVE on :5188 — drive `window.__colony` via JS evals (see §6). NOTE: Chrome CDP **screenshots
   are broken this session** (`clip.scale` error) — verify with JS evals + `read_console_messages`,
   not screenshots.
@@ -72,6 +77,18 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
   **P1** (`bot/ledgerSync.ts`) mirrors every ₭ move onto the REAL `kooker-service-ledger` as the
   signed-in player — best-effort, persisted FIFO queue, idempotent on the in-game txn id; LIVE-verified
   200/COMMITTED end-to-end. Folds in 083-P4b (the Viw payment is now a real BUILD_FEE txn).
+- **Spec 086 — the distributed city** (P0 DONE): the world no longer crams plots on one avenue.
+  `neighborhood.makeNeighborhoodAt(anchor, {small,blocked})` + `findSatelliteAnchors` scatter small
+  hamlets across biomes (coast primary keeps the founders; satellites in woods/hills), a shared
+  `taken` set keeps every cluster overlap-free, and trunk roads (leastCostPath around homesteads)
+  stitch them to the coast. Commercial reserved BEFORE satellites so it keeps its room. Order of ops
+  in `runtime` is a council invariant — see `docs/specs/086`. LIVE: 4+ clusters, all road-connected,
+  0 overlaps. **086-P1 DONE (2026-06-13):** commerce now sits on the shore beside the lighthouse — the
+  reserve search anchors on `structures.lighthouse` (tower + 4-cell buffer blocked), scores clear COASTAL
+  ground biased toward the founders' side, falls back to the inland search if no lighthouse; the connector
+  spur routes from the founders' nearest carriage cell. LIVE seed 4242: reserve (117,234), ~52 cells off
+  the lighthouse, road-connected to the founders by BFS, no shop on the tower. Note: a ColonyRuntime boot
+  is now heavy → vite.config testTimeout bumped to 20s.
 
 ## 4. What to build next (the queue, with priorities)
 
@@ -86,9 +103,13 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
    `docs/specs/085-land-economy.md` P1 log.
 1. **083-P3 — inference-authored Viw dialogue.** kooker-service-ai chat phrases the haggle (screened,
    deterministic fallback intact). Off-machine inference, fits the lean-dev constraint. **Recommended next.**
-3. **085-P2 / 079 — commercial plots + shops.** A pricier commercial tier on the reserved 40×30
-   commercial land bank (already claimed at the avenue's inland end), storefront + checkout to the
-   ledger (reuse `bot/ledgerSync.ts` — a shop sale is another LAND_PURCHASE/TRANSFER). The big commerce arc.
+3. **079 — commercial plots + shops (P0 DONE 2026-06-13).** `commerce/district.ts` surveys a vibrant
+   neon high street (10 shop plots: kiosk/store/showroom, priced 220/420/720 ₭) on the reserved 40×30
+   land bank; the renderer raises glowing market stalls that flare at dusk. **P1 DONE** — shops are
+   buyable: `runtime.buyCommercialShop` / `claimNextShop` debit ₭ (citizen -> land office) mirrored to
+   the real ledger as a LAND_PURCHASE, a funds-gated HUD "Open a shop" button, arrivals claim a shop
+   when affordable. NEXT: **079-P2** real shop massing via the voxel core (replace the placeholder
+   stall). See `docs/specs/079` P0+P1 log + `docs/research/2026-06-13-district-concept.md`.
 4. **082-P3** narration + generated portraits (via the existing kooker image-gen APIs, off-machine).
 5. **Named deferrals from 084:** road-following citizen walks (citizens cut across lawns today),
    gravel driveway ribbons, foliage chunk-bucketing.
@@ -97,6 +118,31 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
 
 - **Codex is active + reliable** (`D:\infra\codex\`): built the ledger (kooker-service-ledger PRs,
   CX-3 hardening) and the password rotation. Just closed the ledger auth bypass.
+- **CROSS-AGENT RENDERER LANE (2026-06-13):** Codex is taking the **Founders Lighthouse + Rockery
+  Beach** shore-render slice (`sim.ts` StructureKind `lighthouse` + a deterministic shore placement,
+  `PlanetRenderer.makeStructure` + static shore props, placement tests). Claude owns **commerce**
+  (`commerce/*`, the commercial render block in `PlanetRenderer`). BOTH edit `PlanetRenderer.ts`, so:
+  (a) Codex works in his OWN clone/branch off `main` (a different dev port), NOT this worktree;
+  (b) lowest-friction is to merge PR #42 first, then Codex branches fresh (zero conflict); (c) Codex
+  should factor the lighthouse + shore props into their own `render/shoreProps.ts` so the
+  `PlanetRenderer.ts` diff is a couple of call-sites; (d) Claude keeps 079-P1+ OUT of the renderer
+  (runtime/ledger/HUD only) until the lighthouse lands. The two places don't overlap in-world (shore
+  vs the inland avenue). NB the existing red shore beacon is the ROCKET/dropship nav beacon, not a
+  lighthouse — keep them distinct.
+- **MERGED 2026-06-13:** Codex's lighthouse (PR 43, `ce79b88`) is now merged INTO `feat/commercial-visuals`
+  (merge commit `1df3afe`). Factored exactly as planned into `render/shoreProps.ts` (217 lines); the only
+  conflict was vite.config testTimeout (kept 20s). Placement is `findFoundersLighthouseSite` in `sim.ts` —
+  Rockery Beach headland first, dry-shore fallback — pushed into `state.structures` as kind `lighthouse`
+  (live-verified at grid (85,249), renders correctly on the shore). 729 green, tsc clean, no console errors.
+  **086-P1 is now UNBLOCKED** — anchor the commercial reserve near `structures.find(s => s.kind ===
+  'lighthouse')` instead of the inland avenue terminus.
+- **Spec 087 Road Rally (2026-06-13):** operator + Codex proposed a road-rally mini-game overlay; Claude
+  reviewed it (multi-agent) — verdict **approve-with-changes**, see `docs/specs/087-road-rally-minigame.md`
+  (14 required changes, the critical ones: track gen must never touch `sim.rng`; build from `roadKind` not
+  `roadSet`; lap timer accumulates clamped dtReal; gate chase camera like first-person; `raceLayer.dispose()`
+  on race EXIT; emissive < 0.9 bloom threshold). **Codex builds it** in his own clone/branch; the do-not-touch
+  list protects the bar-seating lane, `traffic.ts`, and `state.cars`. Brief handed to operator
+  (`Desktop\codex-road-rally-prompt.txt`).
 - **Antigravity is DEAD to us** — leaving this machine (resource hunger). Its delegated work
   (`kooker-service-social` = the Kookerbook backend) won't be picked up; Kookerbook stays on its
   local layer as designed. Don't watch `origin/antigravity/*`.

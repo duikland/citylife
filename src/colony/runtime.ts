@@ -6,7 +6,7 @@ import { Biome } from './terrain'
 import { autoGrow, freeLabour, housingCapacity, wateredFraction, provisionedFraction, housingTierCounts, healthFraction, cultureFraction, colonyLiveability, surveyAvailable, tradeExportRate, cultureFuelFactor, courierAvailable, colonyHeadlines, inBrownout, pollutedFraction, commute, maintenanceStatus, storageStatus, incidentStatus, levyStatus, feverStatus, housewaresFraction, unrestStatus, wageStatus, feastStatus, callFeast, liaisonStatus, fulfillRequest, spireStatus, fundSpireStage, frontStatus, foundersStatus, importStatus, solaceStatus, arrearsStatus, rosterStatus, departureStatus, educationStatus, prosperityStatus, turbinePower, waterStatus, toolStatus, seedStatus, confidenceStatus, birthStatus, footprintStatus, veinStatus, calendarStatus, seasonStatus, ledgerStatus, rimfishStatus, driedFishStatus, duskcapStatus, bathhouseStatus, libraryStatus, wasteStatus, securityStatus, dietVarietyStatus, labourStatus, planterStatus, stallStatus, galleryStatus, porterStatus, avatarStatus, fireStatus, reclaimStatus, festivalStatus, reserveParcelLand, mergeAvenue, type ImportGood } from './build'
 import { registerSettler as kookerRegister, generateName as randomSettlerName, type KookerCard } from './kooker'
 import { addSettler, saveColony, restoreColony, clearColony } from './settlers'
-import { bankDeposits, balance as ledgerBalance, post as ledgerPost, CURRENCY } from './ledger'
+import { walletDeposits, walletCount, balance as ledgerBalance, post as ledgerPost, CURRENCY } from './ledger'
 import { plotPriceKook, kookToZar, starterDeposit } from './land'
 import { MockBackend, type CityLifeBackend, type Decision } from './backend'
 import type { Household, HouseholdOverrides } from './newcomers'
@@ -16,7 +16,7 @@ import { makeCityPlan, type CityPlan, type Plot } from './cityPlan'
 import { CitizenRoster, type CitizenPublic } from './bot/citizenRoster'
 import { firstPersonView, type FirstPersonView } from './bot/firstPersonView'
 import { solCount, resolveFoundingMs } from './sol'
-import { makeNeighborhood, defaultBlueprint, retargetParcelAccess, streetDoorDir, type Neighborhood, type Lot } from './neighborhood'
+import { makeNeighborhood, makeNeighborhoodAt, findSatelliteAnchors, defaultBlueprint, retargetParcelAccess, streetDoorDir, type Neighborhood, type Lot } from './neighborhood'
 import { validateBlueprint, parseBlueprint } from './blueprintScript'
 import { loadBlueprintsLocal, saveBlueprintLocal, saveBlueprintBackend, fetchBlueprintsBackend, mergeBlueprints } from './bot/blueprintStore'
 import { selfDesign, type SelfDesignResult } from './builder/selfDesign'
@@ -24,6 +24,8 @@ import { dreamBrief, negotiate, briefToBlueprint, seededBudget, VIW_SEED, type N
 import { createProfile, addPost, type KbProfile, type PostKind } from './social/kookerbook'
 import { loadKookerbookLocal, saveProfileLocal, saveProfileBackend, fetchKookerbookBackend, mergeKookerbook } from './bot/kookerbookStore'
 import { getLedgerSync, type LedgerMove, type SyncStatus } from './bot/ledgerSync'
+import { makeCommercialDistrict, type CommercialDistrict, type ShopKind, type ShopParcel } from './commerce/district'
+import { cellOk, leastCostPath, type Cell } from './pathfind'
 import { createRadio, tuneTo, toggleOn as radioToggleOn, toggleMuted as radioToggleMuted, spinHouseAd, type RadioState } from './radio'
 import { buildShareCard, headlineFor, shareStats, siteLabel, DEFAULT_TAGLINE, CARD_ID, type CardFormat } from './social/shareCard'
 
@@ -90,11 +92,12 @@ export interface ColonyUiState {
   colonists: number
   colony: { treasury: number; materials: number; components: number; food: number; reels: number; fibre: number; linen: number; folios: number; skilled: number; freeLabour: number; capacity: number; watered: number; provisioned: number; health: number; culture: number; cultureFuelled: boolean; liveability: number; smog: number; commute: { demand: number; capacity: number; congested: boolean }; maintenance: { worst: number; needing: number; sheds: number }; storage: { fill: number; full: boolean; tightest: string }; incidents: { active: number; capacity: number }; levy: { active: boolean; rate: 'low' | 'normal' | 'high' }; wage: { active: boolean; rate: 'low' | 'standard' | 'generous'; payroll: number }; feast: { active: boolean; daysLeft: number; canCall: boolean }; liaison: { active: boolean; standing: number; request: { good: string; amount: number; daysLeft: number } | null; canFulfil: boolean }; spire: { stage: number; total: number; progress: number; building: boolean; complete: boolean }; front: { timerDays: number; incoming: boolean; braced: boolean; watching: boolean; established: boolean }; founders: { active: boolean; seated: number; notable: { name: string; role: string } | null }; imports: { active: boolean; order: ImportGood | null; perDay: number; dailySpend: number }; solace: { coverage: number; shrines: number }; education: { coverage: number; schools: number }; prosperity: { active: boolean; score: number; rank: number; rankName: string; recognised: boolean }; water: { stored: number; cap: number; cisterns: number; dry: boolean }; tools: { stored: number; cap: number; cribs: number; short: boolean }; seed: { stored: number; cap: number; lofts: number; short: boolean }; arrears: { office: boolean; debt: number; ceiling: number; strain: boolean; unmanaged: boolean }; roster: { active: boolean; mode: 'essentials' | 'balanced' | 'industry' }; departures: { pressure: number; atRisk: boolean; cause: string }; confidence: { confidence: number; factor: number; slowed: boolean; halted: boolean }; births: { children: number; homes: number; growing: boolean }; footprint: { radius: number; claims: number; maxClaims: number; progress: number; camp: boolean; atEdge: boolean }; veins: { mines: number; poorest: number }; calendar: { year: number; month: number; monthsToFounders: number; office: boolean }; season: { name: string; modifier: number; solarModifier: number; active: boolean }; ledger: { ageYears: number; onset: number; turning: boolean; lastPassings: number; hall: boolean }; rimfish: { stock: number; docks: number; varied: boolean }; driedFish: { stock: number; cap: number; racks: number }; duskcap: { stock: number; cellars: number }; bathhouse: { hygiene: number; baths: number; drawBonus: number; climbBonus: number }; library: { libraries: number; lending: boolean; foliosPerDay: number }; waste: { level: number; posts: number; harmful: boolean; fevered: boolean }; security: { active: boolean; lossPerDay: number; nooks: number; guarded: boolean }; labour: { active: boolean; unemployment: number; covered: number; penalty: number; dragging: boolean }; planters: { squares: number; blooming: number }; stalls: { stalls: number; open: boolean; coinPerDay: number }; gallery: { galleries: number; open: boolean; coinPerDay: number }; porter: { sheds: number; working: boolean; porters: number }; avatar: { foundries: number; staffed: boolean; capacity: number }; fire: { posts: number; active: number; risk: number; watered: boolean }; reclaim: { plants: number; perDay: number; active: boolean }; festival: { board: boolean; cheerDays: number; bonus: number; active: boolean }; diet: { counters: number; covered: number; served: number; standing: number; share: number; varied: boolean; bonus: number }; fever: { level: number; contained: boolean }; housewares: number; order: { unrest: number; warded: boolean }; surveyed: boolean; trade: number; tiers: [number, number, number]; buildings: number; building: number; load: number; jobs: number; employed: number; pollution: number }
   settlers: { count: number; recent: { id: number; name: string }[] }
-  bank: { currency: string; deposits: number; accounts: number; recent: { id: number; memo: string }[]; sync: { pending: number; synced: number; lastError: string | null } }
+  bank: { currency: string; deposits: number; depositsZar: number; accounts: number; landOffice: number; recent: { id: number; memo: string }[]; sync: { pending: number; synced: number; lastError: string | null } }
   border: { households: Household[]; bots: Bot[]; botSource: string; plots: Plot[] }
   citizens: { count: number; awake: number; list: CitizenPublic[]; wallets: Record<string, number> }
   firstPerson: { active: boolean; citizenId: string | null; citizenName: string | null; operatorCitizenId: string | null; view: FirstPersonView | null; narration: string | null; narrating: boolean }
   neighborhood: { lots: { id: string; built: boolean; owner: string | null; ownerId: string | null; reserved: boolean; price: number | null; priceZar: number | null }[]; free: number; built: number; houseCost: number; canAfford: boolean; buildHint: string }
+  commerce: { plots: number; free: number; byKind: { kiosk: number; store: number; showroom: number }; canClaim: boolean; cheapest: { kind: ShopKind; price: number } | null; parcels: { id: string; kind: ShopKind; price: number; priceZar: number; built: boolean; owner: string | null }[] }
   radio: RadioState
   courier: { on: boolean; headline: string } // spec 016 — the colony's own news, when a Broadcast Mast is up
   tv: boolean
@@ -150,6 +153,12 @@ export class ColonyRuntime {
   private fpKeys = new Set<string>()
   /** Spec 084 S6 / 079 — the reserved shop-district land bank at the avenue's inland end. */
   commercialReserve: { x: number; y: number; w: number; h: number } | null = null
+  /** Spec 079 P0 — the surveyed commercial high street + shop plots within the reserve. */
+  commercialDistrict: CommercialDistrict | null = null
+  // Spec 079 — the Nearest bar's seat cells + who's sitting there (a night crowd; cleared by day).
+  private barSeatCells: { x: number; y: number }[] | null = null
+  private barOccupied = new Set<string>()
+  private barSeatBy: (string | null)[] = []
   private fpNarration: string | null = null
   private fpNarrating = false
 
@@ -164,39 +173,176 @@ export class ColonyRuntime {
     // network as the paved AVENUE below — AFTER reserveParcelLand, so the parcel purge can never
     // eat it (spec 084 S3). Cars finally drive the residential street.
     this.neighborhood = makeNeighborhood(this.sim.state.terrain)
-    for (const c of this.neighborhood.verge) this.sim.state.roadSet.add(`${c.x},${c.y}`)
-    // PARCEL LAND IS RESERVED (operator feedback: a colony road ran under a homestead garden). The
-    // landing block frame is laid before the neighbourhood exists, so first PURGE any colony road
-    // already under a parcel, then keep the whole footprint in `occupied` so future block frames
-    // route around the neighbourhood instead of through it.
-    const parcelCells: { x: number; y: number }[] = []
-    for (const lot of this.neighborhood.lots) {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      for (const f of lot.fence) {
-        minX = Math.min(minX, f.x); maxX = Math.max(maxX, f.x)
-        minY = Math.min(minY, f.y); maxY = Math.max(maxY, f.y)
+    const t0 = this.sim.state.terrain
+    // Spec 086 — the DISTRIBUTED CITY. Order matters: lay + reserve the coastal PRIMARY (founders),
+    // then claim the COMMERCIAL reserve off its avenue, THEN scatter satellite hamlets that avoid
+    // everything already placed (a shared `taken` set), then stitch trunk roads between them. Without
+    // reserving commerce first, the satellites ate its land and the shop district vanished.
+    const footprintCells = (nbhd: Neighborhood): { x: number; y: number }[] => {
+      const out: { x: number; y: number }[] = []
+      for (const lot of nbhd.lots) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        for (const f of lot.fence) { minX = Math.min(minX, f.x); maxX = Math.max(maxX, f.x); minY = Math.min(minY, f.y); maxY = Math.max(maxY, f.y) }
+        for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) out.push({ x, y })
+        for (const d of lot.driveway) out.push({ x: d.x, y: d.y })
       }
-      for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) parcelCells.push({ x, y })
-      for (const d of lot.driveway) parcelCells.push({ x: d.x, y: d.y })
+      return out
     }
-    reserveParcelLand(this.sim.state, parcelCells)
+    // `taken` = every placed cell (parcels + their roads + the commercial reserve); satellites and the
+    // commercial reserve both avoid it so nothing ever overlaps. `residentialKeys` is homestead
+    // footprints only — roads may run near them but never through them.
+    const taken = new Set<string>()
+    const addCells = (cells: { x: number; y: number }[]) => { for (const c of cells) taken.add(`${c.x},${c.y}`) }
+    const residentialKeys = new Set<string>()
+    const primaryCells = footprintCells(this.neighborhood)
+    for (const c of this.neighborhood.verge) this.sim.state.roadSet.add(`${c.x},${c.y}`)
+    reserveParcelLand(this.sim.state, primaryCells)
     mergeAvenue(this.sim.state, this.neighborhood.carriage) // spec 084 S3 — the paved avenue joins the network
-    // Spec 084 S6 / 079 — the COMMERCIAL RESERVE: a 40x30 land bank claimed at the avenue's inland
-    // end, so the shop district has room waiting when commerce lands (cheap now, expensive later).
+    addCells(primaryCells); addCells(this.neighborhood.carriage); addCells(this.neighborhood.verge)
+    for (const c of primaryCells) residentialKeys.add(`${c.x},${c.y}`)
+    // Spec 079 / 086 — the COMMERCIAL RESERVE, claimed BEFORE the satellites so they leave it room.
+    // 086-P1: commerce now fronts the FOUNDERS' LIGHTHOUSE on the shore (the operator's scenic anchor).
+    // First keep the tower + its base clear, then search the open COASTAL ground beside it, biased
+    // toward the founders' side so a coast road can reach it; fall back to the old inland search off
+    // the avenue's terminus when there is no lighthouse or no open shore nearby.
+    const lighthouse = this.sim.state.structures.find((s) => s.kind === 'lighthouse')
+    const lighthouseBlock = new Set<string>()
+    if (lighthouse) {
+      for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) lighthouseBlock.add(`${lighthouse.x + dx},${lighthouse.y + dy}`)
+      for (const k of lighthouseBlock) taken.add(k) // shops never cover the tower or its immediate base
+    }
     this.commercialReserve = (() => {
+      const t = this.sim.state.terrain, W = 40, H = 30
+      const clampX = (v: number) => Math.max(0, Math.min(t.size - W, Math.round(v)))
+      const clampY = (v: number) => Math.max(0, Math.min(t.size - H, Math.round(v)))
+      const claim = (best: { x: number; y: number; w: number; h: number }) => {
+        const cells: { x: number; y: number }[] = []
+        for (let y = best.y; y < best.y + best.h; y++) for (let x = best.x; x < best.x + best.w; x++) cells.push({ x, y })
+        reserveParcelLand(this.sim.state, cells)
+        addCells(cells) // the satellites must leave the shop district its room
+        return best
+      }
+      // 086-P1 — the shore beside the lighthouse. Score by clear COASTAL cells (dry, buildable, near
+      // the waterline but not on it, unclaimed) so the district hugs the coast by the landmark.
+      if (lighthouse) {
+        const toLanding = Math.sign(t.landing.x - lighthouse.x) || 1
+        let best: { x: number; y: number; w: number; h: number } | null = null, bestScore = -1
+        for (const along of [16, 28, 40, 52, 8]) for (const off of [0, -16, 16, -32, 32]) {
+          const cx = lighthouse.x + toLanding * along, cy = lighthouse.y + off
+          const rx = clampX(cx - W / 2), ry = clampY(cy - H / 2)
+          let free = 0, coastal = 0
+          for (let y = ry; y < ry + H; y++) for (let x = rx; x < rx + W; x++) {
+            if (cellOk(t, x, y) && !taken.has(`${x},${y}`)) { free++; const d = t.distToWater[t.idx(x, y)] ?? 0; if (d >= 2 && d <= 16) coastal++ }
+          }
+          const s = coastal * 2 + free // hug the shore by the lighthouse, but demand enough clear room
+          if (free >= 140 && s > bestScore) { bestScore = s; best = { x: rx, y: ry, w: W, h: H } }
+        }
+        if (best) return claim(best)
+      }
+      // fallback — the original inland search past the avenue's terminus in its own inland direction.
       const car = this.neighborhood.carriage
-      if (car.length === 0) return null
-      const t = this.sim.state.terrain
-      const dW = (c: { x: number; y: number }) => t.distToWater[t.idx(c.x, c.y)] ?? 0
-      let inland = car[0]!
-      for (const c of car) if (dW(c) > dW(inland)) inland = c
-      const rect = { x: Math.max(0, inland.x - 20), y: Math.max(0, inland.y + 6), w: 40, h: 30 }
-      const cells: { x: number; y: number }[] = []
-      for (let y = rect.y; y < Math.min(t.size, rect.y + rect.h); y++)
-        for (let x = rect.x; x < Math.min(t.size, rect.x + rect.w); x++) cells.push({ x, y })
-      reserveParcelLand(this.sim.state, cells)
-      return rect
+      if (car.length < 2) return null
+      const dW = (c: { x: number; y: number }) => t.distToWater[t.idx(Math.round(c.x), Math.round(c.y))] ?? 0
+      let inland = car[0]!, shore = car[0]!
+      for (const c of car) { if (dW(c) > dW(inland)) inland = c; if (dW(c) < dW(shore)) shore = c }
+      let ix = inland.x - shore.x, iy = inland.y - shore.y
+      const len = Math.hypot(ix, iy) || 1; ix /= len; iy /= len
+      const px = -iy, py = ix
+      let best: { x: number; y: number; w: number; h: number } | null = null, bestFree = -1
+      for (const step of [12, 20, 28, 36, 44, 52]) for (const perp of [0, -14, 14, -28, 28]) {
+        const cx = inland.x + ix * step + px * perp, cy = inland.y + iy * step + py * perp
+        const rect = { x: clampX(cx - W / 2), y: clampY(cy - H / 2), w: W, h: H }
+        let free = 0
+        for (let y = rect.y; y < rect.y + H; y++) for (let x = rect.x; x < rect.x + W; x++) if (cellOk(t, x, y) && !taken.has(`${x},${y}`)) free++
+        if (free > bestFree) { bestFree = free; best = rect }
+      }
+      if (!best || bestFree < 80) return null
+      return claim(best)
     })()
+    // Spec 086 — SATELLITE HAMLETS in the woods + hills, each routed + placed AROUND everything already
+    // taken (the coast, the commercial reserve, prior hamlets), so scattered clusters never overlap.
+    const satellites: Neighborhood[] = []
+    for (const a of findSatelliteAnchors(t0, { x: t0.landing.x, y: t0.landing.y }, 6)) {
+      const nbhd = makeNeighborhoodAt(t0, a, { small: true, blocked: taken })
+      if (nbhd.lots.length === 0) continue
+      const b = t0.biome[t0.idx(a.x, a.y)]
+      const name = `${b === Biome.Forest ? 'wood' : b === Biome.Highland ? 'hill' : 'vale'}${satellites.length + 1}`
+      for (const lot of nbhd.lots) lot.id = `${name}_${lot.id}` // unique id; never collides with lot_1/lot_2
+      this.neighborhood.parcels.push(...nbhd.parcels) // parcels === lots (same array ref), so lots update too
+      const cells = footprintCells(nbhd)
+      reserveParcelLand(this.sim.state, cells)
+      mergeAvenue(this.sim.state, nbhd.carriage)
+      for (const c of nbhd.verge) this.sim.state.roadSet.add(`${c.x},${c.y}`)
+      addCells(cells); addCells(nbhd.carriage); addCells(nbhd.verge)
+      for (const c of cells) residentialKeys.add(`${c.x},${c.y}`)
+      satellites.push(nbhd)
+    }
+    // Spec 086 P2 — THE ROAD NETWORK. Each hamlet links to the coast AND to its nearest other hamlet
+    // (a mesh, not just spokes), and every trunk is WIDENED to a ~3-cell carriageway so it reads as a
+    // real road instead of a thread. Routed around every homestead; the router never crosses water.
+    const nearestPair = (a: Cell[], b: Cell[]): [Cell, Cell] => {
+      let from = a[0]!, to = b[0]!, bestD = Infinity
+      for (const p of a) for (const q of b) { const d = (p.x - q.x) ** 2 + (p.y - q.y) ** 2; if (d < bestD) { bestD = d; from = p; to = q } }
+      return [from, to]
+    }
+    const paveLink = (a: Cell[], b: Cell[]) => {
+      if (a.length === 0 || b.length === 0) return
+      const [from, to] = nearestPair(a, b)
+      const path = leastCostPath(t0, from, to, { slopeWeight: 0.5, blocked: (x, y) => residentialKeys.has(`${x},${y}`) }) ?? []
+      const wide = new Set<string>()
+      for (const cc of path) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const x = cc.x + dx, y = cc.y + dy
+        if (cellOk(t0, x, y) && !residentialKeys.has(`${x},${y}`)) wide.add(`${x},${y}`)
+      }
+      mergeAvenue(this.sim.state, [...wide].map((k) => { const [x, y] = k.split(',').map(Number); return { x: x!, y: y! } }))
+    }
+    const coast = this.neighborhood.carriage
+    for (let i = 0; i < satellites.length; i++) {
+      paveLink(coast, satellites[i]!.carriage) // a spoke to the coast keeps every hamlet connected
+    }
+    const meshed = new Set<string>()
+    for (let i = 0; i < satellites.length; i++) {
+      let nearest = -1, bestD = Infinity
+      for (let j = 0; j < satellites.length; j++) {
+        if (j === i) continue
+        const [p, q] = nearestPair(satellites[i]!.carriage, satellites[j]!.carriage)
+        const d = (p.x - q.x) ** 2 + (p.y - q.y) ** 2
+        if (d < bestD) { bestD = d; nearest = j }
+      }
+      if (nearest < 0) continue
+      const key = `${Math.min(i, nearest)}-${Math.max(i, nearest)}`
+      if (meshed.has(key)) continue
+      meshed.add(key)
+      paveLink(satellites[i]!.carriage, satellites[nearest]!.carriage) // the cross-link that makes it a web
+    }
+    // Spec 079 — survey the shop district in its reserved room; shops avoid every homestead + road.
+    const blockedForShops = new Set<string>(residentialKeys)
+    for (const r of this.sim.state.roads) blockedForShops.add(`${r.x},${r.y}`)
+    for (const k of lighthouseBlock) blockedForShops.add(k) // 086-P1 — no shop lands on the lighthouse
+    this.commercialDistrict = this.commercialReserve
+      ? makeCommercialDistrict(this.sim.state.terrain, this.commercialReserve, blockedForShops)
+      : null
+    // Spec 079 — CONNECT the district: widen the high-street centre-line to a carriageway + route a
+    // spur from the avenue's inland terminus to its nearest end (around homesteads + shops), and merge
+    // both into the network so the shops front a real, drivable street.
+    if (this.commercialDistrict && this.commercialDistrict.street.length > 0) {
+      const t = this.sim.state.terrain
+      const shopCells = new Set<string>()
+      for (const p of this.commercialDistrict.parcels) for (let y = p.y; y < p.y + p.h; y++) for (let x = p.x; x < p.x + p.w; x++) shopCells.add(`${x},${y}`)
+      const widened = new Set<string>()
+      for (const c of this.commercialDistrict.street) for (const dy of [-1, 0, 1]) {
+        const x = c.x, y = c.y + dy
+        if (cellOk(t, x, y) && !residentialKeys.has(`${x},${y}`) && !shopCells.has(`${x},${y}`)) widened.add(`${x},${y}`)
+      }
+      const streetCells = [...widened].map((k) => { const [x, y] = k.split(',').map(Number); return { x: x!, y: y! } })
+      const car = this.neighborhood.carriage
+      // 086-P1 — connect from the founders' carriage cell NEAREST the (now coastal) district, not the
+      // inland terminus, so the spur is the shortest coast road rather than a backtrack inland.
+      const [terminus, near] = nearestPair(car, this.commercialDistrict.street)
+      const connector = leastCostPath(t, terminus, near, { slopeWeight: 0.5, blocked: (x, y) => residentialKeys.has(`${x},${y}`) || shopCells.has(`${x},${y}`) }) ?? []
+      mergeAvenue(this.sim.state, connector)
+      mergeAvenue(this.sim.state, streetCells)
+    }
     // Spec 082 — restore stored Kookerbook profiles BEFORE seeding Joe: ensureKbProfile skips
     // citizens that already have a profile, so a restored timeline is never clobbered by a fresh
     // founder profile (the bug: seed-then-restore overwrote Joe's stored posts with a 1-post reset).
@@ -285,6 +431,12 @@ export class ColonyRuntime {
             const freeLot = this.neighborhood.lots.find((l) => !l.ownerCitizenId && !l.reservedFor)
             if (freeLot && this.purchaseLot(citizen.id, freeLot.id)) {
               this.commissionLot(freeLot.id) // Viw raises a home for the remaining purse
+            }
+            // Spec 079 P1 — if the newcomer can still afford a shop plot after their home, they take
+            // one on the high street: the city's first shopkeepers grow from the same arrivals.
+            const shop = this.cheapestFreeShop()
+            if (shop && this.walletK(citizen.id) >= this.shopPriceK(shop.kind)) {
+              this.buyCommercialShop(citizen.id, shop.id)
             }
           }
           // Spec 076 — mint the real kooker sub-user + Hermes pod for this citizen, owned by the player
@@ -413,11 +565,28 @@ export class ColonyRuntime {
   private wanderIdleCitizens(dt: number): void {
     const roads = this.sim.state.roads
     if (roads.length === 0) return
+    // Spec 079 — the Nearest bar draws a night crowd: after dark, idle citizens head to a free stool
+    // and stay; by day the bar empties and they go back to strolling. (Render-loop cosmetic, not the
+    // deterministic sim tick — Math.random is fine here, like the existing stroll.)
+    const night = !this.sim.state.clock.isDay
+    const seats = this.barSeats()
+    if (!night && this.barOccupied.size > 0) { this.barOccupied.clear(); this.barSeatBy = [] }
     for (const pub of this.citizens.list()) {
       if (pub.id === this.fpCitizenId) continue
       const c = this.citizens.byId(pub.id)
       if (!c) continue
+      if (this.barOccupied.has(pub.id)) continue // sitting at the bar — stays put until day
       if (Math.hypot(c.target.x - c.pos.x, c.target.y - c.pos.y) > 0.5) continue // still walking
+      // after dark, an idle citizen may claim a free stool at the bar
+      if (night && seats.length > 0 && this.barOccupied.size < seats.length && Math.random() < dt * 0.3) {
+        const idx = seats.findIndex((_, i) => !this.barSeatBy[i])
+        if (idx >= 0) {
+          this.barSeatBy[idx] = pub.id
+          this.barOccupied.add(pub.id)
+          c.target = { x: seats[idx]!.x, y: seats[idx]!.y }
+          continue
+        }
+      }
       if (Math.random() < dt * 0.45) {
         const near = roads.filter((r) => Math.hypot(r.x - c.pos.x, r.y - c.pos.y) < 16)
         const pool = near.length ? near : roads
@@ -425,6 +594,20 @@ export class ColonyRuntime {
         c.target = { x: dest.x + (Math.random() - 0.5), y: dest.y + (Math.random() - 0.5) }
       }
     }
+  }
+
+  /** Spec 079 — the bar's stool cells in sim coords (just in front of the Nearest bar, on the street
+   *  side), so citizens can walk over and sit. Cached; matches the three rendered stools. */
+  private barSeats(): { x: number; y: number }[] {
+    if (this.barSeatCells) return this.barSeatCells
+    const bar = this.commercialDistrict?.parcels.find((p) => p.business === 'nearest_bar')
+    if (!bar) return []
+    const cx = bar.x + (bar.w - 1) / 2
+    const front = -bar.side
+    const frontRow = bar.side === -1 ? bar.y + bar.h - 1 : bar.y
+    const seatY = Math.round(frontRow + front) // one cell toward the street
+    this.barSeatCells = [-1, 0, 1].map((k) => ({ x: Math.round(cx + k * 1.2), y: seatY }))
+    return this.barSeatCells
   }
 
   // ── Spec 075 — the buildable neighbourhood ──────────────────────────────────
@@ -529,12 +712,7 @@ export class ColonyRuntime {
       { account: 'arrivals', amount: -dep },
     ])
     // Spec 085 P1 — seed the citizen's REAL ledger wallet to match (best-effort, never blocks).
-    this.mirror({ kind: 'deposit', txnId: this.lastLedgerTxnId(), citizenId, amount: dep })
-  }
-
-  /** The id of the most-recently posted in-game ledger txn (post() unshifts it to the head). */
-  private lastLedgerTxnId(): number {
-    return this.sim.state.ledger.txns[0]?.id ?? 0
+    this.mirror({ kind: 'deposit', citizenId, amount: dep })
   }
 
   /** Spec 085 P1 — mirror an in-game money move onto the real kooker-service-ledger as the signed-in
@@ -558,6 +736,62 @@ export class ColonyRuntime {
     getLedgerSync().flush()
   }
 
+  /** Spec 079 — the ₭ price of a shop plot by kind, a premium tier over residential land. */
+  shopPriceK(kind: ShopKind): number {
+    return COLONY.commerce.plotPriceK[kind]
+  }
+
+  /** Spec 079 P1 — the cheapest still-free shop plot, deterministic (lowest price, then lowest plot
+   *  index). The tie-break compares the NUMERIC suffix, not the string, so shop_9 sorts before shop_10. */
+  cheapestFreeShop(): ShopParcel | null {
+    const free = (this.commercialDistrict?.parcels ?? []).filter((p) => !p.ownerCitizenId)
+    if (free.length === 0) return null
+    const idx = (id: string) => parseInt(id.split('_')[1] ?? '0', 10)
+    return free.reduce((best, p) => {
+      const dp = this.shopPriceK(p.kind), db = this.shopPriceK(best.kind)
+      return dp < db || (dp === db && idx(p.id) < idx(best.id)) ? p : best
+    })
+  }
+
+  /** Spec 079 P1 — BUY A SHOP PLOT: a citizen takes a free high-street plot with their ₭ wallet.
+   *  Gated on funds; the price moves citizen -> the city land office on the in-game ledger and mirrors
+   *  to the real kooker-service-ledger (LAND_PURCHASE, keyed by the shop id, distinct from a homestead
+   *  deed), ownership is set, and the deed posts to their Kookerbook page. The HUD Buy action + the
+   *  arrival path both use it. */
+  buyCommercialShop(citizenId: string, shopId: string): boolean {
+    const shop = this.commercialDistrict?.parcels.find((p) => p.id === shopId)
+    const c = this.citizens.byId(citizenId)
+    if (!shop || !c || shop.ownerCitizenId) return false
+    const price = this.shopPriceK(shop.kind)
+    // Gate on the EXACT ledger balance (walletK rounds, which could let a fractional balance overspend).
+    if (ledgerBalance(this.sim.state.ledger, `citizen:${citizenId}`) < price) return false
+    // Atomic: only claim the plot if the double-entry actually posts (a never-balanced txn is rejected).
+    const posted = ledgerPost(this.sim.state.ledger, `${c.displayName} takes a ${shop.kind} plot on the high street for ${price} ${CURRENCY}`, [
+      { account: `citizen:${citizenId}`, amount: -price },
+      { account: 'land', amount: price },
+    ])
+    if (!posted) return false
+    this.mirror({ kind: 'purchase', citizenId, lotId: shop.id, amount: price })
+    shop.ownerCitizenId = citizenId
+    this.kbPost(citizenId, 'event', `Took a ${shop.kind} plot on the high street for ${price} city coin. Open for business soon.`)
+    this.emit()
+    return true
+  }
+
+  /** Spec 079 P1 — the HUD Buy action: the wealthiest shopless citizen who can afford it claims the
+   *  cheapest free shop. Deterministic; returns the new owner's id, or null when nobody can afford one. */
+  claimNextShop(): string | null {
+    const shop = this.cheapestFreeShop()
+    if (!shop) return null
+    const price = this.shopPriceK(shop.kind)
+    const owned = new Set((this.commercialDistrict?.parcels ?? []).filter((p) => p.ownerCitizenId).map((p) => p.ownerCitizenId!))
+    const buyer = this.citizens.list()
+      .filter((c) => !owned.has(c.id) && this.walletK(c.id) >= price)
+      .sort((a, b) => this.walletK(b.id) - this.walletK(a.id) || (a.id < b.id ? -1 : 1))[0]
+    if (!buyer) return null
+    return this.buyCommercialShop(buyer.id, shop.id) ? buyer.id : null
+  }
+
   /** The ₭ price of a plot: its buildable area + a waterfront premium (spec 085). Reserved founder
    *  plots are not for sale (Infinity). */
   plotPriceK(lot: Lot): number {
@@ -575,13 +809,14 @@ export class ColonyRuntime {
     const c = this.citizens.byId(citizenId)
     if (!lot || !c || lot.ownerCitizenId || lot.reservedFor) return false
     const price = this.plotPriceK(lot)
-    if (!Number.isFinite(price) || this.walletK(citizenId) < price) return false
+    // Gate on the EXACT balance (walletK rounds — a fractional balance could otherwise overspend).
+    if (!Number.isFinite(price) || ledgerBalance(this.sim.state.ledger, `citizen:${citizenId}`) < price) return false
     ledgerPost(this.sim.state.ledger, `${c.displayName} buys ${c.plotName} for ${price} ${CURRENCY}`, [
       { account: `citizen:${citizenId}`, amount: -price },
       { account: 'land', amount: price },
     ])
     // Spec 085 P1 — mirror the land payment onto the real ledger (citizen -> city land office).
-    this.mirror({ kind: 'purchase', txnId: this.lastLedgerTxnId(), citizenId, amount: price })
+    this.mirror({ kind: 'purchase', citizenId, lotId, amount: price })
     this.assignLot(citizenId, lotId)
     this.kbPost(citizenId, 'event', `Bought the deed to ${c.plotName} for ${price} city coin. The land is theirs.`)
     return true
@@ -797,7 +1032,7 @@ export class ColonyRuntime {
         { account: `citizen:${VIW_ID}`, amount: session.agreedPrice ?? 0 },
       ])
       // Spec 085 P1 — mirror the build fee onto the real ledger (client -> the builder, Viw).
-      this.mirror({ kind: 'commission', txnId: this.lastLedgerTxnId(), fromCitizenId: lot.ownerCitizenId, toCitizenId: VIW_ID, amount: session.agreedPrice ?? 0 })
+      this.mirror({ kind: 'commission', fromCitizenId: lot.ownerCitizenId, toCitizenId: VIW_ID, lotId, amount: session.agreedPrice ?? 0 })
       this.kbPost(lot.ownerCitizenId, 'event', `Shook hands with Viw the Builder — a home for ${session.agreedPrice} city coin. The crew starts this week.`)
       this.kbPost(VIW_ID, 'event', `Booked a build for ${clientFirst} — ${session.agreedPrice} city coin, crew on site.`)
     } else {
@@ -854,6 +1089,9 @@ export class ColonyRuntime {
     const c = this.citizens.byId(citizenId)
     if (!c) return false
     for (const l of this.neighborhood.lots) if (l.ownerCitizenId === citizenId) { l.ownerCitizenId = undefined; l.built = false }
+    // Spec 079 P1 — free any high-street shop plot they held too, so it returns to the market (else
+    // the plot is stranded as a ghost owner: counted not-free but unclaimable).
+    for (const p of this.commercialDistrict?.parcels ?? []) if (p.ownerCitizenId === citizenId) { p.ownerCitizenId = undefined; p.built = false }
     if (this.fpCitizenId === citizenId) this.exitFirstPerson()
     if (c.hasPod) void this.teardownPod(citizenId)
     this.citizens.remove(citizenId)
@@ -1068,6 +1306,7 @@ export class ColonyRuntime {
     })
     if (this.fpCitizenId) this.renderer.enterFirstPerson(this.fpCitizenId)
     this.renderer.setNeighborhood(this.neighborhood) // spec 075 — lot pads + voxel homes
+    this.renderer.setCommercialDistrict(this.commercialDistrict) // spec 079 — the vibrant shop strip
     this.running = true
     this.lastFrame = performance.now()
     this.lastUi = this.lastFrame
@@ -1229,14 +1468,22 @@ export class ColonyRuntime {
         pollution: Math.round(s.pollution),
       },
       settlers: { count: s.settlers.length, recent: s.settlers.slice(-6).reverse().map((x) => ({ id: x.kookerId, name: x.name })) },
-      bank: {
-        currency: CURRENCY,
-        deposits: Math.round(bankDeposits(s.ledger)),
-        accounts: s.settlers.length,
-        recent: s.ledger.txns.slice(0, 6).map((tx) => ({ id: tx.id, memo: tx.memo })),
-        // Spec 085 P1 — the real-ledger mirror's queue health (pending/synced/last error).
-        sync: (() => { const st = this.ledgerSyncStatus(); return { pending: st.pending, synced: st.synced, lastError: st.lastError } })(),
-      },
+      bank: (() => {
+        // Spec 085 — the bank panel reads the ACTIVE ₭ economy (citizen wallets), not the retired
+        // settler accounts. deposits = ₭ held by residents, landOffice = ₭ paid for deeds, plus the
+        // ZAR bridge and the real-ledger mirror's queue health.
+        const held = Math.round(walletDeposits(s.ledger))
+        const st = this.ledgerSyncStatus()
+        return {
+          currency: CURRENCY,
+          deposits: held,
+          depositsZar: kookToZar(held, COLONY.economy.land),
+          accounts: walletCount(s.ledger),
+          landOffice: Math.round(ledgerBalance(s.ledger, 'land')),
+          recent: s.ledger.txns.slice(0, 6).map((tx) => ({ id: tx.id, memo: tx.memo })),
+          sync: { pending: st.pending, synced: st.synced, lastError: st.lastError },
+        }
+      })(),
       border: { households: this.backend.households(), bots: this.botService.bots, botSource: this.botService.source, plots: this.cityPlan.plots },
       citizens: {
         count: this.citizens.size(),
@@ -1271,6 +1518,34 @@ export class ColonyRuntime {
           ? `The build crew raises the house — ${cost} materials from the stockpile`
           : `The build crew raises the house — the stockpile is short (${s.materials}/${cost}) so the crew sources the rest off-island`
         return { lots, free: lots.filter((l) => !l.ownerId).length, built: lots.filter((l) => l.built).length, houseCost: cost, canAfford, buildHint }
+      })(),
+      commerce: (() => {
+        // Spec 079 P0 — the commercial district readout: surveyed shop plots, their ₭ + ZAR price by
+        // kind, and how many are still free. The buy/build economy fills ownerCitizenId + built.
+        const parcels = (this.commercialDistrict?.parcels ?? []).map((p) => {
+          const price = this.shopPriceK(p.kind)
+          return {
+            id: p.id,
+            kind: p.kind,
+            price,
+            priceZar: kookToZar(price, COLONY.economy.land),
+            built: p.built,
+            owner: p.ownerCitizenId ? (this.citizens.byId(p.ownerCitizenId)?.displayName ?? null) : null,
+          }
+        })
+        const byKind = { kiosk: 0, store: 0, showroom: 0 }
+        for (const p of parcels) byKind[p.kind]++
+        // Spec 079 P1 — the Buy action's gate: the cheapest free shop + whether any shopless citizen
+        // can afford it (so the button enables only when a real claim is possible).
+        const cheap = this.cheapestFreeShop()
+        const cheapest = cheap ? { kind: cheap.kind, price: this.shopPriceK(cheap.kind) } : null
+        const owners = new Set((this.commercialDistrict?.parcels ?? []).filter((p) => p.ownerCitizenId).map((p) => p.ownerCitizenId!))
+        const richestShopless = Math.max(0, ...this.citizens.list().filter((c) => !owners.has(c.id)).map((c) => this.walletK(c.id)))
+        const canClaim = !!cheapest && richestShopless >= cheapest.price
+        // free is counted off the underlying ownerCitizenId (not the display-name owner, which would
+        // read free for a ghost/removed owner) so it always agrees with cheapestFreeShop.
+        const free = (this.commercialDistrict?.parcels ?? []).filter((p) => !p.ownerCitizenId).length
+        return { plots: parcels.length, free, byKind, canClaim, cheapest, parcels }
       })(),
       radio: this.radio,
       courier: (() => {
