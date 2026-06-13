@@ -201,20 +201,53 @@ export class ColonyRuntime {
     addCells(primaryCells); addCells(this.neighborhood.carriage); addCells(this.neighborhood.verge)
     for (const c of primaryCells) residentialKeys.add(`${c.x},${c.y}`)
     // Spec 079 / 086 — the COMMERCIAL RESERVE, claimed BEFORE the satellites so they leave it room.
-    // Search past the avenue's inland terminus, in the avenue's own inland direction, for the 40x30
-    // rect with the most clear (dry, unbuilt) ground; clearest wins, null if nowhere is open enough.
+    // 086-P1: commerce now fronts the FOUNDERS' LIGHTHOUSE on the shore (the operator's scenic anchor).
+    // First keep the tower + its base clear, then search the open COASTAL ground beside it, biased
+    // toward the founders' side so a coast road can reach it; fall back to the old inland search off
+    // the avenue's terminus when there is no lighthouse or no open shore nearby.
+    const lighthouse = this.sim.state.structures.find((s) => s.kind === 'lighthouse')
+    const lighthouseBlock = new Set<string>()
+    if (lighthouse) {
+      for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) lighthouseBlock.add(`${lighthouse.x + dx},${lighthouse.y + dy}`)
+      for (const k of lighthouseBlock) taken.add(k) // shops never cover the tower or its immediate base
+    }
     this.commercialReserve = (() => {
+      const t = this.sim.state.terrain, W = 40, H = 30
+      const clampX = (v: number) => Math.max(0, Math.min(t.size - W, Math.round(v)))
+      const clampY = (v: number) => Math.max(0, Math.min(t.size - H, Math.round(v)))
+      const claim = (best: { x: number; y: number; w: number; h: number }) => {
+        const cells: { x: number; y: number }[] = []
+        for (let y = best.y; y < best.y + best.h; y++) for (let x = best.x; x < best.x + best.w; x++) cells.push({ x, y })
+        reserveParcelLand(this.sim.state, cells)
+        addCells(cells) // the satellites must leave the shop district its room
+        return best
+      }
+      // 086-P1 — the shore beside the lighthouse. Score by clear COASTAL cells (dry, buildable, near
+      // the waterline but not on it, unclaimed) so the district hugs the coast by the landmark.
+      if (lighthouse) {
+        const toLanding = Math.sign(t.landing.x - lighthouse.x) || 1
+        let best: { x: number; y: number; w: number; h: number } | null = null, bestScore = -1
+        for (const along of [16, 28, 40, 52, 8]) for (const off of [0, -16, 16, -32, 32]) {
+          const cx = lighthouse.x + toLanding * along, cy = lighthouse.y + off
+          const rx = clampX(cx - W / 2), ry = clampY(cy - H / 2)
+          let free = 0, coastal = 0
+          for (let y = ry; y < ry + H; y++) for (let x = rx; x < rx + W; x++) {
+            if (cellOk(t, x, y) && !taken.has(`${x},${y}`)) { free++; const d = t.distToWater[t.idx(x, y)] ?? 0; if (d >= 2 && d <= 16) coastal++ }
+          }
+          const s = coastal * 2 + free // hug the shore by the lighthouse, but demand enough clear room
+          if (free >= 140 && s > bestScore) { bestScore = s; best = { x: rx, y: ry, w: W, h: H } }
+        }
+        if (best) return claim(best)
+      }
+      // fallback — the original inland search past the avenue's terminus in its own inland direction.
       const car = this.neighborhood.carriage
       if (car.length < 2) return null
-      const t = this.sim.state.terrain, W = 40, H = 30
       const dW = (c: { x: number; y: number }) => t.distToWater[t.idx(Math.round(c.x), Math.round(c.y))] ?? 0
       let inland = car[0]!, shore = car[0]!
       for (const c of car) { if (dW(c) > dW(inland)) inland = c; if (dW(c) < dW(shore)) shore = c }
       let ix = inland.x - shore.x, iy = inland.y - shore.y
       const len = Math.hypot(ix, iy) || 1; ix /= len; iy /= len
       const px = -iy, py = ix
-      const clampX = (v: number) => Math.max(0, Math.min(t.size - W, Math.round(v)))
-      const clampY = (v: number) => Math.max(0, Math.min(t.size - H, Math.round(v)))
       let best: { x: number; y: number; w: number; h: number } | null = null, bestFree = -1
       for (const step of [12, 20, 28, 36, 44, 52]) for (const perp of [0, -14, 14, -28, 28]) {
         const cx = inland.x + ix * step + px * perp, cy = inland.y + iy * step + py * perp
@@ -224,11 +257,7 @@ export class ColonyRuntime {
         if (free > bestFree) { bestFree = free; best = rect }
       }
       if (!best || bestFree < 80) return null
-      const cells: { x: number; y: number }[] = []
-      for (let y = best.y; y < best.y + best.h; y++) for (let x = best.x; x < best.x + best.w; x++) cells.push({ x, y })
-      reserveParcelLand(this.sim.state, cells)
-      addCells(cells) // the satellites must leave the shop district its room
-      return best
+      return claim(best)
     })()
     // Spec 086 — SATELLITE HAMLETS in the woods + hills, each routed + placed AROUND everything already
     // taken (the coast, the commercial reserve, prior hamlets), so scattered clusters never overlap.
@@ -289,6 +318,7 @@ export class ColonyRuntime {
     // Spec 079 — survey the shop district in its reserved room; shops avoid every homestead + road.
     const blockedForShops = new Set<string>(residentialKeys)
     for (const r of this.sim.state.roads) blockedForShops.add(`${r.x},${r.y}`)
+    for (const k of lighthouseBlock) blockedForShops.add(k) // 086-P1 — no shop lands on the lighthouse
     this.commercialDistrict = this.commercialReserve
       ? makeCommercialDistrict(this.sim.state.terrain, this.commercialReserve, blockedForShops)
       : null
@@ -306,11 +336,9 @@ export class ColonyRuntime {
       }
       const streetCells = [...widened].map((k) => { const [x, y] = k.split(',').map(Number); return { x: x!, y: y! } })
       const car = this.neighborhood.carriage
-      const dW = (c: { x: number; y: number }) => t.distToWater[t.idx(Math.round(c.x), Math.round(c.y))] ?? 0
-      let terminus = car[0]!
-      for (const c of car) if (dW(c) > dW(terminus)) terminus = c
-      let near = this.commercialDistrict.street[0]!, bestD = Infinity
-      for (const c of this.commercialDistrict.street) { const d = (c.x - terminus.x) ** 2 + (c.y - terminus.y) ** 2; if (d < bestD) { bestD = d; near = c } }
+      // 086-P1 — connect from the founders' carriage cell NEAREST the (now coastal) district, not the
+      // inland terminus, so the spur is the shortest coast road rather than a backtrack inland.
+      const [terminus, near] = nearestPair(car, this.commercialDistrict.street)
       const connector = leastCostPath(t, terminus, near, { slopeWeight: 0.5, blocked: (x, y) => residentialKeys.has(`${x},${y}`) || shopCells.has(`${x},${y}`) }) ?? []
       mergeAvenue(this.sim.state, connector)
       mergeAvenue(this.sim.state, streetCells)

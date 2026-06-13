@@ -90,3 +90,24 @@ DONE
   overlap with his shoreProps module, so the two lanes stay merge-clean.
 NEXT
 - P1 (commerce -> shore, once the lighthouse lands); density/biome-flavour tuning per the operator's eye.
+
+### 2026-06-13 — Slice P1: commerce moves to the shore beside the Founders Lighthouse
+DONE
+- The COMMERCIAL RESERVE no longer searches inland off the avenue terminus. With Codex's lighthouse
+  now merged (state.structures kind 'lighthouse'), runtime first blocks the tower + a 4-cell buffer,
+  then searches candidate 40x30 rects on the shore beside it — offsets stepped along the coast toward
+  the founders' landing (so the connector is the shortest coast road) and spread N/S — scoring by
+  clear COASTAL cells (cellOk, distToWater in [2,16], unclaimed), weighted 2x over plain clear ground
+  so the district hugs the waterline by the landmark. Falls back to the old inland search when there
+  is no lighthouse or no open shore (graceful, deterministic, no RNG).
+- The connector spur now routes from the founders' carriage cell NEAREST the district (nearestPair),
+  not the inland-most terminus, so the ~200-cell coast road is the shortest land route, not a backtrack.
+  The lighthouse buffer is also added to blockedForShops so no shop ever lands on the tower.
+- LIVE on :5188 (seed 4242): reserve relocated to (117,234), district street centre (137,249) — 52
+  cells from the lighthouse (85,249); 10 plots; BFS over roads from the founders REACHES the district
+  (connectedToFounders = true) over the long coastal spur; no shop on the tower; no console errors.
+  Screenshot shows the cyan Nearest + neon shops sitting on the coast right beside the lighthouse,
+  fronting the sea — the scenic seaside commercial promenade the operator asked for. tsc clean.
+NEXT
+- density/biome-flavour tuning per the operator's eye; commerce signage/lighting polish for the new
+  coastal setting.

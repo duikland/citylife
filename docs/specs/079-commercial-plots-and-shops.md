@@ -274,9 +274,16 @@ DONE
     smoking chimney, an outdoor bistro table with stools, and a kettlebell (the app's exercise side).
 - tsc clean, render-only. Live-verified on :5188 — framed all three storefronts street-side; each is
   distinct and busy, no console errors.
+### 2026-06-13 — Loop iteration 6: commerce moves to the shore beside the lighthouse (086-P1)
+DONE
+- The commercial district now fronts the Founders Lighthouse on the coast (see docs/specs/086 Slice P1
+  for the reserve-search + connector details). The themed storefronts (Nearest with Joe, Sprout,
+  Sportifine, Chef Ott) carry over unchanged — they just sit on the seaside now, a scenic promenade by
+  the landmark. LIVE seed 4242: reserve (117,234), district 52 cells off the lighthouse, road-connected
+  to the founders (BFS), no shop on the tower, no console errors. tsc clean.
 NEXT (loop)
-- 086-P1: relocate commerce to the shore by the lighthouse — now UNBLOCKED (lighthouse merged onto
-  feat/commercial-visuals; anchor is structures.find kind === 'lighthouse'). This is the next slice.
+- coastal-setting polish: signage/lighting tuned for the seaside; maybe a promenade/boardwalk feel
+  between the lighthouse and the strip. Bots still buy plots over time (no premature builds).
 
 ### 2026-06-13 — Fix: stalls were landing on homestead plots
 DONE

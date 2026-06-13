@@ -83,8 +83,12 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
   `taken` set keeps every cluster overlap-free, and trunk roads (leastCostPath around homesteads)
   stitch them to the coast. Commercial reserved BEFORE satellites so it keeps its room. Order of ops
   in `runtime` is a council invariant — see `docs/specs/086`. LIVE: 4+ clusters, all road-connected,
-  0 overlaps. **NEXT 086-P1: relocate commerce to the shore/lighthouse** (Codex's lane). Note: a
-  ColonyRuntime boot is now heavy → vite.config testTimeout bumped to 20s.
+  0 overlaps. **086-P1 DONE (2026-06-13):** commerce now sits on the shore beside the lighthouse — the
+  reserve search anchors on `structures.lighthouse` (tower + 4-cell buffer blocked), scores clear COASTAL
+  ground biased toward the founders' side, falls back to the inland search if no lighthouse; the connector
+  spur routes from the founders' nearest carriage cell. LIVE seed 4242: reserve (117,234), ~52 cells off
+  the lighthouse, road-connected to the founders by BFS, no shop on the tower. Note: a ColonyRuntime boot
+  is now heavy → vite.config testTimeout bumped to 20s.
 
 ## 4. What to build next (the queue, with priorities)
 
