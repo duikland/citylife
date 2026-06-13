@@ -215,3 +215,19 @@ DONE
 NEXT
 - P2: the bought plot raises real shop massing (the placeholder neon stall becomes architecture);
   P3 the listing DSL + storefront + the checkout that posts a sale to the real ledger.
+
+### 2026-06-13 — Fix: stalls were landing on homestead plots
+DONE
+- Operator live-screenshot caught neon stalls sitting ON residential gardens/fields: the 40x30
+  reserve was anchored at a FIXED offset off the avenue end, which dropped it straight onto the
+  inland homestead band, and the survey only checked terrain (cellOk), not the existing parcels.
+- Two-part fix: (1) the survey now takes a `blocked` set (every homestead footprint + driveway +
+  the carriage + verge) and refuses any shop cell in it — the same collision discipline the homestead
+  survey uses; (2) the reserve is no longer a fixed offset — runtime SEARCHES past the avenue's inland
+  terminus, in the avenue's own inland direction (a deterministic step/perp sweep), for the 40x30 rect
+  with the most clear (dry, unbuilt, non-road) ground; the clearest wins, or null if nowhere near the
+  end is open enough (graceful — no district, no crash).
+- Tests rewritten to drive the REAL ColonyRuntime boot (no reconstruction drift) with a new assertion
+  that NO shop footprint lands on a homestead cell, across seeds 4242/42/7. 706 green, tsc clean.
+- LIVE on :5188 (seed 4242): reserve relocated to (376,363); 10 shops in two tidy rows flanking the
+  high street, shopFootprintCellsOnResidential = 0, 10 stalls rendered, no console errors.

@@ -25,6 +25,7 @@ import { createProfile, addPost, type KbProfile, type PostKind } from './social/
 import { loadKookerbookLocal, saveProfileLocal, saveProfileBackend, fetchKookerbookBackend, mergeKookerbook } from './bot/kookerbookStore'
 import { getLedgerSync, type LedgerMove, type SyncStatus } from './bot/ledgerSync'
 import { makeCommercialDistrict, type CommercialDistrict, type ShopKind, type ShopParcel } from './commerce/district'
+import { cellOk } from './pathfind'
 import { createRadio, tuneTo, toggleOn as radioToggleOn, toggleMuted as radioToggleMuted, spinHouseAd, type RadioState } from './radio'
 import { buildShareCard, headlineFor, shareStats, siteLabel, DEFAULT_TAGLINE, CARD_ID, type CardFormat } from './social/shareCard'
 
@@ -185,26 +186,55 @@ export class ColonyRuntime {
     }
     reserveParcelLand(this.sim.state, parcelCells)
     mergeAvenue(this.sim.state, this.neighborhood.carriage) // spec 084 S3 — the paved avenue joins the network
-    // Spec 084 S6 / 079 — the COMMERCIAL RESERVE: a 40x30 land bank claimed at the avenue's inland
-    // end, so the shop district has room waiting when commerce lands (cheap now, expensive later).
+    // Spec 079 — the cells a shop must NEVER land on: every homestead footprint + driveway, plus the
+    // avenue carriage + verge. Built first so BOTH the reserve search and the survey honour it.
+    const blockedForShops = new Set<string>()
+    for (const cell of parcelCells) blockedForShops.add(`${cell.x},${cell.y}`)
+    for (const cell of this.neighborhood.carriage) blockedForShops.add(`${cell.x},${cell.y}`)
+    for (const cell of this.neighborhood.verge) blockedForShops.add(`${cell.x},${cell.y}`)
+    // Spec 084 S6 / 079 — the COMMERCIAL RESERVE. The shop district needs its OWN room: a fixed
+    // offset off the avenue end used to drop the 40x30 box right on the inland homesteads (stalls
+    // landed on people's gardens). Instead SEARCH past the avenue's inland terminus, in the avenue's
+    // own inland direction, for the rect with the most clear (dry, unbuilt, non-road) ground — the
+    // clearest candidate wins. Deterministic; null when nowhere near the end is open enough.
     this.commercialReserve = (() => {
       const car = this.neighborhood.carriage
-      if (car.length === 0) return null
+      if (car.length < 2) return null
       const t = this.sim.state.terrain
-      const dW = (c: { x: number; y: number }) => t.distToWater[t.idx(c.x, c.y)] ?? 0
-      let inland = car[0]!
-      for (const c of car) if (dW(c) > dW(inland)) inland = c
-      const rect = { x: Math.max(0, inland.x - 20), y: Math.max(0, inland.y + 6), w: 40, h: 30 }
+      const W = 40, H = 30
+      const dW = (c: { x: number; y: number }) => t.distToWater[t.idx(Math.round(c.x), Math.round(c.y))] ?? 0
+      let inland = car[0]!, shore = car[0]!
+      for (const c of car) { if (dW(c) > dW(inland)) inland = c; if (dW(c) < dW(shore)) shore = c }
+      // unit vector pointing INLAND (away from water) along the avenue, and its perpendicular
+      let ix = inland.x - shore.x, iy = inland.y - shore.y
+      const len = Math.hypot(ix, iy) || 1
+      ix /= len; iy /= len
+      const px = -iy, py = ix
+      const clampX = (v: number) => Math.max(0, Math.min(t.size - W, Math.round(v)))
+      const clampY = (v: number) => Math.max(0, Math.min(t.size - H, Math.round(v)))
+      let best: { x: number; y: number; w: number; h: number } | null = null
+      let bestFree = -1
+      for (const step of [12, 20, 28, 36, 44, 52]) { // how far past the terminus, growing
+        for (const perp of [0, -14, 14, -28, 28]) { // slide a little along the coast
+          const cx = inland.x + ix * step + px * perp
+          const cy = inland.y + iy * step + py * perp
+          const rect = { x: clampX(cx - W / 2), y: clampY(cy - H / 2), w: W, h: H }
+          let free = 0
+          for (let y = rect.y; y < rect.y + H; y++)
+            for (let x = rect.x; x < rect.x + W; x++) if (cellOk(t, x, y) && !blockedForShops.has(`${x},${y}`)) free++
+          if (free > bestFree) { bestFree = free; best = rect }
+        }
+      }
+      if (!best || bestFree < 80) return null // no open room near the avenue end -> no district (graceful)
       const cells: { x: number; y: number }[] = []
-      for (let y = rect.y; y < Math.min(t.size, rect.y + rect.h); y++)
-        for (let x = rect.x; x < Math.min(t.size, rect.x + rect.w); x++) cells.push({ x, y })
+      for (let y = best.y; y < best.y + best.h; y++) for (let x = best.x; x < best.x + best.w; x++) cells.push({ x, y })
       reserveParcelLand(this.sim.state, cells)
-      return rect
+      return best
     })()
-    // Spec 079 P0 — survey the commercial high street + shop plots within the reserve (pure, on dry
-    // land, deterministic from terrain + reserve). The vibrant render + the buy/build economy ride this.
+    // Spec 079 P0 — survey the high street + shop plots within the chosen reserve, the survey still
+    // honouring blockedForShops as a belt-and-suspenders so a stall can never sit on a homestead.
     this.commercialDistrict = this.commercialReserve
-      ? makeCommercialDistrict(this.sim.state.terrain, this.commercialReserve)
+      ? makeCommercialDistrict(this.sim.state.terrain, this.commercialReserve, blockedForShops)
       : null
     // Spec 082 — restore stored Kookerbook profiles BEFORE seeding Joe: ensureKbProfile skips
     // citizens that already have a profile, so a restored timeline is never clobbered by a fresh

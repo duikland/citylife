@@ -60,12 +60,14 @@ const FRONT_GAP = 1 // empty cells between adjacent shop frontages along the str
 const SETBACK = 1 // cells of pavement between the street and a shop's front row
 
 /** Survey the commercial district: a high street down the middle of the reserve, with shop plots
- *  fronting it on both sides. Pure + deterministic in (terrain, reserve). */
-export function makeCommercialDistrict(t: Terrain, reserve: Reserve): CommercialDistrict {
+ *  fronting it on both sides. Pure + deterministic in (terrain, reserve, blocked). `blocked` is the
+ *  set of cells already taken by the residential parcels + roads ('x,y' keys) — shops never land on
+ *  homestead land or the avenue, the same collision discipline the homestead survey uses. */
+export function makeCommercialDistrict(t: Terrain, reserve: Reserve, blocked: ReadonlySet<string> = new Set()): CommercialDistrict {
   const streetY = reserve.y + Math.floor(reserve.h / 2)
   const street: Cell[] = []
   for (let x = reserve.x; x < reserve.x + reserve.w; x++) {
-    if (cellOk(t, x, streetY)) street.push({ x, y: streetY })
+    if (cellOk(t, x, streetY) && !blocked.has(`${x},${streetY}`)) street.push({ x, y: streetY })
   }
 
   const claimed = new Set<string>()
@@ -86,7 +88,7 @@ export function makeCommercialDistrict(t: Terrain, reserve: Reserve): Commercial
       const x0 = cursorX
       const x1 = cursorX + w - 1
 
-      if (fits(t, reserve, claimed, x0, y0, x1, y1)) {
+      if (fits(t, reserve, claimed, blocked, x0, y0, x1, y1)) {
         const doorX = x0 + Math.floor(w / 2)
         claim(claimed, x0, y0, x1, y1)
         parcels.push({ id: `shop_${id++}`, kind, x: x0, y: y0, w, h: d, side, doorX, doorY: frontY, built: false })
@@ -101,14 +103,17 @@ export function makeCommercialDistrict(t: Terrain, reserve: Reserve): Commercial
   return { street, parcels, reserve }
 }
 
-/** Every cell of [x0..x1]×[y0..y1] must be inside the reserve, good ground, and unclaimed. */
-function fits(t: Terrain, reserve: Reserve, claimed: Set<string>, x0: number, y0: number, x1: number, y1: number): boolean {
+/** Every cell of [x0..x1]×[y0..y1] must be inside the reserve, good ground, not already taken by a
+ *  homestead/road (blocked), and unclaimed by another shop. */
+function fits(t: Terrain, reserve: Reserve, claimed: Set<string>, blocked: ReadonlySet<string>, x0: number, y0: number, x1: number, y1: number): boolean {
   if (x0 < reserve.x || x1 >= reserve.x + reserve.w) return false
   if (y0 < reserve.y || y1 >= reserve.y + reserve.h) return false
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
+      const key = `${x},${y}`
       if (!cellOk(t, x, y)) return false
-      if (claimed.has(`${x},${y}`)) return false
+      if (blocked.has(key)) return false
+      if (claimed.has(key)) return false
     }
   }
   return true
