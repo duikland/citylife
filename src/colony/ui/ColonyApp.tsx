@@ -11,6 +11,13 @@ import { FirstPersonPanel } from './FirstPersonPanel'
 import './colony.css'
 
 const pad = (n: number) => String(n).padStart(2, '0')
+const raceTime = (ms: number | null) => {
+  if (ms === null) return '--'
+  const m = Math.floor(ms / 60000)
+  const s = Math.floor((ms % 60000) / 1000)
+  const d = Math.floor((ms % 1000) / 100)
+  return `${m}:${String(s).padStart(2, '0')}.${d}`
+}
 
 function useRuntime(): ColonyRuntime {
   const ref = useRef<ColonyRuntime | null>(null)
@@ -76,11 +83,22 @@ export function ColonyApp() {
   // When stepped into a bot (first person), W/A/S/D or the arrow keys WALK it around.
   useEffect(() => {
     const MOVE = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
+    const RACE_MOVE = new Set([...MOVE, 'ShiftLeft', 'ShiftRight'])
     // 'KeyW' -> 'w', 'ArrowUp' -> 'arrowup' (runtime.setFpKey lowercases + maps these to fwd/back/left/right)
     const norm = (code: string) => (code.startsWith('Arrow') ? code.toLowerCase() : code.slice(3))
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (runtime.getUiState().race.mode !== 'idle') {
+        if (RACE_MOVE.has(e.code)) {
+          e.preventDefault()
+          runtime.setRaceKey(e.code, true)
+        } else if (e.code === 'Escape') {
+          e.preventDefault()
+          runtime.exitRace()
+        }
+        return
+      }
       if (runtime.getUiState().firstPerson.active) {
         // Continuous WASD / arrow-key locomotion — hold to walk the bot, release to stop (keyup handler).
         if (MOVE.has(e.code)) {
@@ -103,6 +121,7 @@ export function ColonyApp() {
       }
     }
     const onKeyUp = (e: KeyboardEvent) => {
+      if (RACE_MOVE.has(e.code)) runtime.setRaceKey(e.code, false)
       if (MOVE.has(e.code)) runtime.setFpKey(norm(e.code), false)
     }
     window.addEventListener('keydown', onKey)
@@ -125,6 +144,18 @@ export function ColonyApp() {
         </div>
       )}
       <FirstPersonPanel runtime={runtime} fp={ui.firstPerson} />
+      {ui.race.mode !== 'idle' && (
+        <div style={{ position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)', zIndex: 52, display: 'flex', gap: 10, alignItems: 'center', background: 'rgba(10,14,28,0.82)', border: '1px solid #33415f', borderRadius: 8, padding: '8px 14px', backdropFilter: 'blur(4px)', color: '#d8e6ff', fontSize: 13 }}>
+          <b style={{ color: '#ffcf66' }}>Road Rally</b>
+          {ui.race.mode === 'countdown'
+            ? <span>{Math.ceil(ui.race.countdownMs / 1000)}</span>
+            : <span>{raceTime(ui.race.finishedMs ?? ui.race.timeMs)}</span>}
+          <span style={{ color: ui.race.offTrack ? '#e0a14d' : '#8fb6d8' }}>{ui.race.checkpoint}/{ui.race.checkpoints}</span>
+          {ui.race.bestMs !== null && <span style={{ color: '#8fd0a6' }}>Best {raceTime(ui.race.bestMs)}</span>}
+          <button style={{ padding: '3px 10px' }} onClick={() => runtime.startRace()}>Restart</button>
+          <button style={{ padding: '3px 10px' }} onClick={() => runtime.exitRace()}>Exit</button>
+        </div>
+      )}
 
       <header className="topbar">
         <div className="brand">
@@ -157,6 +188,16 @@ export function ColonyApp() {
               {v.label}
             </button>
           ))}
+        </div>
+        <div className="group">
+          <button
+            className={ui.race.mode !== 'idle' ? 'on' : ''}
+            disabled={!ui.race.available}
+            onClick={() => { if (ui.race.mode === 'idle') runtime.startRace(); else runtime.exitRace() }}
+            title="Road Rally"
+          >
+            Road Rally
+          </button>
         </div>
         <div className="group">
           <button className={ui.zonesVisible ? 'on' : ''} disabled={!ui.colony.surveyed} onClick={() => runtime.toggleZones()} title={ui.colony.surveyed ? 'Liveability map — tint homes cyan (thriving) to amber (starved)' : 'Build a Civic Pulse Survey Office to unlock the liveability map'}>
@@ -254,6 +295,7 @@ export function ColonyApp() {
           const firstFree = ui.citizens.list.find((c) => !ui.neighborhood.lots.some((x) => x.ownerId === c.id))
           return <div key={l.id} style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 11 }}>
             <span style={{ flex: 1, color: l.reserved ? '#e8a06a' : l.built ? '#cdbf9e' : l.owner ? '#c9a23a' : '#7a8a7a' }} title={l.reserved ? 'Founder plot — permanently reserved; never assigned to newcomers and protected from demolition.' : l.price !== null ? `Plot price ${l.price} ₭ (≈ R${l.priceZar?.toLocaleString()}) — bigger and shore-ward land costs more` : undefined}>{l.id.replace('lot_', 'Plot ')}{l.owner ? ` · ${l.reserved ? l.owner : l.owner.split(' ')[0]}` : !l.reserved && l.price !== null ? ` · ${l.price} ₭` : ' · free'}{l.reserved ? `${l.owner?.includes('Crab') ? ' 🦀' : ' 🛠️'} · Founder` : l.built ? ' 🏠' : ''}</span>
+            {l.built && <span title="Spec 080 — this household runs a Workstation: the resident bot's own computer, serving a static site on the bots-only intranet for other citizens to browse. Marker only in the public game (the intranet is cluster-internal — no URL is shown here)." style={{ fontSize: 11, opacity: 0.9 }}>💻</span>}
             {!l.ownerId && !l.reserved && firstFree && (() => {
               const canBuy = l.price !== null && (ui.citizens.wallets[firstFree.id] ?? 0) >= l.price
               return <button style={{ padding: '0 6px', fontSize: 10, color: canBuy ? '#8fd0a6' : '#7a6a5a', opacity: canBuy ? 1 : 0.5, cursor: canBuy ? 'pointer' : 'not-allowed' }} disabled={!canBuy} onClick={() => runtime.purchaseLot(firstFree.id, l.id)} title={canBuy ? `${firstFree.displayName} buys the deed for ${l.price} ₭ (≈ R${l.priceZar?.toLocaleString()})` : `${firstFree.displayName} can't afford this plot (wallet ${ui.citizens.wallets[firstFree.id] ?? 0} ₭, price ${l.price} ₭)`}>Buy {l.price} ₭</button>

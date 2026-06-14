@@ -18,12 +18,16 @@ import { homeLiveability, surveyAvailable, liveabilityTint, porterStatus } from 
 import type { Neighborhood } from '../neighborhood'
 import type { CommercialDistrict, ShopParcel } from '../commerce/district'
 import { BUSINESSES, type Business, type Emblem } from '../commerce/businesses'
+import { surveyBillboards } from '../commerce/billboards'
+import { posterModel, paintPoster } from '../commerce/adCanvas'
 import { buildVoxelHouse, BLOCK_COLOR, type VoxelHouse, type DoorDir } from '../voxelHouse'
 import { compileBlueprint, VOXEL_Y } from '../houseBuilder'
 import { greedyMesh } from './voxelMesh'
 import { buildChunkedTerrain, type ChunkedTerrain } from './terrainChunks'
 import { defaultBlueprint, streetDoorDir, type Zone } from '../neighborhood'
 import { buildShoreProps, type ShorePropsLayer } from './shoreProps'
+import { buildRaceLayer, type RaceLayer } from './raceLayer'
+import type { RaceState } from '../racing/race'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
 export type CameraPreset = 'street' | 'district' | 'planet'
@@ -67,6 +71,7 @@ export class PlanetRenderer {
   private hemi: THREE.HemisphereLight
   private chunkedTerrain!: ChunkedTerrain // spec 084 S5 — chunk grid, see terrainChunks.ts
   private roadSurfaceMesh!: THREE.Mesh
+  private roadShoulderMesh!: THREE.Mesh
   private roadLineMesh!: THREE.Mesh
   // Spec 084 S3 — the paved avenue draws as its own asphalt ribbon with raised kerb strips, layered
   // on the same drape/relax/skirt pipeline as the packed-earth streets.
@@ -153,6 +158,10 @@ export class PlanetRenderer {
   // Pulsing red nav beacon at the rocket nose — material ref so frame() can blink it.
   private beaconMat: THREE.MeshStandardMaterial | null = null
   private shoreProps: ShorePropsLayer | null = null
+  private raceLayer: RaceLayer | null = null
+  private raceState: RaceState | null = null
+  private raceCamActive = false
+  private raceRestorePending = false
 
   private N: number
   private R: number
@@ -574,6 +583,12 @@ export class PlanetRenderer {
     )
     this.roadSurfaceMesh.frustumCulled = false
     this.scene.add(this.roadSurfaceMesh)
+    this.roadShoulderMesh = new THREE.Mesh(
+      new THREE.BufferGeometry(),
+      new THREE.MeshStandardMaterial({ color: 0x58604d, roughness: 0.98, metalness: 0, side: THREE.DoubleSide, emissive: 0x23271f, emissiveIntensity: 0.18 }),
+    )
+    this.roadShoulderMesh.frustumCulled = false
+    this.scene.add(this.roadShoulderMesh)
     this.roadLineMesh = new THREE.Mesh(
       new THREE.BufferGeometry(),
       new THREE.MeshStandardMaterial({ color: 0xd8c879, roughness: 0.8, metalness: 0, emissive: 0x2a2410, emissiveIntensity: 0.3, side: THREE.DoubleSide }),
@@ -996,7 +1011,9 @@ export class PlanetRenderer {
     const B = COLONY.build.block
     const LIFT = 0.05
     const SKIRT = 0.9 // embankment depth below the bed edge
+    const SHOULDER = 0.42 // worked earth beside the road, so the world grades into the carriageway
     const surf: number[] = []
+    const shoulder: number[] = []
     const line: number[] = []
     // Spec 084 S3 — the avenue gets its own asphalt surface + kerb strips; streets keep the earth bed.
     const surfA: number[] = []
@@ -1038,11 +1055,17 @@ export class PlanetRenderer {
       const c00 = cornerAt(x, y), c10 = cornerAt(x + 1, y), c01 = cornerAt(x, y + 1), c11 = cornerAt(x + 1, y + 1)
       quad(bed, c00, c10, c01, c11)
       const drop = (p: number[]): number[] => [p[0]!, p[1]! - SKIRT, p[2]!]
+      const shoulderEdge = (a: number[], b: number[], dx: number, dz: number) => {
+        const outerA = [a[0]! + dx * SHOULDER, a[1]! - 0.16, a[2]! + dz * SHOULDER]
+        const outerB = [b[0]! + dx * SHOULDER, b[1]! - 0.16, b[2]! + dz * SHOULDER]
+        quad(shoulder, a, b, outerA, outerB)
+        quad(shoulder, outerA, outerB, drop(outerA), drop(outerB))
+      }
       // a skirt on every edge not shared with another road cell
-      if (!roadSet.has(roadKey(x, y - 1))) quad(bed, c00, c10, drop(c00), drop(c10))
-      if (!roadSet.has(roadKey(x, y + 1))) quad(bed, c01, c11, drop(c01), drop(c11))
-      if (!roadSet.has(roadKey(x - 1, y))) quad(bed, c00, c01, drop(c00), drop(c01))
-      if (!roadSet.has(roadKey(x + 1, y))) quad(bed, c10, c11, drop(c10), drop(c11))
+      if (!roadSet.has(roadKey(x, y - 1))) { shoulderEdge(c00, c10, 0, -1); quad(bed, c00, c10, drop(c00), drop(c10)) }
+      if (!roadSet.has(roadKey(x, y + 1))) { shoulderEdge(c01, c11, 0, 1); quad(bed, c01, c11, drop(c01), drop(c11)) }
+      if (!roadSet.has(roadKey(x - 1, y))) { shoulderEdge(c00, c01, -1, 0); quad(bed, c00, c01, drop(c00), drop(c01)) }
+      if (!roadSet.has(roadKey(x + 1, y))) { shoulderEdge(c10, c11, 1, 0); quad(bed, c10, c11, drop(c10), drop(c11)) }
       const lift = (p: number[], dx: number, dz: number): number[] => [p[0]! + dx, p[1]! + 0.045, p[2]! + dz]
       if (avenue) {
         // KERBS: a raised concrete strip along every edge not shared with another avenue cell.
@@ -1074,6 +1097,7 @@ export class PlanetRenderer {
       geo.computeVertexNormals()
     }
     setPos(this.roadSurfaceMesh, surf)
+    setPos(this.roadShoulderMesh, shoulder)
     setPos(this.roadLineMesh, line)
     setPos(this.avenueSurfaceMesh, surfA)
     setPos(this.avenueKerbMesh, kerb)
@@ -1276,6 +1300,7 @@ export class PlanetRenderer {
       this.beaconMat.emissiveIntensity = 0.35 + blink * blink * 2.6
     }
     this.shoreProps?.update(this.sim.state.clock.daylight, performance.now())
+    if (this.raceLayer && this.raceState) this.raceLayer.update(this.raceState, performance.now())
     if (this.fpCitizenId && this.avatarSource) {
       // P1 — first-person: park the camera at the citizen's eye and look down their heading. OrbitControls is off.
       const a = this.avatarSource().find((x) => x.id === this.fpCitizenId)
@@ -1291,11 +1316,68 @@ export class PlanetRenderer {
       } else {
         this.exitFirstPerson() // the citizen vanished — fall back to orbit
       }
+    } else if (this.raceCamActive && this.raceState) {
+      this.updateRaceCamera()
     } else {
       if (this.cinematic) this.updateCinematic()
       this.controls.update()
     }
     this.composer.render()
+  }
+
+  setRaceState(race: RaceState | null): void {
+    if (!race || race.mode === 'idle') {
+      this.clearRaceLayer()
+      this.raceState = null
+      this.raceCamActive = false
+      this.raceRestorePending = false
+      if (!this.fpCitizenId) {
+        this.controls.enabled = true
+        this.applyPreset('district')
+      }
+      return
+    }
+    if (!this.raceLayer || this.raceState?.track !== race.track) {
+      this.clearRaceLayer()
+      this.raceLayer = buildRaceLayer({
+        terrain: this.sim.state.terrain,
+        track: race.track,
+        wx: (x) => this.wx(x),
+        wz: (y) => this.wz(y),
+      })
+      if (this.raceLayer) this.scene.add(this.raceLayer.group)
+    }
+    this.raceState = race
+    this.raceCamActive = race.mode === 'countdown' || race.mode === 'running'
+    this.controls.enabled = !this.raceCamActive && !this.fpCitizenId
+    if (this.raceCamActive) this.raceRestorePending = false
+    if (race.mode === 'finished' && !this.raceRestorePending) {
+      this.raceRestorePending = true
+      this.applyPreset('district')
+    }
+  }
+
+  private clearRaceLayer(): void {
+    this.raceLayer?.dispose()
+    this.raceLayer = null
+  }
+
+  private updateRaceCamera(): void {
+    const race = this.raceState
+    if (!race) return
+    const t = this.sim.state.terrain
+    const c = race.car
+    const ground = Math.max(0, t.worldY(Math.round(c.x), Math.round(c.y)))
+    const target = new THREE.Vector3(this.wx(c.x), ground + 0.7, this.wz(c.y))
+    const behind = new THREE.Vector3(
+      this.wx(c.x - Math.cos(c.heading) * 7.5),
+      ground + 5.8 + Math.min(3.5, Math.abs(c.speed) * 0.25),
+      this.wz(c.y - Math.sin(c.heading) * 7.5),
+    )
+    this.camera.position.lerp(behind, 0.16)
+    this.controls.target.lerp(target, 0.22)
+    this.camera.lookAt(this.controls.target)
+    this.camera.updateMatrixWorld()
   }
 
   /** Toggle the TV-mode cinematic fly-around. Camera slowly orbits + breathes around the landing
@@ -1464,9 +1546,10 @@ export class PlanetRenderer {
       child.traverse((o) => {
         const m = o as THREE.Mesh
         if (m.geometry) m.geometry.dispose()
+        const disposeMat = (x: THREE.Material) => { (x as THREE.MeshStandardMaterial).map?.dispose(); x.dispose() } // free the board CanvasTextures too
         const mat = m.material as THREE.Material | THREE.Material[] | undefined
-        if (Array.isArray(mat)) mat.forEach((x) => x.dispose())
-        else mat?.dispose()
+        if (Array.isArray(mat)) mat.forEach(disposeMat)
+        else if (mat) disposeMat(mat)
       })
     }
     this.commercialGroup.clear()
@@ -1621,6 +1704,39 @@ export class PlanetRenderer {
         const bush = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 7), leafMat); bush.position.y = 0.3
         planter.add(tub, bush)
         this.commercialGroup.add(planter)
+      }
+      // Spec 081 P0 — AD BOARDS at the strip approaches. Each board is a post pair + frame + a screen
+      // plane carrying a CanvasTexture painted by adCanvas (a deterministic poster for one real shop, or
+      // the welcome PSA when none). Placement is the pure surveyBillboards (collision-checked against
+      // roads + shop footprints); the screen faces inward down the strip and glows softly after dark
+      // (emissive under the bloom threshold). Disposed with the group — texture too (see the teardown).
+      const boardBlocked = new Set<string>(this.sim.state.roadSet)
+      for (const p of d.parcels) for (let yy = p.y; yy < p.y + p.h; yy++) for (let xx = p.x; xx < p.x + p.w; xx++) boardBlocked.add(`${xx},${yy}`)
+      const shopById = new Map(d.parcels.map((p) => [p.id, p]))
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x3a3f4a, roughness: 0.7 })
+      for (const site of surveyBillboards(d, t, boardBlocked)) {
+        const by = Math.max(0, t.worldY(Math.round(site.x), Math.round(site.y)))
+        const grp = new THREE.Group()
+        grp.position.set(this.wx(site.x), by, this.wz(site.y))
+        grp.rotation.y = site.faceX === 1 ? Math.PI / 2 : -Math.PI / 2 // a +z plane turned to face along the street
+        for (const px of [-0.7, 0.7]) {
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.8, 6), postMat)
+          post.position.set(px, 0.9, 0); post.castShadow = true; grp.add(post)
+        }
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(1.95, 1.32, 0.12), postMat)
+        frame.position.set(0, 2.1, 0); frame.castShadow = true; grp.add(frame)
+        const shop = site.shopId ? shopById.get(site.shopId) : undefined
+        const cv = document.createElement('canvas'); cv.width = 256; cv.height = 160
+        const ctx = cv.getContext('2d')
+        if (ctx) paintPoster(ctx, posterModel(shop?.business), cv.width, cv.height)
+        const tex = new THREE.CanvasTexture(cv)
+        const screen = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.78, 1.12),
+          new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.35, roughness: 0.6 }),
+        )
+        screen.position.set(0, 2.1, 0.07)
+        grp.add(screen)
+        this.commercialGroup.add(grp)
       }
     }
   }
@@ -2092,6 +2208,7 @@ export class PlanetRenderer {
     this.controls.dispose()
     this.composer.dispose()
     this.shoreProps?.dispose()
+    this.clearRaceLayer()
     this.renderer.dispose()
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement)

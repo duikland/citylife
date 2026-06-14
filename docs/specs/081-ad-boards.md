@@ -119,3 +119,31 @@ Offline, everything still works on canvas posters and the game never blocks.
 - P4 — Polish: night emissive glow on screens, rotation events surfaced in the radio ticker.
 
 Each citylife slice ships on mechanics/dev, passes typecheck plus vitest, and is visible on :5188.
+
+## Progress log
+
+### 2026-06-13 — Slice P0: billboards survey + canvas posters + renderer
+DONE
+- src/colony/commerce/billboards.ts (PURE, deterministic; no Date.now / Math.random — purity guard
+  pins it): surveyBillboards(district, terrain, blocked, rotation) places boards at the two APPROACHES
+  to the high street (its open zone edges), marching outward and flanking the centreline, gated through
+  cellOk and collision-checked against roads + shop footprints so a board never lands on a road or a
+  shopfront. Each board faces inward down the strip and advertises one real shop by a deterministic
+  rotation over the surveyed plots (PSA card when none). Default 3 boards.
+- src/colony/commerce/adCanvas.ts (PURE): posterModel(business) -> a deterministic poster model
+  (title / tagline / accent / badge), screened through isPublicSafe; PSA_POSTER for none. paintPoster()
+  draws it on a 2D canvas (dark slate ground, accent header + footer, title, wrapped tagline) — pure,
+  no clock/random, so the canvas reproduces.
+- renderer (PlanetRenderer.buildCommercialDistrict): a board pass builds post-pair + frame + a screen
+  plane carrying a CanvasTexture painted by adCanvas, faced inward, glowing softly after dark (emissive
+  0.35, under the 0.9 bloom threshold). The teardown now disposes material .map so the CanvasTextures
+  never leak across re-survey.
+- 8 node tests (placement on good ground, never on roads/shopfronts/water, real-shop refs, no shared
+  cell, at-least-one for 4242, determinism across two boots, rotation shifts the ad keeping placement,
+  poster model public-safe + PSA + FOR-SALE + determinism, purity guard). Full suite green, tsc clean.
+- LIVE on :5188 (seed 4242): 3 boards at the strip approach by the lighthouse; the front reads
+  "NEAREST (ENERGY RADAR) / The Nearest / Pull up a stool, watch the radar" in cyan, a "FOR SALE /
+  Corner Kiosk" board behind, lighthouse + sea beyond, posters glowing at night. No console errors.
+NEXT
+- P1 raycast hover + click opens the storefront (gated on 079 shop.html — defer until that lands).
+- P2 adClient generated posters via the existing kooker image APIs (best-effort, cached, session-capped).
