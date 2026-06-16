@@ -181,7 +181,11 @@ export class PlanetRenderer {
     this.R = COLONY.world.planetRadius
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
-    this.renderer.setPixelRatio(1)
+    // Render at the display's native pixel density (capped at 2x) so the world is crisp on HiDPI
+    // screens — matches the House Builder + legacy city renderer. The old hardcoded 1 made the 608
+    // world upscale (soft, non-HD) on a 2x+ DPR display; the 2x cap keeps the heavy world's fill rate
+    // bounded so a 3x phone/Retina panel does not quadruple-plus the fragment load.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
