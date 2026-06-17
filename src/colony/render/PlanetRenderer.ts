@@ -27,6 +27,8 @@ import { buildChunkedTerrain, type ChunkedTerrain } from './terrainChunks'
 import { defaultBlueprint, streetDoorDir, type Zone } from '../neighborhood'
 import { buildShoreProps, type ShorePropsLayer } from './shoreProps'
 import { buildRaceLayer, type RaceLayer } from './raceLayer'
+import { buildBusLayer, type BusLayer } from './busLayer'
+import type { BusRoute } from '../transit/busRoute'
 import type { RaceState } from '../racing/race'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
@@ -159,6 +161,7 @@ export class PlanetRenderer {
   private beaconMat: THREE.MeshStandardMaterial | null = null
   private shoreProps: ShorePropsLayer | null = null
   private raceLayer: RaceLayer | null = null
+  private busLayer: BusLayer | null = null
   private raceState: RaceState | null = null
   private raceCamActive = false
   private raceRestorePending = false
@@ -1326,6 +1329,7 @@ export class PlanetRenderer {
     }
     this.shoreProps?.update(this.sim.state.clock.daylight, performance.now())
     if (this.raceLayer && this.raceState) this.raceLayer.update(this.raceState, performance.now())
+    this.busLayer?.update(performance.now()) // spec 088 — the bus drives its loop between the hoods
     if (this.fpCitizenId && this.avatarSource) {
       // P1 — first-person: park the camera at the citizen's eye and look down their heading. OrbitControls is off.
       const a = this.avatarSource().find((x) => x.id === this.fpCitizenId)
@@ -1556,6 +1560,22 @@ export class PlanetRenderer {
   setCommercialDistrict(d: CommercialDistrict | null | undefined): void {
     this.commercialDistrict = d ?? undefined
     this.buildCommercialDistrict()
+  }
+
+  /** Spec 088 — hand the renderer the bus route; it raises the stop markers and a coach that drives the
+   *  loop between the hoods (a render-loop vehicle, advanced on wall-clock dt, not the sim). */
+  setBusRoute(route: BusRoute | null | undefined): void {
+    this.busLayer?.dispose()
+    this.busLayer = null
+    if (!route) return
+    this.busLayer = buildBusLayer({
+      terrain: this.sim.state.terrain,
+      route,
+      wx: (x) => this.wx(x),
+      wz: (y) => this.wz(y),
+      roadY: (x, y) => this.smoothRoadY(x, y),
+    })
+    if (this.busLayer) this.scene.add(this.busLayer.group)
   }
 
   // The neon palette for the strip — saturated signage that pops against the calm residential teal.

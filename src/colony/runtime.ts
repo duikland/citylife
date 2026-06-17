@@ -25,6 +25,7 @@ import { createProfile, addPost, type KbProfile, type PostKind } from './social/
 import { loadKookerbookLocal, saveProfileLocal, saveProfileBackend, fetchKookerbookBackend, mergeKookerbook } from './bot/kookerbookStore'
 import { getLedgerSync, type LedgerMove, type SyncStatus } from './bot/ledgerSync'
 import { makeCommercialDistrict, type CommercialDistrict, type ShopKind, type ShopParcel } from './commerce/district'
+import { makeBusRoute, type BusRoute } from './transit/busRoute'
 import { cellOk, leastCostPath, type Cell } from './pathfind'
 import { createRadio, tuneTo, toggleOn as radioToggleOn, toggleMuted as radioToggleMuted, spinHouseAd, type RadioState } from './radio'
 import { buildShareCard, headlineFor, shareStats, siteLabel, DEFAULT_TAGLINE, CARD_ID, type CardFormat } from './social/shareCard'
@@ -162,6 +163,8 @@ export class ColonyRuntime {
   commercialReserve: { x: number; y: number; w: number; h: number } | null = null
   /** Spec 079 P0 — the surveyed commercial high street + shop plots within the reserve. */
   commercialDistrict: CommercialDistrict | null = null
+  /** Spec 088 — the city bus route: a road loop visiting every hood (founders + each hamlet). */
+  busRoute: BusRoute | null = null
   // Spec 079 — the Nearest bar's seat cells + who's sitting there (a night crowd; cleared by day).
   private barSeatCells: { x: number; y: number }[] | null = null
   private barOccupied = new Set<string>()
@@ -369,6 +372,17 @@ export class ColonyRuntime {
       mergeAvenue(this.sim.state, connector)
       mergeAvenue(this.sim.state, streetCells)
     }
+    // Spec 088 — the BUS route: a loop over the finished road network visiting every hood (the founders'
+    // coast + each hamlet). Anchored on each hood's carriage centroid; makeBusRoute snaps to the nearest
+    // road cell and BFS-connects them into a closed circuit. Pure + deterministic; the render-loop bus
+    // drives it. Computed AFTER all the roads are merged so every hood is reachable.
+    const hoodCentroid = (cells: { x: number; y: number }[]): { x: number; y: number } => {
+      let sx = 0, sy = 0
+      for (const c of cells) { sx += c.x; sy += c.y }
+      return { x: Math.round(sx / Math.max(1, cells.length)), y: Math.round(sy / Math.max(1, cells.length)) }
+    }
+    const busAnchors = [hoodCentroid(this.neighborhood.carriage), ...satellites.map((s) => hoodCentroid(s.carriage))]
+    this.busRoute = makeBusRoute({ roadKind: this.sim.state.roadKind }, busAnchors)
     // Spec 082 — restore stored Kookerbook profiles BEFORE seeding Joe: ensureKbProfile skips
     // citizens that already have a profile, so a restored timeline is never clobbered by a fresh
     // founder profile (the bug: seed-then-restore overwrote Joe's stored posts with a 1-post reset).
@@ -1397,6 +1411,7 @@ export class ColonyRuntime {
     if (this.fpCitizenId) this.renderer.enterFirstPerson(this.fpCitizenId)
     this.renderer.setNeighborhood(this.neighborhood) // spec 075 — lot pads + voxel homes
     this.renderer.setCommercialDistrict(this.commercialDistrict) // spec 079 — the vibrant shop strip
+    this.renderer.setBusRoute(this.busRoute) // spec 088 — the bus that loops between the hoods
     this.renderer.setRaceState(this.raceState)
     this.running = true
     this.lastFrame = performance.now()
