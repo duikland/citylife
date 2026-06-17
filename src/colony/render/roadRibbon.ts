@@ -29,9 +29,9 @@ const LIFT = 0.18 // sit just above the per-cell road base so the smooth ribbon 
 export function buildRoadRibbons(ways: RoadWay[], opts: RoadRibbonOptions): THREE.Group {
   const group = new THREE.Group()
   group.name = 'RoadRibbons'
-  const streetMat = new THREE.MeshStandardMaterial({ color: 0x33373f, roughness: 0.92, metalness: 0.02 })
-  const avenueMat = new THREE.MeshStandardMaterial({ color: 0x3b4049, roughness: 0.9, metalness: 0.03 })
-  const dashMat = new THREE.MeshStandardMaterial({ color: 0xe8c24a, roughness: 0.6, emissive: 0x4a3c10, emissiveIntensity: 0.25 })
+  const streetMat = new THREE.MeshStandardMaterial({ color: 0x595f6a, roughness: 0.92, metalness: 0.02 }) // mid asphalt grey — reads as road, not a black hole
+  const avenueMat = new THREE.MeshStandardMaterial({ color: 0x646b78, roughness: 0.9, metalness: 0.03 })
+  const dashMat = new THREE.MeshStandardMaterial({ color: 0xf2cf52, roughness: 0.5, emissive: 0xf2cf52, emissiveIntensity: 0.5 }) // bright lane line, glows a little day + night
   const surf: number[] = []
   const surfA: number[] = []
   const dash: number[] = []
@@ -105,15 +105,15 @@ function dashes(pts: { x: number; y: number }[], opts: RoadRibbonOptions, out: n
     const seg = Math.hypot(tx, ty)
     if (seg < 1e-4) continue
     tx /= seg; ty /= seg
-    const px = -ty * 0.09, py = tx * 0.09 // dash half-thickness across the road
+    const px = -ty * 0.14, py = tx * 0.14 // dash half-thickness across the road
     for (let s = 0; s < seg; s += 0.4) {
       acc += 0.4
-      if (acc % 2.4 > 1.0) continue // gap between dashes
+      if (acc % 2.6 > 1.4) continue // gap between dashes (dash ~1.4 long, gap ~1.2)
       const cx = a.x + tx * s, cy = a.y + ty * s
-      const y = Math.max(0, opts.roadY(Math.round(cx), Math.round(cy))) + LIFT + 0.03
+      const y = Math.max(0, opts.roadY(Math.round(cx), Math.round(cy))) + LIFT + 0.04
       const aL = [opts.wx(cx + px), y, opts.wz(cy + py)]
       const aR = [opts.wx(cx - px), y, opts.wz(cy - py)]
-      const bx = cx + tx * 0.34, by = cy + ty * 0.34
+      const bx = cx + tx * 0.55, by = cy + ty * 0.55
       const bL = [opts.wx(bx + px), y, opts.wz(by + py)]
       const bR = [opts.wx(bx - px), y, opts.wz(by - py)]
       tri(aL, aR, bL); tri(bL, aR, bR)

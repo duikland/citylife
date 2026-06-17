@@ -1126,11 +1126,17 @@ export class PlanetRenderer {
       geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3))
       geo.computeVertexNormals()
     }
-    setPos(this.roadSurfaceMesh, surf)
-    setPos(this.roadShoulderMesh, shoulder)
-    setPos(this.roadLineMesh, line)
-    setPos(this.avenueSurfaceMesh, surfA)
-    setPos(this.avenueKerbMesh, kerb)
+    // Spec 088 — roads now render as a SMOOTH RIBBON (setRoadWays). The per-cell quad surface is retired:
+    // it double-drew UNDER the ribbon as a jagged grey bed + white kerbs + dark embankment skirts — the
+    // "black lines" mess. Draw nothing here; the road DATA (s.roads / roadKind) is untouched, so traffic,
+    // the bus and the rally still run on it. (The arrays above stay computed but discarded — cheap, only
+    // on a road change — rather than gut the whole routine and its helpers.)
+    void surf; void shoulder; void line; void surfA; void kerb
+    setPos(this.roadSurfaceMesh, [])
+    setPos(this.roadShoulderMesh, [])
+    setPos(this.roadLineMesh, [])
+    setPos(this.avenueSurfaceMesh, [])
+    setPos(this.avenueKerbMesh, [])
   }
 
   private updateColonyLayer() {
