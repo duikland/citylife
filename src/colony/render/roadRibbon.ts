@@ -1,0 +1,122 @@
+import * as THREE from 'three'
+import type { Terrain } from '../terrain'
+
+// Spec 088 — SMOOTH ROAD RIBBONS. The roads are stored + driven as per-cell grid data (for traffic,
+// the bus and the rally), but rendering one axis-aligned square per cell makes every non-straight road
+// a sawtooth staircase. This builds a smooth ribbon mesh along each road's CENTRE-LINE instead:
+// Chaikin-smooth the polyline, then extrude a constant width perpendicular to it, draped on the
+// terrain, with a dashed centre line. Laid just above the cell roads so it reads as the road surface
+// and hides the jagged cell edges underneath. Pure geometry from the inputs — no clock, no random.
+
+export interface RoadWay {
+  /** The road centre-line cells (a polyline). */
+  path: { x: number; y: number }[]
+  kind: 'avenue' | 'street'
+  /** Carriageway width in cells. */
+  width: number
+}
+
+export interface RoadRibbonOptions {
+  terrain: Terrain
+  wx: (x: number) => number
+  wz: (y: number) => number
+  roadY: (x: number, y: number) => number // smoothed road height
+}
+
+const LIFT = 0.18 // sit just above the per-cell road base so the smooth ribbon is what you see
+
+/** Build a group of smooth draped ribbons (+ dashed centre lines) for every road way. */
+export function buildRoadRibbons(ways: RoadWay[], opts: RoadRibbonOptions): THREE.Group {
+  const group = new THREE.Group()
+  group.name = 'RoadRibbons'
+  const streetMat = new THREE.MeshStandardMaterial({ color: 0x33373f, roughness: 0.92, metalness: 0.02 })
+  const avenueMat = new THREE.MeshStandardMaterial({ color: 0x3b4049, roughness: 0.9, metalness: 0.03 })
+  const dashMat = new THREE.MeshStandardMaterial({ color: 0xe8c24a, roughness: 0.6, emissive: 0x4a3c10, emissiveIntensity: 0.25 })
+  const surf: number[] = []
+  const surfA: number[] = []
+  const dash: number[] = []
+  for (const way of ways) {
+    if (way.path.length < 2) continue
+    const pts = chaikin(way.path, 2)
+    ribbon(pts, way.width / 2, opts, way.kind === 'avenue' ? surfA : surf)
+    dashes(pts, opts, dash)
+  }
+  const add = (arr: number[], mat: THREE.Material) => {
+    if (arr.length === 0) return
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3))
+    geo.computeVertexNormals()
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.receiveShadow = true
+    mesh.frustumCulled = false
+    group.add(mesh)
+  }
+  add(surf, streetMat)
+  add(surfA, avenueMat)
+  add(dash, dashMat)
+  return group
+}
+
+/** Corner-cutting smoothing: each iteration replaces every segment with its 1/4 and 3/4 points, so
+ *  staircases round off into smooth curves. Endpoints are kept. */
+function chaikin(path: { x: number; y: number }[], iterations: number): { x: number; y: number }[] {
+  let pts = path.map((p) => ({ x: p.x, y: p.y }))
+  for (let it = 0; it < iterations; it++) {
+    const out: { x: number; y: number }[] = [pts[0]!]
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i]!, b = pts[i + 1]!
+      out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 })
+      out.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 })
+    }
+    out.push(pts[pts.length - 1]!)
+    pts = out
+  }
+  return pts
+}
+
+/** Extrude a triangle strip of half-width `half` perpendicular to the smoothed polyline, draped on the
+ *  terrain at each cross-section. */
+function ribbon(pts: { x: number; y: number }[], half: number, opts: RoadRibbonOptions, out: number[]): void {
+  const edge = (i: number, sign: number): number[] => {
+    const p = pts[i]!
+    const prev = pts[Math.max(0, i - 1)]!, next = pts[Math.min(pts.length - 1, i + 1)]!
+    let tx = next.x - prev.x, ty = next.y - prev.y
+    const len = Math.hypot(tx, ty) || 1
+    const px = -ty / len, py = tx / len // unit perpendicular
+    const gx = p.x + px * half * sign, gy = p.y + py * half * sign
+    return [opts.wx(gx), Math.max(0, opts.roadY(Math.round(p.x), Math.round(p.y))) + LIFT, opts.wz(gy)]
+  }
+  const tri = (a: number[], b: number[], c: number[]) => out.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!)
+  for (let i = 0; i < pts.length - 1; i++) {
+    const aL = edge(i, -1), aR = edge(i, 1), bL = edge(i + 1, -1), bR = edge(i + 1, 1)
+    tri(aL, aR, bL)
+    tri(bL, aR, bR)
+  }
+}
+
+/** Short dashes along the centre-line (every ~2 cells), a thin raised quad each. */
+function dashes(pts: { x: number; y: number }[], opts: RoadRibbonOptions, out: number[]): void {
+  const tri = (a: number[], b: number[], c: number[]) => out.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!)
+  // accumulate arc length; lay a dash for ~1 cell every ~2.4 cells
+  let acc = 0
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i]!, b = pts[i + 1]!
+    let tx = b.x - a.x, ty = b.y - a.y
+    const seg = Math.hypot(tx, ty)
+    if (seg < 1e-4) continue
+    tx /= seg; ty /= seg
+    const px = -ty * 0.09, py = tx * 0.09 // dash half-thickness across the road
+    for (let s = 0; s < seg; s += 0.4) {
+      acc += 0.4
+      if (acc % 2.4 > 1.0) continue // gap between dashes
+      const cx = a.x + tx * s, cy = a.y + ty * s
+      const y = Math.max(0, opts.roadY(Math.round(cx), Math.round(cy))) + LIFT + 0.03
+      const aL = [opts.wx(cx + px), y, opts.wz(cy + py)]
+      const aR = [opts.wx(cx - px), y, opts.wz(cy - py)]
+      const bx = cx + tx * 0.34, by = cy + ty * 0.34
+      const bL = [opts.wx(bx + px), y, opts.wz(by + py)]
+      const bR = [opts.wx(bx - px), y, opts.wz(by - py)]
+      tri(aL, aR, bL); tri(bL, aR, bR)
+    }
+  }
+}

@@ -26,6 +26,7 @@ import { loadKookerbookLocal, saveProfileLocal, saveProfileBackend, fetchKookerb
 import { getLedgerSync, type LedgerMove, type SyncStatus } from './bot/ledgerSync'
 import { makeCommercialDistrict, type CommercialDistrict, type ShopKind, type ShopParcel } from './commerce/district'
 import { makeBusRoute, type BusRoute } from './transit/busRoute'
+import type { RoadWay } from './render/roadRibbon'
 import { cellOk, leastCostPath, type Cell } from './pathfind'
 import { createRadio, tuneTo, toggleOn as radioToggleOn, toggleMuted as radioToggleMuted, spinHouseAd, type RadioState } from './radio'
 import { buildShareCard, headlineFor, shareStats, siteLabel, DEFAULT_TAGLINE, CARD_ID, type CardFormat } from './social/shareCard'
@@ -165,6 +166,8 @@ export class ColonyRuntime {
   commercialDistrict: CommercialDistrict | null = null
   /** Spec 088 — the city bus route: a road loop visiting every hood (founders + each hamlet). */
   busRoute: BusRoute | null = null
+  /** Spec 088 — road centre-lines for the smooth ribbon render (rendering only; traffic uses the cells). */
+  roadWays: RoadWay[] = []
   // Spec 079 — the Nearest bar's seat cells + who's sitting there (a night crowd; cleared by day).
   private barSeatCells: { x: number; y: number }[] | null = null
   private barOccupied = new Set<string>()
@@ -296,34 +299,58 @@ export class ColonyRuntime {
       for (const p of a) for (const q of b) { const d = (p.x - q.x) ** 2 + (p.y - q.y) ** 2; if (d < bestD) { bestD = d; from = p; to = q } }
       return [from, to]
     }
+    // Lay a clean, uniform-width road from a raw (staircase) leastCostPath centreline:
+    //  1. STRING-PULL the path into straight segments — greedily skip waypoints while the straight
+    //     line of sight stays on road-able ground — so a diagonal stair-step becomes a clean diagonal
+    //     and the route runs in long straight runs with tidy corners at the few real bends.
+    //  2. STROKE a constant width PERPENDICULAR to each segment, so the perceived width is steady on
+    //     straights + diagonals and any residual step is filled by the band.
+    // The trunk roads AND the commercial connector both lay through this, so no road is a raw 1-cell
+    // zig-zag any more (the staircase the operator kept seeing).
+    const roadCellOk = (x: number, y: number) => cellOk(t0, x, y) && !residentialKeys.has(`${x},${y}`)
+    const losClear = (a: Cell, b: Cell): boolean => {
+      const steps = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y))
+      for (let s = 0; s <= steps; s++) {
+        const x = Math.round(a.x + ((b.x - a.x) * s) / Math.max(1, steps))
+        const y = Math.round(a.y + ((b.y - a.y) * s) / Math.max(1, steps))
+        if (!roadCellOk(x, y)) return false
+      }
+      return true
+    }
+    const simplifyPath = (path: Cell[]): Cell[] => {
+      if (path.length <= 2) return path
+      const out: Cell[] = [path[0]!]
+      let anchor = 0
+      for (let i = 2; i < path.length; i++) {
+        if (!losClear(path[anchor]!, path[i]!)) { out.push(path[i - 1]!); anchor = i - 1 }
+      }
+      out.push(path[path.length - 1]!)
+      return out
+    }
+    const layRoad = (path: Cell[], half: number, kind: 'avenue' | 'street' = 'street'): Cell[] => {
+      const poly = simplifyPath(path)
+      if (poly.length >= 2) this.roadWays.push({ path: poly, kind, width: half * 2 + 1 }) // 088 — smooth ribbon centre-line
+      const out = new Set<string>()
+      const add = (fx: number, fy: number) => { const x = Math.round(fx), y = Math.round(fy); if (roadCellOk(x, y)) out.add(`${x},${y}`) }
+      for (let i = 0; i < poly.length - 1; i++) {
+        const a = poly[i]!, b = poly[i + 1]!
+        const dx = b.x - a.x, dy = b.y - a.y
+        const len = Math.hypot(dx, dy) || 1
+        const ux = dx / len, uy = dy / len, px = -uy, py = ux
+        for (let s = 0; s <= len + 1e-6; s += 0.5) {
+          const cxs = a.x + ux * s, cys = a.y + uy * s
+          add(cxs, cys)
+          for (let k = 0.5; k <= half + 1e-6; k += 0.5) { add(cxs + px * k, cys + py * k); add(cxs - px * k, cys - py * k) }
+        }
+      }
+      return [...out].map((k) => { const [x, y] = k.split(',').map(Number); return { x: x!, y: y! } })
+    }
     const paveLink = (a: Cell[], b: Cell[]) => {
       if (a.length === 0 || b.length === 0) return
       const [from, to] = nearestPair(a, b)
-      const path = leastCostPath(t0, from, to, { slopeWeight: 0.5, blocked: (x, y) => residentialKeys.has(`${x},${y}`) }) ?? []
+      const path = leastCostPath(t0, from, to, { slopeWeight: 0.5, diagonal: true, blocked: (x, y) => residentialKeys.has(`${x},${y}`) }) ?? []
       if (path.length === 0) return
-      // Lay a CONSTANT-WIDTH carriageway by stroking the centreline PERPENDICULAR to its local travel
-      // direction, instead of a 3x3 square dilation. The square kernel blew the width out to 4 cells on
-      // diagonal runs and corners and pinched to 2 past obstacles (the "3 then 2 then 4 lanes into a
-      // corner" the operator saw); a perpendicular stroke keeps the PERCEIVED width steady whether the
-      // road runs straight or diagonal, and the overlapping cross-sections fill turns into tidy corners.
-      const HALF = 1 // half-width in cells -> a steady ~3-cell carriageway
-      const wide = new Set<string>()
-      const add = (fx: number, fy: number) => {
-        const x = Math.round(fx), y = Math.round(fy)
-        if (cellOk(t0, x, y) && !residentialKeys.has(`${x},${y}`)) wide.add(`${x},${y}`)
-      }
-      for (let i = 0; i < path.length; i++) {
-        const prev = path[Math.max(0, i - 1)]!, next = path[Math.min(path.length - 1, i + 1)]!
-        let dx = next.x - prev.x, dy = next.y - prev.y
-        const len = Math.hypot(dx, dy) || 1
-        const px = -dy / len, py = dx / len // unit perpendicular to travel
-        add(path[i]!.x, path[i]!.y) // the centreline is always paved (keeps the ribbon connected)
-        for (let k = 0.5; k <= HALF + 1e-6; k += 0.5) {
-          add(path[i]!.x + px * k, path[i]!.y + py * k)
-          add(path[i]!.x - px * k, path[i]!.y - py * k)
-        }
-      }
-      mergeAvenue(this.sim.state, [...wide].map((k) => { const [x, y] = k.split(',').map(Number); return { x: x!, y: y! } }))
+      mergeAvenue(this.sim.state, layRoad(path, 1))
     }
     const coast = this.neighborhood.carriage
     for (let i = 0; i < satellites.length; i++) {
@@ -368,14 +395,20 @@ export class ColonyRuntime {
       // 086-P1 — connect from the founders' carriage cell NEAREST the (now coastal) district, not the
       // inland terminus, so the spur is the shortest coast road rather than a backtrack inland.
       const [terminus, near] = nearestPair(car, this.commercialDistrict.street)
-      const connector = leastCostPath(t, terminus, near, { slopeWeight: 0.5, blocked: (x, y) => residentialKeys.has(`${x},${y}`) || shopCells.has(`${x},${y}`) }) ?? []
-      mergeAvenue(this.sim.state, connector)
+      const connector = leastCostPath(t, terminus, near, { slopeWeight: 0.5, diagonal: true, blocked: (x, y) => residentialKeys.has(`${x},${y}`) || shopCells.has(`${x},${y}`) }) ?? []
+      mergeAvenue(this.sim.state, layRoad(connector, 1)) // 088 — clean, uniform-width spur (not a raw 1-cell zig-zag)
       mergeAvenue(this.sim.state, streetCells)
     }
     // Spec 088 — the BUS route: a loop over the finished road network visiting every hood (the founders'
     // coast + each hamlet). Anchored on each hood's carriage centroid; makeBusRoute snaps to the nearest
     // road cell and BFS-connects them into a closed circuit. Pure + deterministic; the render-loop bus
     // drives it. Computed AFTER all the roads are merged so every hood is reachable.
+    // Spec 088 — collect the remaining road centre-lines as ribbon ways (the trunk roads + connector
+    // already recorded themselves through layRoad): the founders' avenue spine, each hamlet spine, and
+    // the commercial high street. The smooth ribbon render draws these; traffic still uses the cells.
+    if (this.neighborhood.spine.length >= 2) this.roadWays.push({ path: this.neighborhood.spine, kind: 'avenue', width: 3 })
+    for (const s of satellites) if (s.spine.length >= 2) this.roadWays.push({ path: s.spine, kind: 'street', width: 3 })
+    if (this.commercialDistrict && this.commercialDistrict.street.length >= 2) this.roadWays.push({ path: this.commercialDistrict.street, kind: 'avenue', width: 3 })
     const hoodCentroid = (cells: { x: number; y: number }[]): { x: number; y: number } => {
       let sx = 0, sy = 0
       for (const c of cells) { sx += c.x; sy += c.y }
@@ -1411,6 +1444,7 @@ export class ColonyRuntime {
     if (this.fpCitizenId) this.renderer.enterFirstPerson(this.fpCitizenId)
     this.renderer.setNeighborhood(this.neighborhood) // spec 075 — lot pads + voxel homes
     this.renderer.setCommercialDistrict(this.commercialDistrict) // spec 079 — the vibrant shop strip
+    this.renderer.setRoadWays(this.roadWays) // spec 088 — smooth ribbon road surfaces over the cell roads
     this.renderer.setBusRoute(this.busRoute) // spec 088 — the bus that loops between the hoods
     this.renderer.setRaceState(this.raceState)
     this.running = true

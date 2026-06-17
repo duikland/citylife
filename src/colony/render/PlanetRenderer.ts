@@ -29,6 +29,7 @@ import { buildShoreProps, type ShorePropsLayer } from './shoreProps'
 import { buildRaceLayer, type RaceLayer } from './raceLayer'
 import { buildBusLayer, type BusLayer } from './busLayer'
 import type { BusRoute } from '../transit/busRoute'
+import { buildRoadRibbons, type RoadWay } from './roadRibbon'
 import type { RaceState } from '../racing/race'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
@@ -162,6 +163,7 @@ export class PlanetRenderer {
   private shoreProps: ShorePropsLayer | null = null
   private raceLayer: RaceLayer | null = null
   private busLayer: BusLayer | null = null
+  private roadRibbonGroup: THREE.Group | null = null
   private raceState: RaceState | null = null
   private raceCamActive = false
   private raceRestorePending = false
@@ -1560,6 +1562,31 @@ export class PlanetRenderer {
   setCommercialDistrict(d: CommercialDistrict | null | undefined): void {
     this.commercialDistrict = d ?? undefined
     this.buildCommercialDistrict()
+  }
+
+  /** Spec 088 — hand the renderer the road centre-lines; it lays a SMOOTH ribbon surface (Chaikin-
+   *  smoothed, width-extruded, draped) along each, just above the per-cell road base so roads read as
+   *  smooth instead of a per-cell staircase. Traffic/bus/rally still use the cell roads underneath. */
+  setRoadWays(ways: RoadWay[] | null | undefined): void {
+    if (this.roadRibbonGroup) {
+      this.roadRibbonGroup.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (m.geometry) m.geometry.dispose()
+        const mt = m.material as THREE.Material | THREE.Material[] | undefined
+        if (Array.isArray(mt)) mt.forEach((x) => x.dispose())
+        else if (mt) mt.dispose()
+      })
+      this.roadRibbonGroup.parent?.remove(this.roadRibbonGroup)
+      this.roadRibbonGroup = null
+    }
+    if (!ways || ways.length === 0) return
+    this.roadRibbonGroup = buildRoadRibbons(ways, {
+      terrain: this.sim.state.terrain,
+      wx: (x) => this.wx(x),
+      wz: (y) => this.wz(y),
+      roadY: (x, y) => this.smoothRoadY(x, y),
+    })
+    this.scene.add(this.roadRibbonGroup)
   }
 
   /** Spec 088 — hand the renderer the bus route; it raises the stop markers and a coach that drives the

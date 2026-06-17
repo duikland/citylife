@@ -87,6 +87,19 @@ const NEIGH: ReadonlyArray<readonly [number, number]> = [
   [0, 1],
   [0, -1],
 ]
+// 8-connected scan order (orthogonals first, then diagonals) for diagonal:true routing — roads opt in
+// so they run clean 45-degree diagonals instead of 90-degree Manhattan stair-steps. Driveways and
+// everything else stay on NEIGH, so their layouts are byte-identical.
+const NEIGH8: ReadonlyArray<readonly [number, number]> = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [1, 1],
+  [1, -1],
+  [-1, 1],
+  [-1, -1],
+]
 
 // Spec 084 S1 — module-level scratch reused across calls. At a 608-cell world the three per-call
 // typed arrays were ~4.4 MB of fresh allocation per route, and boot routes dozens. A generation
@@ -109,10 +122,12 @@ export function leastCostPath(
   t: Terrain,
   start: Cell,
   goal: Cell,
-  opts: { slopeWeight?: number; blocked?: (x: number, y: number) => boolean } = {},
+  opts: { slopeWeight?: number; blocked?: (x: number, y: number) => boolean; diagonal?: boolean } = {},
 ): Cell[] | null {
   const slopeWeight = opts.slopeWeight ?? 0
   const blocked = opts.blocked
+  const neigh = opts.diagonal ? NEIGH8 : NEIGH
+  const SQRT2 = Math.SQRT2
   if (!cellOk(t, start.x, start.y) || !cellOk(t, goal.x, goal.y)) return null
   if (blocked && (blocked(start.x, start.y) || blocked(goal.x, goal.y))) return null
   const n = t.size
@@ -141,7 +156,11 @@ export function leastCostPath(
   const bx1 = Math.min(n - 1, Math.max(start.x, goal.x) + MARGIN)
   const by0 = Math.max(0, Math.min(start.y, goal.y) - MARGIN)
   const by1 = Math.min(n - 1, Math.max(start.y, goal.y) + MARGIN)
-  const hCost = (x: number, y: number) => Math.abs(x - goal.x) + Math.abs(y - goal.y)
+  // h = min-step-cost (1) x distance to goal. 4-conn -> Manhattan; 8-conn -> OCTILE (admissible with
+  // diagonal moves, so the path stays optimal).
+  const hCost = opts.diagonal
+    ? (x: number, y: number) => { const ax = Math.abs(x - goal.x), ay = Math.abs(y - goal.y); return ax + ay + (SQRT2 - 2) * Math.min(ax, ay) }
+    : (x: number, y: number) => Math.abs(x - goal.x) + Math.abs(y - goal.y)
   sDist[si] = 0
   sPrev[si] = -1
   sSeen[si] = sGen
@@ -153,7 +172,7 @@ export function leastCostPath(
     sDone[ci] = sGen
     if (ci === gi) break
     const cx = ci % n, cy = (ci / n) | 0
-    for (const [dx, dy] of NEIGH) {
+    for (const [dx, dy] of neigh) {
       const nx = cx + dx, ny = cy + dy
       if (nx < bx0 || ny < by0 || nx > bx1 || ny > by1) continue
       const ni = ny * n + nx
@@ -161,7 +180,14 @@ export function leastCostPath(
       const step = cellCost(t, nx, ny)
       if (!Number.isFinite(step)) continue
       if (blocked && blocked(nx, ny)) continue // reserved land (parcels, structures) is impassable
-      let w = step
+      const diag = dx !== 0 && dy !== 0
+      if (diag) {
+        // no corner-cutting: both orthogonal cells the diagonal squeezes between must be passable, so a
+        // diagonal can never clip across a water/rock corner.
+        if (!Number.isFinite(cellCost(t, cx + dx, cy)) || !Number.isFinite(cellCost(t, cx, cy + dy))) continue
+        if (blocked && (blocked(cx + dx, cy) || blocked(cx, cy + dy))) continue
+      }
+      let w = step * (diag ? SQRT2 : 1)
       if (slopeWeight > 0) w += slopeWeight * Math.abs(t.worldY(nx, ny) - t.worldY(cx, cy))
       const nd = sDist[ci]! + w
       if (sSeen[ni] !== sGen || nd < sDist[ni]!) {
