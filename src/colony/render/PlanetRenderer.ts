@@ -599,8 +599,6 @@ export class PlanetRenderer {
     // so the network sits in the landscape like the residential lane does.
     this.roadSurfaceMesh = new THREE.Mesh(
       new THREE.BufferGeometry(),
-      // A faint warm emissive keeps the bed readable under the void sky — without it the earth tone
-      // crushes to a black gash on the shadow side, which is what the operator flagged.
       new THREE.MeshStandardMaterial({ color: 0x7a6750, roughness: 1, metalness: 0, side: THREE.DoubleSide, emissive: 0x4a3c2c, emissiveIntensity: 0.32 }),
     )
     this.roadSurfaceMesh.frustumCulled = false
@@ -1015,140 +1013,27 @@ export class PlanetRenderer {
    *  nobody sinks under the raised road ribbon when they're on a road. */
   private surfaceY(x: number, y: number): number {
     const rx = Math.round(x), ry = Math.round(y)
-    // raise to the ribbon top ONLY where the ribbon actually is (not every roadKind cell), so a citizen
-    // never floats on a road cell the ribbon doesn't reach.
+    // Raise to the ribbon top ONLY where the ribbon actually is (the trunk + carriage roads), so a
+    // citizen stands ON the road surface and never sinks under it — and never floats on a road cell the
+    // ribbon doesn't reach (the per-cell gap-fill fragments are negligible disconnected stubs).
     if (this.roadRibbonCells?.has(`${rx},${ry}`)) return Math.max(0, this.smoothRoadY(rx, ry)) + ROAD_RIBBON_LIFT
     return Math.max(0, this.sim.state.terrain.worldY(rx, ry))
   }
 
-  // Terrain height at a grid corner = mean of the 4 cells meeting there. Adjacent road cells
-  // share corners, so the draped ribbon stays continuous (no stair-steps) and ramps over slopes.
-  private cornerY(gx: number, gy: number): number {
-    const t = this.sim.state.terrain
-    const cl = (v: number) => Math.max(0, Math.min(t.size - 1, v))
-    const avg =
-      (t.worldY(cl(gx - 1), cl(gy - 1)) + t.worldY(cl(gx), cl(gy - 1)) + t.worldY(cl(gx - 1), cl(gy)) + t.worldY(cl(gx), cl(gy))) / 4
-    // Clamp to the sea plane: at the coast some of the 4 corner cells are below sea level (ocean),
-    // which would otherwise pull the road corner into the water visually.
-    return Math.max(0, avg)
-  }
-
-  // Rebuild road geometry: packed-earth quads draped on the terrain + dashed centre lines.
-  // Two things keep the ribbon reading as a GRADED ROADBED instead of a floating plank (the operator's
-  // complaint): (1) shared corner heights are RELAXED toward their road-network neighbours, so grades
-  // ease in and out smoothly; (2) every boundary edge gets an embankment SKIRT dropping toward the
-  // ground, so wherever the bed bridges a hollow it reads as built-up earthworks, never floating.
+  // Spec 088 — roads render ENTIRELY as the smooth RIBBON (setRoadWays / buildRoadRibbons). The old
+  // per-cell quad surface is retired: an axis-aligned square per cell can never be smooth, so any road
+  // cell the ribbon's smoothed centre-line didn't cover read as a jagged STAIRCASE fringe beside the
+  // smooth band — exactly the look the operator rejected ("wow those corners", the gap-fill experiment).
+  // The ribbon alone reads as clean, continuous roads with lane lines. The road DATA (s.roads/roadKind)
+  // is untouched, so traffic, the bus and the rally still drive the cells underneath. This just empties
+  // the legacy per-cell meshes (kept so the scene graph + materials stay stable across a road change).
   private rebuildRoads() {
-    const s = this.sim.state
-    const g = gridOrigin(s)
-    const B = COLONY.build.block
-    const LIFT = 0.12 // clear the terrain mesh so the carriageway never z-fights or lets green poke through
-    const SKIRT = 0.9 // embankment depth below the bed edge
-    const SHOULDER = 0.42 // worked earth beside the road, so the world grades into the carriageway
-    const surf: number[] = []
-    const shoulder: number[] = []
-    const line: number[] = []
-    // Spec 084 S3 — the avenue gets its own asphalt surface + kerb strips; streets keep the earth bed.
-    const surfA: number[] = []
-    const kerb: number[] = []
-    const tri = (arr: number[], a: number[], b: number[], c: number[]) => arr.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!)
-    const quad = (arr: number[], a: number[], b: number[], c: number[], d: number[]) => { tri(arr, a, c, b); tri(arr, b, c, d) }
-    const roadKey = (x: number, y: number) => `${x},${y}`
-    const roadSet = new Set(s.roads.map((r) => roadKey(r.x, r.y)))
-    // 1) collect every unique corner of the network with its terrain-sampled base height
-    const ck = (gx: number, gy: number) => `${gx},${gy}`
-    const heights = new Map<string, number>()
-    for (const r of s.roads) {
-      for (const [gx, gy] of [[r.x, r.y], [r.x + 1, r.y], [r.x, r.y + 1], [r.x + 1, r.y + 1]] as const) {
-        const k = ck(gx, gy)
-        if (!heights.has(k)) heights.set(k, this.cornerY(gx, gy))
-      }
-    }
-    // keep the RAW terrain-sampled corner heights — the relaxed bed is clamped up to these so it never
-    // sinks below the ground (which buried crest cells = breaks + let green poke through the road).
-    const rawHeights = new Map(heights)
-    // 2) relax each corner toward its network neighbours — two passes ease the grade transitions
-    for (let pass = 0; pass < 2; pass++) {
-      const next = new Map<string, number>()
-      for (const [k, h] of heights) {
-        const [gx, gy] = k.split(',').map(Number) as [number, number]
-        let sum = 0, n = 0
-        for (const [nx, ny] of [[gx + 1, gy], [gx - 1, gy], [gx, gy + 1], [gx, gy - 1]] as const) {
-          const nh = heights.get(ck(nx, ny))
-          if (nh !== undefined) { sum += nh; n++ }
-        }
-        next.set(k, n > 0 ? h * 0.5 + (sum / n) * 0.5 : h)
-      }
-      for (const [k, h] of next) heights.set(k, h)
-    }
-    const cornerAt = (gx: number, gy: number): number[] => {
-      const k = ck(gx, gy)
-      const raw = rawHeights.get(k) ?? this.cornerY(gx, gy)
-      const relaxed = heights.get(k) ?? raw
-      // smoothing may only FILL dips (embankment), never cut the bed below the real terrain corner
-      return [this.wx(gx) - 0.5, Math.max(relaxed, raw) + LIFT, this.wz(gy) - 0.5]
-    }
-    // 3) surface + skirts, split per road kind (spec 084 S3)
-    const isAvenue = (x: number, y: number) => s.roadKind.get(roadKey(x, y)) === 'avenue'
-    for (const r of s.roads) {
-      const x = r.x, y = r.y
-      const avenue = (r.kind ?? 'street') === 'avenue'
-      const bed = avenue ? surfA : surf
-      const c00 = cornerAt(x, y), c10 = cornerAt(x + 1, y), c01 = cornerAt(x, y + 1), c11 = cornerAt(x + 1, y + 1)
-      quad(bed, c00, c10, c01, c11)
-      const drop = (p: number[]): number[] => [p[0]!, p[1]! - SKIRT, p[2]!]
-      const shoulderEdge = (a: number[], b: number[], dx: number, dz: number) => {
-        const outerA = [a[0]! + dx * SHOULDER, a[1]! - 0.16, a[2]! + dz * SHOULDER]
-        const outerB = [b[0]! + dx * SHOULDER, b[1]! - 0.16, b[2]! + dz * SHOULDER]
-        quad(shoulder, a, b, outerA, outerB)
-        quad(shoulder, outerA, outerB, drop(outerA), drop(outerB))
-      }
-      // a skirt on every edge not shared with another road cell
-      if (!roadSet.has(roadKey(x, y - 1))) { shoulderEdge(c00, c10, 0, -1); quad(bed, c00, c10, drop(c00), drop(c10)) }
-      if (!roadSet.has(roadKey(x, y + 1))) { shoulderEdge(c01, c11, 0, 1); quad(bed, c01, c11, drop(c01), drop(c11)) }
-      if (!roadSet.has(roadKey(x - 1, y))) { shoulderEdge(c00, c01, -1, 0); quad(bed, c00, c01, drop(c00), drop(c01)) }
-      if (!roadSet.has(roadKey(x + 1, y))) { shoulderEdge(c10, c11, 1, 0); quad(bed, c10, c11, drop(c10), drop(c11)) }
-      const lift = (p: number[], dx: number, dz: number): number[] => [p[0]! + dx, p[1]! + 0.045, p[2]! + dz]
-      if (avenue) {
-        // KERBS: a raised concrete strip along every edge not shared with another avenue cell.
-        if (!isAvenue(x, y - 1)) quad(kerb, lift(c00, 0, 0), lift(c10, 0, 0), lift(c00, 0, 0.16), lift(c10, 0, 0.16))
-        if (!isAvenue(x, y + 1)) quad(kerb, lift(c01, 0, -0.16), lift(c11, 0, -0.16), lift(c01, 0, 0), lift(c11, 0, 0))
-        if (!isAvenue(x - 1, y)) quad(kerb, lift(c00, 0, 0), lift(c00, 0.16, 0), lift(c01, 0, 0), lift(c01, 0.16, 0))
-        if (!isAvenue(x + 1, y)) quad(kerb, lift(c10, -0.16, 0), lift(c10, 0, 0), lift(c11, -0.16, 0), lift(c11, 0, 0))
-        // CENTRE DASHES: every other cell, oriented along the run (the avenue bends with terrain).
-        if ((x + y) % 2 === 0) {
-          const h = (c00[1]! + c10[1]! + c01[1]! + c11[1]!) / 4 + 0.03
-          const wx = this.wx(x), wz = this.wz(y)
-          const runX = isAvenue(x - 1, y) || isAvenue(x + 1, y)
-          if (runX) quad(line, [wx - 0.3, h, wz - 0.05], [wx + 0.3, h, wz - 0.05], [wx - 0.3, h, wz + 0.05], [wx + 0.3, h, wz + 0.05])
-          else quad(line, [wx - 0.05, h, wz - 0.3], [wx + 0.05, h, wz - 0.3], [wx - 0.05, h, wz + 0.3], [wx + 0.05, h, wz + 0.3])
-        }
-        continue
-      }
-      const onV = ((((x - g.x) % B) + B) % B) === 0 // on a north-south grid line
-      const onH = ((((y - g.y) % B) + B) % B) === 0 // on an east-west grid line
-      if (onV === onH) continue // intersection or off-grid fill -> no centre dash
-      const h = (c00[1]! + c10[1]! + c01[1]! + c11[1]!) / 4 + 0.03
-      const wx = this.wx(x), wz = this.wz(y)
-      if (onV) quad(line, [wx - 0.05, h, wz - 0.3], [wx + 0.05, h, wz - 0.3], [wx - 0.05, h, wz + 0.3], [wx + 0.05, h, wz + 0.3])
-      else quad(line, [wx - 0.3, h, wz - 0.05], [wx + 0.3, h, wz - 0.05], [wx - 0.3, h, wz + 0.05], [wx + 0.3, h, wz + 0.05])
-    }
-    const setPos = (mesh: THREE.Mesh, arr: number[]) => {
+    const empty = (mesh: THREE.Mesh) => {
       const geo = mesh.geometry as THREE.BufferGeometry
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3))
+      geo.setAttribute('position', new THREE.Float32BufferAttribute([], 3))
       geo.computeVertexNormals()
     }
-    // Spec 088 — roads now render as a SMOOTH RIBBON (setRoadWays). The per-cell quad surface is retired:
-    // it double-drew UNDER the ribbon as a jagged grey bed + white kerbs + dark embankment skirts — the
-    // "black lines" mess. Draw nothing here; the road DATA (s.roads / roadKind) is untouched, so traffic,
-    // the bus and the rally still run on it. (The arrays above stay computed but discarded — cheap, only
-    // on a road change — rather than gut the whole routine and its helpers.)
-    void surf; void shoulder; void line; void surfA; void kerb
-    setPos(this.roadSurfaceMesh, [])
-    setPos(this.roadShoulderMesh, [])
-    setPos(this.roadLineMesh, [])
-    setPos(this.avenueSurfaceMesh, [])
-    setPos(this.avenueKerbMesh, [])
+    for (const m of [this.roadSurfaceMesh, this.roadShoulderMesh, this.roadLineMesh, this.avenueSurfaceMesh, this.avenueKerbMesh]) empty(m)
   }
 
   private updateColonyLayer() {

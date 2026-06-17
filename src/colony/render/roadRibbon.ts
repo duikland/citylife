@@ -37,14 +37,17 @@ export function buildRoadRibbons(ways: RoadWay[], opts: RoadRibbonOptions): { gr
   const streetMat = new THREE.MeshStandardMaterial({ color: 0x595f6a, roughness: 0.92, metalness: 0.02 }) // mid asphalt grey — reads as road, not a black hole
   const avenueMat = new THREE.MeshStandardMaterial({ color: 0x646b78, roughness: 0.9, metalness: 0.03 })
   const dashMat = new THREE.MeshStandardMaterial({ color: 0xf2cf52, roughness: 0.5, emissive: 0xf2cf52, emissiveIntensity: 0.5 }) // bright lane line, glows a little day + night
+  const edgeMat = new THREE.MeshStandardMaterial({ color: 0xe8ecf2, roughness: 0.6, emissive: 0xb9c0cc, emissiveIntensity: 0.28 }) // painted white road edges
   const surf: number[] = []
   const surfA: number[] = []
   const dash: number[] = []
+  const edge: number[] = []
   for (const way of ways) {
     if (way.path.length < 2) continue
     const pts = chaikin(way.path, 2)
     ribbon(pts, way.width / 2, opts, way.kind === 'avenue' ? surfA : surf, cells)
     dashes(pts, opts, dash)
+    edgeLines(pts, way.width / 2, opts, edge)
   }
   const add = (arr: number[], mat: THREE.Material) => {
     if (arr.length === 0) return
@@ -58,6 +61,7 @@ export function buildRoadRibbons(ways: RoadWay[], opts: RoadRibbonOptions): { gr
   }
   add(surf, streetMat)
   add(surfA, avenueMat)
+  add(edge, edgeMat)
   add(dash, dashMat)
   return { group, cells }
 }
@@ -98,6 +102,33 @@ function ribbon(pts: { x: number; y: number }[], half: number, opts: RoadRibbonO
     const aL = edge(i, -1), aR = edge(i, 1), bL = edge(i + 1, -1), bR = edge(i + 1, 1)
     tri(aL, aR, bL)
     tri(bL, aR, bR)
+  }
+}
+
+/** Continuous painted EDGE LINES just inside both kerbs of the ribbon, so the carriageway reads
+ *  unmistakably as a marked road (white edges + yellow centre dashes) instead of a bare grey band. */
+function edgeLines(pts: { x: number; y: number }[], half: number, opts: RoadRibbonOptions, out: number[]): void {
+  const tri = (a: number[], b: number[], c: number[]) => out.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!)
+  const off = Math.max(0.3, half - 0.3) // sit just inside the carriageway edge
+  const w = 0.09 // painted line half-width
+  // world points at a station for a signed centre offset `c`, spanning c-w .. c+w across the road
+  const at = (i: number, c: number): [number[], number[]] => {
+    const p = pts[i]!
+    const prev = pts[Math.max(0, i - 1)]!, next = pts[Math.min(pts.length - 1, i + 1)]!
+    const tx = next.x - prev.x, ty = next.y - prev.y
+    const len = Math.hypot(tx, ty) || 1
+    const px = -ty / len, py = tx / len
+    const y = Math.max(0, opts.roadY(Math.round(p.x), Math.round(p.y))) + ROAD_RIBBON_LIFT + 0.05
+    const inX = p.x + px * (c - w), inY = p.y + py * (c - w)
+    const ouX = p.x + px * (c + w), ouY = p.y + py * (c + w)
+    return [[opts.wx(inX), y, opts.wz(inY)], [opts.wx(ouX), y, opts.wz(ouY)]]
+  }
+  for (const sign of [-1, 1]) {
+    const c = sign * off
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [aIn, aOut] = at(i, c), [bIn, bOut] = at(i + 1, c)
+      tri(aIn, aOut, bIn); tri(bIn, aOut, bOut)
+    }
   }
 }
 
