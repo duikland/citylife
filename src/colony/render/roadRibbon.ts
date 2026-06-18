@@ -34,10 +34,16 @@ export function buildRoadRibbons(ways: RoadWay[], opts: RoadRibbonOptions): { gr
   const group = new THREE.Group()
   group.name = 'RoadRibbons'
   const cells = new Set<string>()
-  const streetMat = new THREE.MeshStandardMaterial({ color: 0x595f6a, roughness: 0.92, metalness: 0.02 }) // mid asphalt grey — reads as road, not a black hole
-  const avenueMat = new THREE.MeshStandardMaterial({ color: 0x646b78, roughness: 0.9, metalness: 0.03 })
-  const dashMat = new THREE.MeshStandardMaterial({ color: 0xf2cf52, roughness: 0.5, emissive: 0xf2cf52, emissiveIntensity: 0.5, side: THREE.DoubleSide }) // bright lane line, glows a little day + night. DoubleSide: the dash quads wind opposite the surface (normals point down), so without it they were back-face-culled from above and the centre line never showed.
-  const edgeMat = new THREE.MeshStandardMaterial({ color: 0xe8ecf2, roughness: 0.6, emissive: 0xb9c0cc, emissiveIntensity: 0.28 }) // painted white road edges
+  // ALL road materials are DoubleSide. The ribbon/edge/dash triangle winding depends on the road's
+  // travel direction, so a road running one way has its surface normals point UP and a road running the
+  // other way points them DOWN — single-sided faces on the latter were back-face-culled from the
+  // overhead camera, leaving only bare dashes floating on the dirt (the operator's "still buggy" roads).
+  // DoubleSide draws both faces, so every road shows its full grey surface, white edges and centre line
+  // regardless of which way it runs. (Draped flat on the ground, the underside is never seen anyway.)
+  const streetMat = new THREE.MeshStandardMaterial({ color: 0x595f6a, roughness: 0.92, metalness: 0.02, side: THREE.DoubleSide }) // mid asphalt grey — reads as road, not a black hole
+  const avenueMat = new THREE.MeshStandardMaterial({ color: 0x646b78, roughness: 0.9, metalness: 0.03, side: THREE.DoubleSide })
+  const dashMat = new THREE.MeshStandardMaterial({ color: 0xf2cf52, roughness: 0.5, emissive: 0xf2cf52, emissiveIntensity: 0.5, side: THREE.DoubleSide }) // bright lane line, glows a little day + night
+  const edgeMat = new THREE.MeshStandardMaterial({ color: 0xe8ecf2, roughness: 0.6, emissive: 0xb9c0cc, emissiveIntensity: 0.28, side: THREE.DoubleSide }) // painted white road edges
   const surf: number[] = []
   const surfA: number[] = []
   const dash: number[] = []
