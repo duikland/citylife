@@ -1131,15 +1131,29 @@ export class PlanetRenderer {
     this.crewMesh.count = ci
     this.crewMesh.instanceMatrix.needsUpdate = true
 
-    // street lights at grid intersections (where both road lines cross)
+    // street lights at grid intersections (where both road lines cross). Stand each on the VERGE beside
+    // the road, never on the carriageway: search outward for the nearest cell the road ribbon does NOT
+    // cover and plant the lamp there at ground height (surfaceY). The old code put it on the road cell at
+    // smoothRoadY — on the asphalt and 0.18 below the ribbon top, so the pole speared up through the road.
     const B = COLONY.build.block
     const g = gridOrigin(s)
+    const ribbon = this.roadRibbonCells
+    const onRibbon = (x: number, y: number) => !!ribbon && ribbon.has(`${x},${y}`)
     let li = 0
     for (let i = 0; i < rn; i++) {
       if (li >= 360) break
       const r = s.roads[i]!
       if (((((r.x - g.x) % B) + B) % B) !== 0 || ((((r.y - g.y) % B) + B) % B) !== 0) continue
-      this.dummy.position.set(this.wx(r.x) + 0.45, this.smoothRoadY(r.x, r.y), this.wz(r.y) + 0.45)
+      // nearest off-ribbon cell within a short reach; skip the lamp entirely if hemmed in by road
+      let lx = r.x, ly = r.y, found = false
+      for (let rad = 1; rad <= 3 && !found; rad++) {
+        for (let dx = -rad; dx <= rad && !found; dx++) for (let dy = -rad; dy <= rad; dy++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue // walk the ring at this radius
+          if (!onRibbon(r.x + dx, r.y + dy)) { lx = r.x + dx; ly = r.y + dy; found = true; break }
+        }
+      }
+      if (!found) continue
+      this.dummy.position.set(this.wx(lx), this.surfaceY(lx, ly), this.wz(ly))
       this.dummy.scale.set(1, 1, 1)
       this.dummy.rotation.set(0, 0, 0)
       this.dummy.updateMatrix()

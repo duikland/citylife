@@ -138,29 +138,41 @@ function edgeLines(pts: { x: number; y: number }[], half: number, opts: RoadRibb
   }
 }
 
-/** Short dashes along the centre-line (every ~2 cells), a thin raised quad each. */
+/** Clean uniform centre-line dashes. Parameterise the smoothed polyline by ARC LENGTH and lay one tidy
+ *  quad per dash at a fixed period, so the dashes are evenly spaced and the same size everywhere (the
+ *  old version stamped overlapping quads every 0.4 along each raw segment, which merged into uneven
+ *  blobs of different sizes — the messy centre line the operator saw up close). */
 function dashes(pts: { x: number; y: number }[], opts: RoadRibbonOptions, out: number[]): void {
   const tri = (a: number[], b: number[], c: number[]) => out.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!)
-  // accumulate arc length; lay a dash for ~1 cell every ~2.4 cells
-  let acc = 0
-  for (let i = 0; i < pts.length - 1; i++) {
+  // cumulative arc length at each vertex
+  const cum = [0]
+  for (let i = 0; i < pts.length - 1; i++) cum.push(cum[i]! + Math.hypot(pts[i + 1]!.x - pts[i]!.x, pts[i + 1]!.y - pts[i]!.y))
+  const total = cum[cum.length - 1]!
+  if (total < 1) return
+  // position + unit tangent at arc length t
+  const sample = (t: number): { x: number; y: number; tx: number; ty: number } => {
+    t = Math.max(0, Math.min(total, t))
+    let i = 0
+    while (i < cum.length - 2 && cum[i + 1]! < t) i++
     const a = pts[i]!, b = pts[i + 1]!
+    const segLen = (cum[i + 1]! - cum[i]!) || 1
+    const f = (t - cum[i]!) / segLen
     let tx = b.x - a.x, ty = b.y - a.y
-    const seg = Math.hypot(tx, ty)
-    if (seg < 1e-4) continue
-    tx /= seg; ty /= seg
-    const px = -ty * 0.22, py = tx * 0.22 // dash half-thickness across the road
-    for (let s = 0; s < seg; s += 0.4) {
-      acc += 0.4
-      if (acc % 2.6 > 1.4) continue // gap between dashes (dash ~1.4 long, gap ~1.2)
-      const cx = a.x + tx * s, cy = a.y + ty * s
-      const y = Math.max(0, opts.roadY(Math.round(cx), Math.round(cy))) + ROAD_RIBBON_LIFT + 0.06
-      const aL = [opts.wx(cx + px), y, opts.wz(cy + py)]
-      const aR = [opts.wx(cx - px), y, opts.wz(cy - py)]
-      const bx = cx + tx * 0.55, by = cy + ty * 0.55
-      const bL = [opts.wx(bx + px), y, opts.wz(by + py)]
-      const bR = [opts.wx(bx - px), y, opts.wz(by - py)]
-      tri(aL, aR, bL); tri(bL, aR, bR)
-    }
+    const l = Math.hypot(tx, ty) || 1
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, tx: tx / l, ty: ty / l }
+  }
+  const PERIOD = 2.4 // dash centre-to-centre spacing
+  const LEN = 1.2 // painted dash length
+  const w = 0.16 // dash half-width across the road
+  const yOf = (x: number, y: number) => Math.max(0, opts.roadY(Math.round(x), Math.round(y))) + ROAD_RIBBON_LIFT + 0.06
+  for (let t = (total % PERIOD) / 2 + 0.3; t + LEN <= total; t += PERIOD) {
+    const s0 = sample(t), s1 = sample(t + LEN)
+    const p0x = -s0.ty * w, p0y = s0.tx * w, p1x = -s1.ty * w, p1y = s1.tx * w
+    const y0 = yOf(s0.x, s0.y), y1 = yOf(s1.x, s1.y)
+    const aL = [opts.wx(s0.x + p0x), y0, opts.wz(s0.y + p0y)]
+    const aR = [opts.wx(s0.x - p0x), y0, opts.wz(s0.y - p0y)]
+    const bL = [opts.wx(s1.x + p1x), y1, opts.wz(s1.y + p1y)]
+    const bR = [opts.wx(s1.x - p1x), y1, opts.wz(s1.y - p1y)]
+    tri(aL, aR, bL); tri(bL, aR, bR)
   }
 }
