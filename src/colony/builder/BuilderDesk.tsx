@@ -35,7 +35,7 @@ export function BuilderDesk({ seed, zoneW, zoneD, onAccept }: {
 
   return (
     <div data-build-area="builder-desk" style={{ ...panel, width: 280, display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto' }}>
-      <b>🛠️ Viw's Builder Desk</b>
+      <b>🛠️ Zinzaar's Builder Desk</b>
       <div style={{ fontSize: 12, opacity: 0.85 }} data-build-area="dream">
         The newcomer dreams of <b>{briefLine(dream)}</b>. Fair build is <b>{fairPrice}</b> city coin.
       </div>
@@ -52,7 +52,7 @@ export function BuilderDesk({ seed, zoneW, zoneD, onAccept }: {
           return (
             <div key={i} style={{ alignSelf: viw ? 'flex-start' : 'flex-end', maxWidth: '92%' }}>
               <div style={{ fontSize: 10, opacity: 0.55, marginBottom: 1, textAlign: viw ? 'left' : 'right' }}>
-                {viw ? '🛠️ Viw' : '🙂 newcomer'} · {r.price} coin
+                {viw ? '🛠️ Zinzaar' : '🙂 newcomer'} · {r.price} coin
               </div>
               <div style={{ background: viw ? '#172033' : '#1f2b1d', border: `1px solid ${viw ? '#2c3a5c' : '#33502f'}`, borderRadius: 8, padding: '5px 8px', fontSize: 12 }}>
                 {r.text}
@@ -70,12 +70,12 @@ export function BuilderDesk({ seed, zoneW, zoneD, onAccept }: {
             style={{ ...btn, padding: '6px 12px', fontWeight: 700, background: '#2c5a35', borderColor: '#3f8a4d' }}
             onClick={() => onAccept(briefToBlueprint(session.agreedBrief!, seed))}
           >
-            Load Viw&apos;s design into the editor →
+            Load Zinzaar&apos;s design into the editor →
           </button>
         </div>
       ) : (
         <div data-build-area="deal" style={{ borderTop: '1px solid #232c3f', paddingTop: 8, fontSize: 12, opacity: 0.85 }}>
-          🚶 No deal this season — raise the budget and Viw will quote again.
+          🚶 No deal this season — raise the budget and Zinzaar will quote again.
         </div>
       )}
     </div>

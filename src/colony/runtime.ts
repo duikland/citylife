@@ -875,14 +875,14 @@ export class ColonyRuntime {
       y: Math.round(plot.houseZone.y + (plot.houseZone.d - 1) / 2),
     }
     const viw = this.citizens.seedFounder({
-      id: VIW_ID, householdId: 'household_viw', displayName: 'Viw the Builder',
+      id: VIW_ID, householdId: 'household_viw', displayName: 'Zinzaar the Builder',
       plotId: plot.id, plotName: 'Crewhouse Yard', home, kind: 'human', nowMs: JOE_BORN_MS, spd: 0.8,
     })
     if (viw) this.citizens.setTarget(VIW_ID, { x: plot.doorX, y: plot.doorY })
     this.seedDeposit(VIW_ID) // spec 085 — Viw's account; it grows as he builds for the city
     this.ensureKbProfile({
       citizenId: VIW_ID,
-      alias: 'Viw the Builder',
+      alias: 'Zinzaar the Builder',
       // NOTE: profile strings pass isPublicSafe, which blocks the brand-word family wholesale —
       // so the trade quotes in plain city coin here.
       bio: 'Founder of the build trade. Runs the crew, draws a fair quote, and turns dreams into blueprints — fair rates in city coin, naturally.',
@@ -1227,16 +1227,16 @@ export class ColonyRuntime {
     if (session.state === 'agreed' && session.agreedBrief) {
       this.applyBlueprint(lotId, briefToBlueprint(session.agreedBrief, seed)) // builds + posts the design event
       // Spec 085 — the ₭ actually moves: client -> Viw for the build (double-entry, conserved).
-      ledgerPost(this.sim.state.ledger, `${clientFirst} pays Viw ${session.agreedPrice} ${CURRENCY} for the build`, [
+      ledgerPost(this.sim.state.ledger, `${clientFirst} pays Zinzaar ${session.agreedPrice} ${CURRENCY} for the build`, [
         { account: `citizen:${lot.ownerCitizenId}`, amount: -(session.agreedPrice ?? 0) },
         { account: `citizen:${VIW_ID}`, amount: session.agreedPrice ?? 0 },
       ])
       // Spec 085 P1 — mirror the build fee onto the real ledger (client -> the builder, Viw).
       this.mirror({ kind: 'commission', fromCitizenId: lot.ownerCitizenId, toCitizenId: VIW_ID, lotId, amount: session.agreedPrice ?? 0 })
-      this.kbPost(lot.ownerCitizenId, 'event', `Shook hands with Viw the Builder — a home for ${session.agreedPrice} city coin. The crew starts this week.`)
+      this.kbPost(lot.ownerCitizenId, 'event', `Shook hands with Zinzaar the Builder — a home for ${session.agreedPrice} city coin. The crew starts this week.`)
       this.kbPost(VIW_ID, 'event', `Booked a build for ${clientFirst} — ${session.agreedPrice} city coin, crew on site.`)
     } else {
-      this.kbPost(lot.ownerCitizenId, 'event', 'Met Viw the Builder about a home, but the quote ran past the purse. Saving up for another season.')
+      this.kbPost(lot.ownerCitizenId, 'event', 'Met Zinzaar the Builder about a home, but the quote ran past the purse. Saving up for another season.')
     }
     this.emit()
     return session
