@@ -69,11 +69,34 @@ export function buildRoadRibbons(ways: RoadWay[], opts: RoadRibbonOptions): { gr
   const JR = 3 // how far back from a crossing the painted lines stop
   for (const [k, s] of cellWays) if (s.size >= 2) { const [x, y] = k.split(',').map(Number); for (let dx = -JR; dx <= JR; dx++) for (let dy = -JR; dy <= JR; dy++) junction.add(`${x + dx},${y + dy}`) }
   const nearJunction = (x: number, y: number) => junction.has(`${Math.round(x)},${Math.round(y)}`)
+  // FLATTEN each junction to one shared height. The ribbons of the meeting roads overlap in the junction,
+  // but each takes its height from its own centre-line, so they sat at slightly different heights and the
+  // junction was a lumpy patchwork of lips + seams (one ramp riding over another). Flood-fill the junction
+  // cells into connected clusters and give each cluster a single consensus height (the max road height in
+  // it, so no arm pokes above); any surface vertex in the cluster snaps to that height, so the overlapping
+  // surfaces become COPLANAR — a clean flat junction slab the road arms ramp onto.
+  const junctionH = new Map<string, number>()
+  const visited = new Set<string>()
+  for (const start of junction) {
+    if (visited.has(start)) continue
+    const comp: string[] = []
+    const q = [start]; visited.add(start)
+    for (let head = 0; head < q.length; head++) {
+      const cell = q[head]!; comp.push(cell)
+      const [x, y] = cell.split(',').map(Number) as [number, number]
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) { const nk = `${x + dx},${y + dy}`; if (junction.has(nk) && !visited.has(nk)) { visited.add(nk); q.push(nk) } }
+    }
+    let H = 0
+    for (const cell of comp) { const [x, y] = cell.split(',').map(Number) as [number, number]; const h = Math.max(0, opts.roadY(x, y)); if (h > H) H = h }
+    H += ROAD_RIBBON_LIFT
+    for (const cell of comp) junctionH.set(cell, H)
+  }
+  const junctionY = (x: number, y: number): number => junctionH.get(`${Math.round(x)},${Math.round(y)}`) ?? -1
   for (let wi = 0; wi < ways.length; wi++) {
     const pts = paths[wi]
     if (!pts) continue
     const way = ways[wi]!
-    ribbon(pts, way.width / 2, opts, way.kind === 'avenue' ? surfA : surf, cells)
+    ribbon(pts, way.width / 2, opts, way.kind === 'avenue' ? surfA : surf, cells, junctionY)
     dashes(pts, opts, dash, nearJunction)
     edgeLines(pts, way.width / 2, opts, edge, nearJunction)
   }
@@ -128,7 +151,7 @@ function densify(pts: { x: number; y: number }[], step: number): { x: number; y:
 
 /** Extrude a triangle strip of half-width `half` perpendicular to the smoothed polyline, draped on the
  *  terrain at each cross-section. */
-function ribbon(pts: { x: number; y: number }[], half: number, opts: RoadRibbonOptions, out: number[], cells: Set<string>): void {
+function ribbon(pts: { x: number; y: number }[], half: number, opts: RoadRibbonOptions, out: number[], cells: Set<string>, junctionY: (x: number, y: number) => number): void {
   const edge = (i: number, sign: number): number[] => {
     const p = pts[i]!
     const prev = pts[Math.max(0, i - 1)]!, next = pts[Math.min(pts.length - 1, i + 1)]!
@@ -138,7 +161,11 @@ function ribbon(pts: { x: number; y: number }[], half: number, opts: RoadRibbonO
     // record every grid cell across the cross-section so surfaceY knows where the ribbon really is
     for (let k = -half; k <= half + 1e-6; k += 0.5) cells.add(`${Math.round(p.x + px * k)},${Math.round(p.y + py * k)}`)
     const gx = p.x + px * half * sign, gy = p.y + py * half * sign
-    return [opts.wx(gx), Math.max(0, opts.roadY(p.x, p.y)) + ROAD_RIBBON_LIFT, opts.wz(gy)] // continuous height — no cell rounding, so the surface ramps instead of stepping
+    // In a junction, snap to the cluster's shared height so the overlapping surfaces are coplanar; else
+    // the continuous (un-rounded) terrain-following height so straights ramp smoothly instead of stepping.
+    const jh = junctionY(p.x, p.y)
+    const h = jh >= 0 ? jh : Math.max(0, opts.roadY(p.x, p.y)) + ROAD_RIBBON_LIFT
+    return [opts.wx(gx), h, opts.wz(gy)]
   }
   const tri = (a: number[], b: number[], c: number[]) => out.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!)
   for (let i = 0; i < pts.length - 1; i++) {
