@@ -76,14 +76,16 @@ const KIND_LABEL: Record<KbPost['kind'], string> = { event: '📍', narration: '
 
 function App() {
   const [map, setMap] = useState<KbMap>(() => loadKookerbookLocal())
-  const [sel, setSel] = useState<string | null>(null)
+  // Spec 090 — deep link: /kookerbook.html?citizen=<id> opens straight to that citizen (set when you
+  // click their plot in the world). Falls back to the first profile if the id is not (yet) loaded.
+  const [sel, setSel] = useState<string | null>(() => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('citizen')))
   useEffect(() => {
     void fetchKookerbookBackend().then((backend) => {
       if (backend) setMap((local) => mergeKookerbook(local, backend))
     })
   }, [])
   const profiles = useMemo(() => Object.values(map), [map])
-  const selected = sel ? map[sel] : profiles[0]
+  const selected = (sel && map[sel]) ? map[sel] : profiles[0]
   const houseScript = selected ? houseScriptFor(selected.citizenId) : null
 
   const panel: React.CSSProperties = { background: '#121826', border: '1px solid #232c3f', borderRadius: 10, padding: 14 }

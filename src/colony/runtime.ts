@@ -1246,6 +1246,22 @@ export class ColonyRuntime {
     }
   }
 
+  /** Spec 090 — a ground click at grid (gx,gy): if it lands inside a homestead with an OWNER, open that
+   *  citizen's Kookerbook page in a new tab (a deep link the Book reads via ?citizen=). Empty / free plots
+   *  are left to the HUD plot list, which already shows their price + actions. */
+  private openPlotBook(gx: number, gy: number): void {
+    for (const lot of this.neighborhood.lots) {
+      const f = lot.fence
+      if (!f || f.length === 0) continue
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const c of f) { if (c.x < minX) minX = c.x; if (c.x > maxX) maxX = c.x; if (c.y < minY) minY = c.y; if (c.y > maxY) maxY = c.y }
+      if (gx < minX || gx > maxX || gy < minY || gy > maxY) continue
+      const owner = lot.ownerCitizenId
+      if (owner && typeof window !== 'undefined') window.open(`/kookerbook.html?citizen=${encodeURIComponent(owner)}`, '_blank', 'noopener')
+      return
+    }
+  }
+
   /** P1 — move the active first-person citizen by (dx, dy) cells and fire a narration. */
   walkStep(dx: number, dy: number): void {
     const id = this.fpCitizenId
@@ -1447,6 +1463,7 @@ export class ColonyRuntime {
     this.renderer.setRoadWays(this.roadWays) // spec 088 — smooth ribbon road surfaces over the cell roads
     this.renderer.setBusRoute(this.busRoute) // spec 088 — the bus that loops between the hoods
     this.renderer.setRaceState(this.raceState)
+    this.renderer.onGroundClick = (gx, gy) => this.openPlotBook(gx, gy) // spec 090 — click a plot to open its Kookerbook
     this.running = true
     this.lastFrame = performance.now()
     this.lastUi = this.lastFrame

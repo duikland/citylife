@@ -74,6 +74,9 @@ export class PlanetRenderer {
   private hemi: THREE.HemisphereLight
   private oceanGeo?: THREE.BufferGeometry // spec 090 — the living sea: a subdivided disc with animated swells
   private oceanBase?: Float32Array // base (x,y) of each ocean vertex, the wave input
+  onGroundClick?: (gx: number, gy: number) => void // spec 090 — set by the runtime; fires on a ground CLICK (not a drag)
+  private picker = new THREE.Raycaster()
+  private pickDown: { x: number; y: number; t: number } | null = null
   private chunkedTerrain!: ChunkedTerrain // spec 084 S5 — chunk grid, see terrainChunks.ts
   private roadSurfaceMesh!: THREE.Mesh
   private roadShoulderMesh!: THREE.Mesh
@@ -225,6 +228,19 @@ export class PlanetRenderer {
     this.controls.rotateSpeed = 0.6
     this.controls.zoomSpeed = 1.1
 
+    // Spec 090 — CLICK-TO-PICK a plot. A left CLICK (pointer barely moved, so not a pan/orbit drag)
+    // raycasts the terrain and hands the grid cell to onGroundClick; the runtime maps it to a plot and
+    // opens that plot's Kookerbook.
+    const pickEl = this.renderer.domElement
+    pickEl.addEventListener('pointerdown', (e) => { this.pickDown = { x: e.clientX, y: e.clientY, t: performance.now() } })
+    pickEl.addEventListener('pointerup', (e) => {
+      const d = this.pickDown; this.pickDown = null
+      if (!d || !this.onGroundClick) return
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || performance.now() - d.t > 500) return // a drag, not a click
+      const hit = this.pickGround(e.clientX, e.clientY)
+      if (hit) this.onGroundClick(hit.gx, hit.gy)
+    })
+
     this.hemi = new THREE.HemisphereLight(0xbfd6e6, 0x35324a, 0.8)
     this.scene.add(this.hemi)
     this.sun = new THREE.DirectionalLight(0xfff0d8, 1.7)
@@ -265,6 +281,18 @@ export class PlanetRenderer {
   }
   private wz(y: number) {
     return y - this.N / 2
+  }
+
+  /** Spec 090 — raycast the terrain under a screen point; return the grid cell hit, or null. */
+  private pickGround(clientX: number, clientY: number): { gx: number; gy: number } | null {
+    if (!this.chunkedTerrain) return null
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
+    this.picker.setFromCamera(ndc, this.camera)
+    const hits = this.picker.intersectObjects(this.chunkedTerrain.group.children, true)
+    if (!hits.length) return null
+    const p = hits[0]!.point
+    return { gx: Math.round(p.x + this.N / 2), gy: Math.round(p.z + this.N / 2) }
   }
 
   private setupComposer() {
