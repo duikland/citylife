@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { getAuthClient } from "../authClient";
 import { LoginScreen } from "./LoginScreen";
+import { CinematicBackdrop } from "./CinematicBackdrop";
 
 /** Gates its children behind operator login. Renders the LoginScreen until authenticated.
  *  On mount, tries a dev auto-login (async — reads VITE_OPERATOR_EMAIL + VITE_OPERATOR_PASSWORD
@@ -8,10 +9,26 @@ import { LoginScreen } from "./LoginScreen";
  *  brief check so there's no login flash when auto-login is configured. */
 export function AuthGate({ children }: { children: ReactNode }) {
   const auth = useMemo(() => getAuthClient(), []);
-  const [authed, setAuthed] = useState(auth.isAuthenticated);
-  const [checking, setChecking] = useState(!auth.isAuthenticated);
+  // QA/dev affordance: ?login=1 forces the login form to show even when a cached session or dev
+  // auto-login would otherwise skip it — so the login screen (and its 10s idle cinematic) can be
+  // exercised on a box that auto-logs-in. It only ever SHOWS the form, never bypasses auth, so it is
+  // harmless on the cluster.
+  const forceLogin =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("login") === "1";
+  const [authed, setAuthed] = useState(forceLogin ? false : auth.isAuthenticated);
+  const [checking, setChecking] = useState(
+    forceLogin ? false : !auth.isAuthenticated,
+  );
+  // After 10s untouched, the login screen drops into a cinematic fly-around backdrop (LoginScreen owns
+  // the idle timer; we own the backdrop). It's a screensaver behind the card — login is still required.
+  const [idle, setIdle] = useState(false);
 
   useEffect(() => {
+    if (forceLogin) {
+      setChecking(false);
+      return;
+    }
     if (auth.isAuthenticated) {
       setChecking(false);
       return;
@@ -20,7 +37,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       if (ok) setAuthed(true);
       setChecking(false);
     });
-  }, [auth]);
+  }, [auth, forceLogin]);
 
   // Local-testing-only auth bypass. The colony mounts WITHOUT login ONLY when ALL of these hold:
   //   • it's a DEV build (import.meta.env.DEV) — a production `vite build` has DEV === false, so the
@@ -52,6 +69,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return <>{children}</>;
   if (checking) return null;
   if (!authed)
-    return <LoginScreen auth={auth} onAuthed={() => setAuthed(true)} />;
+    return (
+      <>
+        {idle && <CinematicBackdrop />}
+        <LoginScreen
+          auth={auth}
+          onAuthed={() => setAuthed(true)}
+          onIdle={() => setIdle(true)}
+          onActive={() => setIdle(false)}
+          isCinematic={idle}
+        />
+      </>
+    );
   return <>{children}</>;
 }

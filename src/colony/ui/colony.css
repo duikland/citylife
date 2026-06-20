@@ -321,9 +321,28 @@ body,
 
 /* Border Authority login gate */
 /* Dark City starfield behind the gate — three tiled star layers over the deep-space gradient. */
+/* Pre-login cinematic attract backdrop: a full-screen 3D fly-around that fades in behind the login
+   card after 10s idle. Sits below the form (z-index 0) and ignores pointer events so the card stays
+   live; the form's own window-level idle listeners still see the activity that dismisses it. */
+.login-cinematic-host {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 700ms ease;
+  pointer-events: none;
+}
+.login-cinematic-host.is-active {
+  opacity: 1;
+}
+/* When the backdrop is live, drop the starfield so the moving city shows through around the card. */
+.login.is-cinematic {
+  background: transparent;
+}
 .login {
   position: fixed;
   inset: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
