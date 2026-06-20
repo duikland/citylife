@@ -25,6 +25,8 @@ import { createProfile, addPost, type KbProfile, type PostKind } from './social/
 import { loadKookerbookLocal, saveProfileLocal, saveProfileBackend, fetchKookerbookBackend, mergeKookerbook } from './bot/kookerbookStore'
 import { getLedgerSync, type LedgerMove, type SyncStatus } from './bot/ledgerSync'
 import { makeCommercialDistrict, type CommercialDistrict, type ShopKind, type ShopParcel } from './commerce/district'
+import { makeBusRoute, type BusRoute } from './transit/busRoute'
+import type { RoadWay } from './render/roadRibbon'
 import { cellOk, leastCostPath, type Cell } from './pathfind'
 import { createRadio, tuneTo, toggleOn as radioToggleOn, toggleMuted as radioToggleMuted, spinHouseAd, type RadioState } from './radio'
 import { buildShareCard, headlineFor, shareStats, siteLabel, DEFAULT_TAGLINE, CARD_ID, type CardFormat } from './social/shareCard'
@@ -162,6 +164,10 @@ export class ColonyRuntime {
   commercialReserve: { x: number; y: number; w: number; h: number } | null = null
   /** Spec 079 P0 — the surveyed commercial high street + shop plots within the reserve. */
   commercialDistrict: CommercialDistrict | null = null
+  /** Spec 088 — the city bus route: a road loop visiting every hood (founders + each hamlet). */
+  busRoute: BusRoute | null = null
+  /** Spec 088 — road centre-lines for the smooth ribbon render (rendering only; traffic uses the cells). */
+  roadWays: RoadWay[] = []
   // Spec 079 — the Nearest bar's seat cells + who's sitting there (a night crowd; cleared by day).
   private barSeatCells: { x: number; y: number }[] | null = null
   private barOccupied = new Set<string>()
@@ -293,16 +299,58 @@ export class ColonyRuntime {
       for (const p of a) for (const q of b) { const d = (p.x - q.x) ** 2 + (p.y - q.y) ** 2; if (d < bestD) { bestD = d; from = p; to = q } }
       return [from, to]
     }
+    // Lay a clean, uniform-width road from a raw (staircase) leastCostPath centreline:
+    //  1. STRING-PULL the path into straight segments — greedily skip waypoints while the straight
+    //     line of sight stays on road-able ground — so a diagonal stair-step becomes a clean diagonal
+    //     and the route runs in long straight runs with tidy corners at the few real bends.
+    //  2. STROKE a constant width PERPENDICULAR to each segment, so the perceived width is steady on
+    //     straights + diagonals and any residual step is filled by the band.
+    // The trunk roads AND the commercial connector both lay through this, so no road is a raw 1-cell
+    // zig-zag any more (the staircase the operator kept seeing).
+    const roadCellOk = (x: number, y: number) => cellOk(t0, x, y) && !residentialKeys.has(`${x},${y}`)
+    const losClear = (a: Cell, b: Cell): boolean => {
+      const steps = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y))
+      for (let s = 0; s <= steps; s++) {
+        const x = Math.round(a.x + ((b.x - a.x) * s) / Math.max(1, steps))
+        const y = Math.round(a.y + ((b.y - a.y) * s) / Math.max(1, steps))
+        if (!roadCellOk(x, y)) return false
+      }
+      return true
+    }
+    const simplifyPath = (path: Cell[]): Cell[] => {
+      if (path.length <= 2) return path
+      const out: Cell[] = [path[0]!]
+      let anchor = 0
+      for (let i = 2; i < path.length; i++) {
+        if (!losClear(path[anchor]!, path[i]!)) { out.push(path[i - 1]!); anchor = i - 1 }
+      }
+      out.push(path[path.length - 1]!)
+      return out
+    }
+    const layRoad = (path: Cell[], half: number, kind: 'avenue' | 'street' = 'street'): Cell[] => {
+      const poly = simplifyPath(path)
+      if (poly.length >= 2) this.roadWays.push({ path: poly, kind, width: 4 }) // 088 — smooth ribbon centre-line (chunky enough to read from the district view)
+      const out = new Set<string>()
+      const add = (fx: number, fy: number) => { const x = Math.round(fx), y = Math.round(fy); if (roadCellOk(x, y)) out.add(`${x},${y}`) }
+      for (let i = 0; i < poly.length - 1; i++) {
+        const a = poly[i]!, b = poly[i + 1]!
+        const dx = b.x - a.x, dy = b.y - a.y
+        const len = Math.hypot(dx, dy) || 1
+        const ux = dx / len, uy = dy / len, px = -uy, py = ux
+        for (let s = 0; s <= len + 1e-6; s += 0.5) {
+          const cxs = a.x + ux * s, cys = a.y + uy * s
+          add(cxs, cys)
+          for (let k = 0.5; k <= half + 1e-6; k += 0.5) { add(cxs + px * k, cys + py * k); add(cxs - px * k, cys - py * k) }
+        }
+      }
+      return [...out].map((k) => { const [x, y] = k.split(',').map(Number); return { x: x!, y: y! } })
+    }
     const paveLink = (a: Cell[], b: Cell[]) => {
       if (a.length === 0 || b.length === 0) return
       const [from, to] = nearestPair(a, b)
-      const path = leastCostPath(t0, from, to, { slopeWeight: 0.5, blocked: (x, y) => residentialKeys.has(`${x},${y}`) }) ?? []
-      const wide = new Set<string>()
-      for (const cc of path) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const x = cc.x + dx, y = cc.y + dy
-        if (cellOk(t0, x, y) && !residentialKeys.has(`${x},${y}`)) wide.add(`${x},${y}`)
-      }
-      mergeAvenue(this.sim.state, [...wide].map((k) => { const [x, y] = k.split(',').map(Number); return { x: x!, y: y! } }))
+      const path = leastCostPath(t0, from, to, { slopeWeight: 0.5, diagonal: true, blocked: (x, y) => residentialKeys.has(`${x},${y}`) }) ?? []
+      if (path.length === 0) return
+      mergeAvenue(this.sim.state, layRoad(path, 1))
     }
     const coast = this.neighborhood.carriage
     for (let i = 0; i < satellites.length; i++) {
@@ -347,10 +395,27 @@ export class ColonyRuntime {
       // 086-P1 — connect from the founders' carriage cell NEAREST the (now coastal) district, not the
       // inland terminus, so the spur is the shortest coast road rather than a backtrack inland.
       const [terminus, near] = nearestPair(car, this.commercialDistrict.street)
-      const connector = leastCostPath(t, terminus, near, { slopeWeight: 0.5, blocked: (x, y) => residentialKeys.has(`${x},${y}`) || shopCells.has(`${x},${y}`) }) ?? []
-      mergeAvenue(this.sim.state, connector)
+      const connector = leastCostPath(t, terminus, near, { slopeWeight: 0.5, diagonal: true, blocked: (x, y) => residentialKeys.has(`${x},${y}`) || shopCells.has(`${x},${y}`) }) ?? []
+      mergeAvenue(this.sim.state, layRoad(connector, 1)) // 088 — clean, uniform-width spur (not a raw 1-cell zig-zag)
       mergeAvenue(this.sim.state, streetCells)
     }
+    // Spec 088 — the BUS route: a loop over the finished road network visiting every hood (the founders'
+    // coast + each hamlet). Anchored on each hood's carriage centroid; makeBusRoute snaps to the nearest
+    // road cell and BFS-connects them into a closed circuit. Pure + deterministic; the render-loop bus
+    // drives it. Computed AFTER all the roads are merged so every hood is reachable.
+    // Spec 088 — collect the remaining road centre-lines as ribbon ways (the trunk roads + connector
+    // already recorded themselves through layRoad): the founders' avenue spine, each hamlet spine, and
+    // the commercial high street. The smooth ribbon render draws these; traffic still uses the cells.
+    if (this.neighborhood.spine.length >= 2) this.roadWays.push({ path: this.neighborhood.spine, kind: 'avenue', width: 4 })
+    for (const s of satellites) if (s.spine.length >= 2) this.roadWays.push({ path: s.spine, kind: 'street', width: 4 })
+    if (this.commercialDistrict && this.commercialDistrict.street.length >= 2) this.roadWays.push({ path: this.commercialDistrict.street, kind: 'avenue', width: 4 })
+    const hoodCentroid = (cells: { x: number; y: number }[]): { x: number; y: number } => {
+      let sx = 0, sy = 0
+      for (const c of cells) { sx += c.x; sy += c.y }
+      return { x: Math.round(sx / Math.max(1, cells.length)), y: Math.round(sy / Math.max(1, cells.length)) }
+    }
+    const busAnchors = [hoodCentroid(this.neighborhood.carriage), ...satellites.map((s) => hoodCentroid(s.carriage))]
+    this.busRoute = makeBusRoute({ roadKind: this.sim.state.roadKind }, busAnchors)
     // Spec 082 — restore stored Kookerbook profiles BEFORE seeding Joe: ensureKbProfile skips
     // citizens that already have a profile, so a restored timeline is never clobbered by a fresh
     // founder profile (the bug: seed-then-restore overwrote Joe's stored posts with a 1-post reset).
@@ -747,14 +812,14 @@ export class ColonyRuntime {
       y: Math.round(plot.houseZone.y + (plot.houseZone.d - 1) / 2),
     }
     const viw = this.citizens.seedFounder({
-      id: VIW_ID, householdId: 'household_viw', displayName: 'Viw the Builder',
+      id: VIW_ID, householdId: 'household_viw', displayName: 'Zinzaar the Builder',
       plotId: plot.id, plotName: 'Crewhouse Yard', home, kind: 'human', nowMs: JOE_BORN_MS, spd: 0.8,
     })
     if (viw) this.citizens.setTarget(VIW_ID, { x: plot.doorX, y: plot.doorY })
     this.seedDeposit(VIW_ID) // spec 085 — Viw's account; it grows as he builds for the city
     this.ensureKbProfile({
       citizenId: VIW_ID,
-      alias: 'Viw the Builder',
+      alias: 'Zinzaar the Builder',
       // NOTE: profile strings pass isPublicSafe, which blocks the brand-word family wholesale —
       // so the trade quotes in plain city coin here.
       bio: 'Founder of the build trade. Runs the crew, draws a fair quote, and turns dreams into blueprints — fair rates in city coin, naturally.',
@@ -1099,16 +1164,16 @@ export class ColonyRuntime {
     if (session.state === 'agreed' && session.agreedBrief) {
       this.applyBlueprint(lotId, briefToBlueprint(session.agreedBrief, seed)) // builds + posts the design event
       // Spec 085 — the ₭ actually moves: client -> Viw for the build (double-entry, conserved).
-      ledgerPost(this.sim.state.ledger, `${clientFirst} pays Viw ${session.agreedPrice} ${CURRENCY} for the build`, [
+      ledgerPost(this.sim.state.ledger, `${clientFirst} pays Zinzaar ${session.agreedPrice} ${CURRENCY} for the build`, [
         { account: `citizen:${lot.ownerCitizenId}`, amount: -(session.agreedPrice ?? 0) },
         { account: `citizen:${VIW_ID}`, amount: session.agreedPrice ?? 0 },
       ])
       // Spec 085 P1 — mirror the build fee onto the real ledger (client -> the builder, Viw).
       this.mirror({ kind: 'commission', fromCitizenId: lot.ownerCitizenId, toCitizenId: VIW_ID, lotId, amount: session.agreedPrice ?? 0 })
-      this.kbPost(lot.ownerCitizenId, 'event', `Shook hands with Viw the Builder — a home for ${session.agreedPrice} city coin. The crew starts this week.`)
+      this.kbPost(lot.ownerCitizenId, 'event', `Shook hands with Zinzaar the Builder — a home for ${session.agreedPrice} city coin. The crew starts this week.`)
       this.kbPost(VIW_ID, 'event', `Booked a build for ${clientFirst} — ${session.agreedPrice} city coin, crew on site.`)
     } else {
-      this.kbPost(lot.ownerCitizenId, 'event', 'Met Viw the Builder about a home, but the quote ran past the purse. Saving up for another season.')
+      this.kbPost(lot.ownerCitizenId, 'event', 'Met Zinzaar the Builder about a home, but the quote ran past the purse. Saving up for another season.')
     }
     this.emit()
     return session
@@ -1178,6 +1243,22 @@ export class ColonyRuntime {
       await fetch(`/kooker/api/v1/citylife/citizens/${encodeURIComponent(citizenId)}/destroy`, { method: 'POST' })
     } catch {
       /* expected offline / internal-only */
+    }
+  }
+
+  /** Spec 090 — a ground click at grid (gx,gy): if it lands inside a homestead with an OWNER, open that
+   *  citizen's Kookerbook page in a new tab (a deep link the Book reads via ?citizen=). Empty / free plots
+   *  are left to the HUD plot list, which already shows their price + actions. */
+  private openPlotBook(gx: number, gy: number): void {
+    for (const lot of this.neighborhood.lots) {
+      const f = lot.fence
+      if (!f || f.length === 0) continue
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const c of f) { if (c.x < minX) minX = c.x; if (c.x > maxX) maxX = c.x; if (c.y < minY) minY = c.y; if (c.y > maxY) maxY = c.y }
+      if (gx < minX || gx > maxX || gy < minY || gy > maxY) continue
+      const owner = lot.ownerCitizenId
+      if (owner && typeof window !== 'undefined') window.open(`/kookerbook.html?citizen=${encodeURIComponent(owner)}`, '_blank', 'noopener')
+      return
     }
   }
 
@@ -1379,7 +1460,10 @@ export class ColonyRuntime {
     if (this.fpCitizenId) this.renderer.enterFirstPerson(this.fpCitizenId)
     this.renderer.setNeighborhood(this.neighborhood) // spec 075 — lot pads + voxel homes
     this.renderer.setCommercialDistrict(this.commercialDistrict) // spec 079 — the vibrant shop strip
+    this.renderer.setRoadWays(this.roadWays) // spec 088 — smooth ribbon road surfaces over the cell roads
+    this.renderer.setBusRoute(this.busRoute) // spec 088 — the bus that loops between the hoods
     this.renderer.setRaceState(this.raceState)
+    this.renderer.onGroundClick = (gx, gy) => this.openPlotBook(gx, gy) // spec 090 — click a plot to open its Kookerbook
     this.running = true
     this.lastFrame = performance.now()
     this.lastUi = this.lastFrame

@@ -27,6 +27,9 @@ import { buildChunkedTerrain, type ChunkedTerrain } from './terrainChunks'
 import { defaultBlueprint, streetDoorDir, type Zone } from '../neighborhood'
 import { buildShoreProps, type ShorePropsLayer } from './shoreProps'
 import { buildRaceLayer, type RaceLayer } from './raceLayer'
+import { buildBusLayer, type BusLayer } from './busLayer'
+import type { BusRoute } from '../transit/busRoute'
+import { buildRoadRibbons, ROAD_RIBBON_LIFT, type RoadWay } from './roadRibbon'
 import type { RaceState } from '../racing/race'
 
 export type ViewMode = 'biome' | 'buildable' | 'elevation'
@@ -69,6 +72,11 @@ export class PlanetRenderer {
   private controls: OrbitControls
   private sun: THREE.DirectionalLight
   private hemi: THREE.HemisphereLight
+  private oceanGeo?: THREE.BufferGeometry // spec 090 — the living sea: a subdivided disc with animated swells
+  private oceanBase?: Float32Array // base (x,y) of each ocean vertex, the wave input
+  onGroundClick?: (gx: number, gy: number) => void // spec 090 — set by the runtime; fires on a ground CLICK (not a drag)
+  private picker = new THREE.Raycaster()
+  private pickDown: { x: number; y: number; t: number } | null = null
   private chunkedTerrain!: ChunkedTerrain // spec 084 S5 — chunk grid, see terrainChunks.ts
   private roadSurfaceMesh!: THREE.Mesh
   private roadShoulderMesh!: THREE.Mesh
@@ -159,6 +167,9 @@ export class PlanetRenderer {
   private beaconMat: THREE.MeshStandardMaterial | null = null
   private shoreProps: ShorePropsLayer | null = null
   private raceLayer: RaceLayer | null = null
+  private busLayer: BusLayer | null = null
+  private roadRibbonGroup: THREE.Group | null = null
+  private roadRibbonCells: Set<string> | null = null // cells the road ribbon actually covers (for surfaceY)
   private raceState: RaceState | null = null
   private raceCamActive = false
   private raceRestorePending = false
@@ -217,6 +228,19 @@ export class PlanetRenderer {
     this.controls.rotateSpeed = 0.6
     this.controls.zoomSpeed = 1.1
 
+    // Spec 090 — CLICK-TO-PICK a plot. A left CLICK (pointer barely moved, so not a pan/orbit drag)
+    // raycasts the terrain and hands the grid cell to onGroundClick; the runtime maps it to a plot and
+    // opens that plot's Kookerbook.
+    const pickEl = this.renderer.domElement
+    pickEl.addEventListener('pointerdown', (e) => { this.pickDown = { x: e.clientX, y: e.clientY, t: performance.now() } })
+    pickEl.addEventListener('pointerup', (e) => {
+      const d = this.pickDown; this.pickDown = null
+      if (!d || !this.onGroundClick) return
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || performance.now() - d.t > 500) return // a drag, not a click
+      const hit = this.pickGround(e.clientX, e.clientY)
+      if (hit) this.onGroundClick(hit.gx, hit.gy)
+    })
+
     this.hemi = new THREE.HemisphereLight(0xbfd6e6, 0x35324a, 0.8)
     this.scene.add(this.hemi)
     this.sun = new THREE.DirectionalLight(0xfff0d8, 1.7)
@@ -225,6 +249,11 @@ export class PlanetRenderer {
     // target together each frame) with a fixed half-extent, instead of covering the whole island:
     // 2048 texels over ~240 world units gives crisp house-contact shadows at any world size.
     this.sun.shadow.mapSize.set(2048, 2048)
+    // Spec 090 — kill the terrain SELF-SHADOW ACNE (the flickering black patches the operator saw — NOT
+    // cloud shadows; there are none). With no bias the heightfield shadow-tests against itself; nudging
+    // the test along the surface normal + a small depth bias removes the shimmer without peter-panning.
+    this.sun.shadow.normalBias = 1.6
+    this.sun.shadow.bias = -0.0004
     const d = Math.min(120, this.N * 0.7)
     this.sun.shadow.camera.left = -d
     this.sun.shadow.camera.right = d
@@ -252,6 +281,18 @@ export class PlanetRenderer {
   }
   private wz(y: number) {
     return y - this.N / 2
+  }
+
+  /** Spec 090 — raycast the terrain under a screen point; return the grid cell hit, or null. */
+  private pickGround(clientX: number, clientY: number): { gx: number; gy: number } | null {
+    if (!this.chunkedTerrain) return null
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
+    this.picker.setFromCamera(ndc, this.camera)
+    const hits = this.picker.intersectObjects(this.chunkedTerrain.group.children, true)
+    if (!hits.length) return null
+    const p = hits[0]!.point
+    return { gx: Math.round(p.x + this.N / 2), gy: Math.round(p.z + this.N / 2) }
   }
 
   private setupComposer() {
@@ -345,7 +386,9 @@ export class PlanetRenderer {
     const t = s.terrain
     const N = t.size
     const hash = (n: number) => ((n * 2654435761) >>> 0) / 4294967296
-    const TREE_COLORS = [0x3f6b4a, 0x4f7d5a, 0x5b4a7d, 0x35633f]
+    // Spec 090 — a lusher, more varied alien canopy (bright + deep greens, a teal-green, the violet
+    // flora, a golden-green) so forests read with life and depth instead of a flat dark mass.
+    const TREE_COLORS = [0x55925b, 0x6fb069, 0x3f7d5e, 0x7a5aa8, 0x8fb557, 0x356b46]
     // Cells the colony has cleared: roads, buildings and worksites (each with a one-cell verge), plus the civic core.
     const cleared = new Set<number>()
     const mark = (cx: number, cy: number, rad: number) => {
@@ -393,9 +436,9 @@ export class PlanetRenderer {
       const h1 = hash(i * 7 + 3)
       const h2 = hash(i * 13 + 5)
       const wy = Math.max(0, t.worldY(x, y))
-      const sc = 0.7 + h1 * 0.7
+      const sc = 0.72 + h1 * 0.9
       this.dummy.position.set(this.wx(x) + (h1 - 0.5) * 0.7, wy, this.wz(y) + (h2 - 0.5) * 0.7)
-      this.dummy.scale.set(sc, sc + h2 * 0.6, sc)
+      this.dummy.scale.set(sc, sc + h2 * 1.05, sc)
       this.dummy.rotation.set(0, h2 * Math.PI, 0)
       this.dummy.updateMatrix()
       mesh.setMatrixAt(n, this.dummy.matrix)
@@ -409,15 +452,50 @@ export class PlanetRenderer {
   }
 
   private buildOcean() {
-    // Water pooled on the slab — a disc meeting the rocky rim, not an endless sea to a horizon.
+    // Spec 090 — a LIVING sea. Water pooled on the slab as a disc meeting the rocky rim, but subdivided
+    // so frame() can roll gentle swells across it, with a depth gradient (deep teal in the open middle,
+    // lighter toward the shallow rim) and a glossier, more reflective surface so it catches the sun.
+    const R = this.N * 0.66
+    const geo = new THREE.RingGeometry(0.5, R, 120, 30)
+    const pos = geo.getAttribute('position')
+    const colors = new Float32Array(pos.count * 3)
+    const base = new Float32Array(pos.count * 2)
+    const deep = new THREE.Color(0x0e3d54), shallow = new THREE.Color(0x2f86a0)
+    const tmp = new THREE.Color()
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i)
+      base[i * 2] = x; base[i * 2 + 1] = y
+      const r = Math.min(1, Math.hypot(x, y) / R) // 0 open-middle .. 1 rim
+      tmp.copy(deep).lerp(shallow, Math.pow(r, 1.6) * 0.75)
+      colors[i * 3] = tmp.r; colors[i * 3 + 1] = tmp.g; colors[i * 3 + 2] = tmp.b
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     const ocean = new THREE.Mesh(
-      new THREE.CircleGeometry(this.N * 0.66, 72),
-      new THREE.MeshStandardMaterial({ color: 0x17566f, roughness: 0.15, metalness: 0.45, transparent: true, opacity: 0.92 }),
+      geo,
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.1, metalness: 0.55, transparent: true, opacity: 0.93 }),
     )
     ocean.rotation.x = -Math.PI / 2
-    ocean.position.y = -0.05
+    ocean.position.y = -0.1
     ocean.receiveShadow = true
     this.scene.add(ocean)
+    this.oceanGeo = geo
+    this.oceanBase = base
+  }
+
+  /** Spec 090 — roll gentle layered swells across the ocean disc each frame (render-loop cosmetic, on the
+   *  wall clock like the bus + beacon; never touches the sim). Recomputes normals so the swells catch light. */
+  private updateOcean(timeMs: number): void {
+    const geo = this.oceanGeo, base = this.oceanBase
+    if (!geo || !base) return
+    const t = timeMs / 1000
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute
+    for (let i = 0; i < pos.count; i++) {
+      const x = base[i * 2]!, y = base[i * 2 + 1]!
+      const z = Math.sin(x * 0.05 + t * 0.85) * 0.18 + Math.sin(y * 0.063 - t * 0.7) * 0.14 + Math.sin((x + y) * 0.028 + t * 1.25) * 0.09
+      pos.setZ(i, z)
+    }
+    pos.needsUpdate = true
+    geo.computeVertexNormals()
   }
 
   private colorFor(mode: ViewMode, i: number, out: THREE.Color): void {
@@ -593,8 +671,6 @@ export class PlanetRenderer {
     // so the network sits in the landscape like the residential lane does.
     this.roadSurfaceMesh = new THREE.Mesh(
       new THREE.BufferGeometry(),
-      // A faint warm emissive keeps the bed readable under the void sky — without it the earth tone
-      // crushes to a black gash on the shadow side, which is what the operator flagged.
       new THREE.MeshStandardMaterial({ color: 0x7a6750, roughness: 1, metalness: 0, side: THREE.DoubleSide, emissive: 0x4a3c2c, emissiveIntensity: 0.32 }),
     )
     this.roadSurfaceMesh.frustumCulled = false
@@ -1001,122 +1077,65 @@ export class PlanetRenderer {
   private smoothRoadY(x: number, y: number): number {
     const t = this.sim.state.terrain
     const cl = (v: number) => Math.max(0, Math.min(t.size - 1, v))
-    return (t.worldY(x, y) + t.worldY(cl(x + 1), y) + t.worldY(cl(x - 1), y) + t.worldY(x, cl(y + 1)) + t.worldY(x, cl(y - 1))) / 5
+    // BILINEAR terrain sample at a CONTINUOUS position — the key to a smooth road. Sampling rounded
+    // integer cells made the height a step function (flat within a cell, a riser at every boundary), so
+    // on any slope the road terraced into little stairs (the operator's "stepways"). Interpolating gives
+    // a height that varies continuously with position, so the surface ramps instead of stepping.
+    const bil = (fx: number, fy: number): number => {
+      const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0
+      const a = t.worldY(cl(x0), cl(y0)), b = t.worldY(cl(x0 + 1), cl(y0))
+      const c = t.worldY(cl(x0), cl(y0 + 1)), d = t.worldY(cl(x0 + 1), cl(y0 + 1))
+      return a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + c * (1 - tx) * ty + d * tx * ty
+    }
+    // Still take the MAX over the ~4-wide carriageway footprint so the surface rides ABOVE the ground
+    // (no terrain poking up through the asphalt). Because the samples are bilinear and the centre moves
+    // continuously, this max is a continuous (step-free) function — smooth AND above-terrain.
+    let mx = 0
+    for (let dx = -2; dx <= 2; dx += 0.5) for (let dy = -2; dy <= 2; dy += 0.5) {
+      const h = bil(x + dx, y + dy)
+      if (h > mx) mx = h
+    }
+    return mx
   }
 
-  // Terrain height at a grid corner = mean of the 4 cells meeting there. Adjacent road cells
-  // share corners, so the draped ribbon stays continuous (no stair-steps) and ramps over slopes.
-  private cornerY(gx: number, gy: number): number {
+  /** Smooth ground height (bilinear terrain) for things that should FOLLOW the grade, not ride above it
+   *  like a road — e.g. homestead pads. Kept separate from smoothRoadY (which maxes over the carriageway
+   *  to clear the asphalt) so a pad never floats up on the road-clearance height. */
+  private groundY(x: number, y: number): number {
     const t = this.sim.state.terrain
     const cl = (v: number) => Math.max(0, Math.min(t.size - 1, v))
-    const avg =
-      (t.worldY(cl(gx - 1), cl(gy - 1)) + t.worldY(cl(gx), cl(gy - 1)) + t.worldY(cl(gx - 1), cl(gy)) + t.worldY(cl(gx), cl(gy))) / 4
-    // Clamp to the sea plane: at the coast some of the 4 corner cells are below sea level (ocean),
-    // which would otherwise pull the road corner into the water visually.
-    return Math.max(0, avg)
+    const x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0
+    const a = t.worldY(cl(x0), cl(y0)), b = t.worldY(cl(x0 + 1), cl(y0))
+    const c = t.worldY(cl(x0), cl(y0 + 1)), d = t.worldY(cl(x0 + 1), cl(y0 + 1))
+    return Math.max(0, a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + c * (1 - tx) * ty + d * tx * ty)
   }
 
-  // Rebuild road geometry: packed-earth quads draped on the terrain + dashed centre lines.
-  // Two things keep the ribbon reading as a GRADED ROADBED instead of a floating plank (the operator's
-  // complaint): (1) shared corner heights are RELAXED toward their road-network neighbours, so grades
-  // ease in and out smoothly; (2) every boundary edge gets an embankment SKIRT dropping toward the
-  // ground, so wherever the bed bridges a hollow it reads as built-up earthworks, never floating.
+  /** Spec 088 — the height of the WALKABLE surface at a cell: the road ribbon top when it's a road cell,
+   *  otherwise the bare terrain. Citizens (incl. Joe), the first-person eye and props stand on this, so
+   *  nobody sinks under the raised road ribbon when they're on a road. */
+  private surfaceY(x: number, y: number): number {
+    const rx = Math.round(x), ry = Math.round(y)
+    // Raise to the ribbon top ONLY where the ribbon actually is (the trunk + carriage roads), so a
+    // citizen stands ON the road surface and never sinks under it — and never floats on a road cell the
+    // ribbon doesn't reach (the per-cell gap-fill fragments are negligible disconnected stubs).
+    if (this.roadRibbonCells?.has(`${rx},${ry}`)) return Math.max(0, this.smoothRoadY(x, y)) + ROAD_RIBBON_LIFT
+    return Math.max(0, this.sim.state.terrain.worldY(rx, ry))
+  }
+
+  // Spec 088 — roads render ENTIRELY as the smooth RIBBON (setRoadWays / buildRoadRibbons). The old
+  // per-cell quad surface is retired: an axis-aligned square per cell can never be smooth, so any road
+  // cell the ribbon's smoothed centre-line didn't cover read as a jagged STAIRCASE fringe beside the
+  // smooth band — exactly the look the operator rejected ("wow those corners", the gap-fill experiment).
+  // The ribbon alone reads as clean, continuous roads with lane lines. The road DATA (s.roads/roadKind)
+  // is untouched, so traffic, the bus and the rally still drive the cells underneath. This just empties
+  // the legacy per-cell meshes (kept so the scene graph + materials stay stable across a road change).
   private rebuildRoads() {
-    const s = this.sim.state
-    const g = gridOrigin(s)
-    const B = COLONY.build.block
-    const LIFT = 0.05
-    const SKIRT = 0.9 // embankment depth below the bed edge
-    const SHOULDER = 0.42 // worked earth beside the road, so the world grades into the carriageway
-    const surf: number[] = []
-    const shoulder: number[] = []
-    const line: number[] = []
-    // Spec 084 S3 — the avenue gets its own asphalt surface + kerb strips; streets keep the earth bed.
-    const surfA: number[] = []
-    const kerb: number[] = []
-    const tri = (arr: number[], a: number[], b: number[], c: number[]) => arr.push(a[0]!, a[1]!, a[2]!, b[0]!, b[1]!, b[2]!, c[0]!, c[1]!, c[2]!)
-    const quad = (arr: number[], a: number[], b: number[], c: number[], d: number[]) => { tri(arr, a, c, b); tri(arr, b, c, d) }
-    const roadKey = (x: number, y: number) => `${x},${y}`
-    const roadSet = new Set(s.roads.map((r) => roadKey(r.x, r.y)))
-    // 1) collect every unique corner of the network with its terrain-sampled base height
-    const ck = (gx: number, gy: number) => `${gx},${gy}`
-    const heights = new Map<string, number>()
-    for (const r of s.roads) {
-      for (const [gx, gy] of [[r.x, r.y], [r.x + 1, r.y], [r.x, r.y + 1], [r.x + 1, r.y + 1]] as const) {
-        const k = ck(gx, gy)
-        if (!heights.has(k)) heights.set(k, this.cornerY(gx, gy))
-      }
-    }
-    // 2) relax each corner toward its network neighbours — two passes ease the grade transitions
-    for (let pass = 0; pass < 2; pass++) {
-      const next = new Map<string, number>()
-      for (const [k, h] of heights) {
-        const [gx, gy] = k.split(',').map(Number) as [number, number]
-        let sum = 0, n = 0
-        for (const [nx, ny] of [[gx + 1, gy], [gx - 1, gy], [gx, gy + 1], [gx, gy - 1]] as const) {
-          const nh = heights.get(ck(nx, ny))
-          if (nh !== undefined) { sum += nh; n++ }
-        }
-        next.set(k, n > 0 ? h * 0.5 + (sum / n) * 0.5 : h)
-      }
-      for (const [k, h] of next) heights.set(k, h)
-    }
-    const cornerAt = (gx: number, gy: number): number[] => [this.wx(gx) - 0.5, (heights.get(ck(gx, gy)) ?? this.cornerY(gx, gy)) + LIFT, this.wz(gy) - 0.5]
-    // 3) surface + skirts, split per road kind (spec 084 S3)
-    const isAvenue = (x: number, y: number) => s.roadKind.get(roadKey(x, y)) === 'avenue'
-    for (const r of s.roads) {
-      const x = r.x, y = r.y
-      const avenue = (r.kind ?? 'street') === 'avenue'
-      const bed = avenue ? surfA : surf
-      const c00 = cornerAt(x, y), c10 = cornerAt(x + 1, y), c01 = cornerAt(x, y + 1), c11 = cornerAt(x + 1, y + 1)
-      quad(bed, c00, c10, c01, c11)
-      const drop = (p: number[]): number[] => [p[0]!, p[1]! - SKIRT, p[2]!]
-      const shoulderEdge = (a: number[], b: number[], dx: number, dz: number) => {
-        const outerA = [a[0]! + dx * SHOULDER, a[1]! - 0.16, a[2]! + dz * SHOULDER]
-        const outerB = [b[0]! + dx * SHOULDER, b[1]! - 0.16, b[2]! + dz * SHOULDER]
-        quad(shoulder, a, b, outerA, outerB)
-        quad(shoulder, outerA, outerB, drop(outerA), drop(outerB))
-      }
-      // a skirt on every edge not shared with another road cell
-      if (!roadSet.has(roadKey(x, y - 1))) { shoulderEdge(c00, c10, 0, -1); quad(bed, c00, c10, drop(c00), drop(c10)) }
-      if (!roadSet.has(roadKey(x, y + 1))) { shoulderEdge(c01, c11, 0, 1); quad(bed, c01, c11, drop(c01), drop(c11)) }
-      if (!roadSet.has(roadKey(x - 1, y))) { shoulderEdge(c00, c01, -1, 0); quad(bed, c00, c01, drop(c00), drop(c01)) }
-      if (!roadSet.has(roadKey(x + 1, y))) { shoulderEdge(c10, c11, 1, 0); quad(bed, c10, c11, drop(c10), drop(c11)) }
-      const lift = (p: number[], dx: number, dz: number): number[] => [p[0]! + dx, p[1]! + 0.045, p[2]! + dz]
-      if (avenue) {
-        // KERBS: a raised concrete strip along every edge not shared with another avenue cell.
-        if (!isAvenue(x, y - 1)) quad(kerb, lift(c00, 0, 0), lift(c10, 0, 0), lift(c00, 0, 0.16), lift(c10, 0, 0.16))
-        if (!isAvenue(x, y + 1)) quad(kerb, lift(c01, 0, -0.16), lift(c11, 0, -0.16), lift(c01, 0, 0), lift(c11, 0, 0))
-        if (!isAvenue(x - 1, y)) quad(kerb, lift(c00, 0, 0), lift(c00, 0.16, 0), lift(c01, 0, 0), lift(c01, 0.16, 0))
-        if (!isAvenue(x + 1, y)) quad(kerb, lift(c10, -0.16, 0), lift(c10, 0, 0), lift(c11, -0.16, 0), lift(c11, 0, 0))
-        // CENTRE DASHES: every other cell, oriented along the run (the avenue bends with terrain).
-        if ((x + y) % 2 === 0) {
-          const h = (c00[1]! + c10[1]! + c01[1]! + c11[1]!) / 4 + 0.03
-          const wx = this.wx(x), wz = this.wz(y)
-          const runX = isAvenue(x - 1, y) || isAvenue(x + 1, y)
-          if (runX) quad(line, [wx - 0.3, h, wz - 0.05], [wx + 0.3, h, wz - 0.05], [wx - 0.3, h, wz + 0.05], [wx + 0.3, h, wz + 0.05])
-          else quad(line, [wx - 0.05, h, wz - 0.3], [wx + 0.05, h, wz - 0.3], [wx - 0.05, h, wz + 0.3], [wx + 0.05, h, wz + 0.3])
-        }
-        continue
-      }
-      const onV = ((((x - g.x) % B) + B) % B) === 0 // on a north-south grid line
-      const onH = ((((y - g.y) % B) + B) % B) === 0 // on an east-west grid line
-      if (onV === onH) continue // intersection or off-grid fill -> no centre dash
-      const h = (c00[1]! + c10[1]! + c01[1]! + c11[1]!) / 4 + 0.03
-      const wx = this.wx(x), wz = this.wz(y)
-      if (onV) quad(line, [wx - 0.05, h, wz - 0.3], [wx + 0.05, h, wz - 0.3], [wx - 0.05, h, wz + 0.3], [wx + 0.05, h, wz + 0.3])
-      else quad(line, [wx - 0.3, h, wz - 0.05], [wx + 0.3, h, wz - 0.05], [wx - 0.3, h, wz + 0.05], [wx + 0.3, h, wz + 0.05])
-    }
-    const setPos = (mesh: THREE.Mesh, arr: number[]) => {
+    const empty = (mesh: THREE.Mesh) => {
       const geo = mesh.geometry as THREE.BufferGeometry
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3))
+      geo.setAttribute('position', new THREE.Float32BufferAttribute([], 3))
       geo.computeVertexNormals()
     }
-    setPos(this.roadSurfaceMesh, surf)
-    setPos(this.roadShoulderMesh, shoulder)
-    setPos(this.roadLineMesh, line)
-    setPos(this.avenueSurfaceMesh, surfA)
-    setPos(this.avenueKerbMesh, kerb)
+    for (const m of [this.roadSurfaceMesh, this.roadShoulderMesh, this.roadLineMesh, this.avenueSurfaceMesh, this.avenueKerbMesh]) empty(m)
   }
 
   private updateColonyLayer() {
@@ -1200,7 +1219,7 @@ export class PlanetRenderer {
           cy = car.y + (j.y - car.y) * drive
           heading = Math.atan2(j.y - car.y, j.x - car.x)
         }
-        this.dummy.position.set(this.wx(cx), this.smoothRoadY(Math.round(cx), Math.round(cy)) + 0.18, this.wz(cy))
+        this.dummy.position.set(this.wx(cx), this.smoothRoadY(cx, cy) + 0.18, this.wz(cy))
         this.dummy.scale.set(1, 1, 1)
         this.dummy.rotation.set(0, -heading, 0)
         this.dummy.updateMatrix()
@@ -1214,15 +1233,29 @@ export class PlanetRenderer {
     this.crewMesh.count = ci
     this.crewMesh.instanceMatrix.needsUpdate = true
 
-    // street lights at grid intersections (where both road lines cross)
+    // street lights at grid intersections (where both road lines cross). Stand each on the VERGE beside
+    // the road, never on the carriageway: search outward for the nearest cell the road ribbon does NOT
+    // cover and plant the lamp there at ground height (surfaceY). The old code put it on the road cell at
+    // smoothRoadY — on the asphalt and 0.18 below the ribbon top, so the pole speared up through the road.
     const B = COLONY.build.block
     const g = gridOrigin(s)
+    const ribbon = this.roadRibbonCells
+    const onRibbon = (x: number, y: number) => !!ribbon && ribbon.has(`${x},${y}`)
     let li = 0
     for (let i = 0; i < rn; i++) {
       if (li >= 360) break
       const r = s.roads[i]!
       if (((((r.x - g.x) % B) + B) % B) !== 0 || ((((r.y - g.y) % B) + B) % B) !== 0) continue
-      this.dummy.position.set(this.wx(r.x) + 0.45, this.smoothRoadY(r.x, r.y), this.wz(r.y) + 0.45)
+      // nearest off-ribbon cell within a short reach; skip the lamp entirely if hemmed in by road
+      let lx = r.x, ly = r.y, found = false
+      for (let rad = 1; rad <= 3 && !found; rad++) {
+        for (let dx = -rad; dx <= rad && !found; dx++) for (let dy = -rad; dy <= rad; dy++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue // walk the ring at this radius
+          if (!onRibbon(r.x + dx, r.y + dy)) { lx = r.x + dx; ly = r.y + dy; found = true; break }
+        }
+      }
+      if (!found) continue
+      this.dummy.position.set(this.wx(lx), this.surfaceY(lx, ly), this.wz(ly))
       this.dummy.scale.set(1, 1, 1)
       this.dummy.rotation.set(0, 0, 0)
       this.dummy.updateMatrix()
@@ -1271,7 +1304,7 @@ export class PlanetRenderer {
       e.h += dh * aHed
       const lx = e.x + Math.sin(e.h) * off
       const ly = e.y - Math.cos(e.h) * off
-      this.dummy.position.set(this.wx(lx), this.smoothRoadY(Math.round(e.x), Math.round(e.y)) + 0.12, this.wz(ly))
+      this.dummy.position.set(this.wx(lx), this.smoothRoadY(e.x, e.y) + 0.12, this.wz(ly))
       this.dummy.rotation.set(0, -e.h, 0)
       this.dummy.scale.set(1, 1, 1)
       this.dummy.updateMatrix()
@@ -1317,16 +1350,18 @@ export class PlanetRenderer {
     }
     this.shoreProps?.update(this.sim.state.clock.daylight, performance.now())
     if (this.raceLayer && this.raceState) this.raceLayer.update(this.raceState, performance.now())
+    this.busLayer?.update(performance.now()) // spec 088 — the bus drives its loop between the hoods
+    this.updateOcean(performance.now()) // spec 090 — gentle swells roll across the living sea
     if (this.fpCitizenId && this.avatarSource) {
       // P1 — first-person: park the camera at the citizen's eye and look down their heading. OrbitControls is off.
       const a = this.avatarSource().find((x) => x.id === this.fpCitizenId)
       if (a) {
-        const t = this.sim.state.terrain
         const isCrab = a.kind === 'crab' // spec 078 — Joe sees the world from down at crab height
-        const eye = Math.max(0, t.worldY(Math.round(a.x), Math.round(a.y))) + (isCrab ? CRAB_EYE : 1.6)
+        // stand the eye on the road SURFACE when on a road, so Joe is never looking up through the road
+        const eye = this.surfaceY(a.x, a.y) + (isCrab ? CRAB_EYE : 1.6)
         this.camera.position.set(this.wx(a.x), eye, this.wz(a.y))
         const lx = a.x + Math.cos(a.heading) * 4, ly = a.y + Math.sin(a.heading) * 4
-        const lyW = Math.max(0, t.worldY(Math.round(lx), Math.round(ly))) + (isCrab ? CRAB_EYE - 0.05 : 1.2)
+        const lyW = this.surfaceY(lx, ly) + (isCrab ? CRAB_EYE - 0.05 : 1.2)
         this.camera.lookAt(this.wx(lx), lyW, this.wz(ly))
         this.camera.updateMatrixWorld()
       } else {
@@ -1549,6 +1584,50 @@ export class PlanetRenderer {
     this.buildCommercialDistrict()
   }
 
+  /** Spec 088 — hand the renderer the road centre-lines; it lays a SMOOTH ribbon surface (Chaikin-
+   *  smoothed, width-extruded, draped) along each, just above the per-cell road base so roads read as
+   *  smooth instead of a per-cell staircase. Traffic/bus/rally still use the cell roads underneath. */
+  setRoadWays(ways: RoadWay[] | null | undefined): void {
+    if (this.roadRibbonGroup) {
+      this.roadRibbonGroup.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (m.geometry) m.geometry.dispose()
+        const mt = m.material as THREE.Material | THREE.Material[] | undefined
+        if (Array.isArray(mt)) mt.forEach((x) => x.dispose())
+        else if (mt) mt.dispose()
+      })
+      this.roadRibbonGroup.parent?.remove(this.roadRibbonGroup)
+      this.roadRibbonGroup = null
+    }
+    this.roadRibbonCells = null
+    if (!ways || ways.length === 0) return
+    const built = buildRoadRibbons(ways, {
+      terrain: this.sim.state.terrain,
+      wx: (x) => this.wx(x),
+      wz: (y) => this.wz(y),
+      roadY: (x, y) => this.smoothRoadY(x, y),
+    })
+    this.roadRibbonGroup = built.group
+    this.roadRibbonCells = built.cells
+    this.scene.add(this.roadRibbonGroup)
+  }
+
+  /** Spec 088 — hand the renderer the bus route; it raises the stop markers and a coach that drives the
+   *  loop between the hoods (a render-loop vehicle, advanced on wall-clock dt, not the sim). */
+  setBusRoute(route: BusRoute | null | undefined): void {
+    this.busLayer?.dispose()
+    this.busLayer = null
+    if (!route) return
+    this.busLayer = buildBusLayer({
+      terrain: this.sim.state.terrain,
+      route,
+      wx: (x) => this.wx(x),
+      wz: (y) => this.wz(y),
+      roadY: (x, y) => this.smoothRoadY(x, y),
+    })
+    if (this.busLayer) this.scene.add(this.busLayer.group)
+  }
+
   // The neon palette for the strip — saturated signage that pops against the calm residential teal.
   private static readonly NEON = [0xff2d95, 0x18e0ff, 0xffc233, 0x7bff4d, 0xb24dff, 0xff6a3d]
   // Shop massing by kind: how tall the body stands (showroom is the anchor, the kiosk a low cart).
@@ -1585,11 +1664,29 @@ export class PlanetRenderer {
       const bodyD = p.h * 0.82
       const cx = p.x + (p.w - 1) / 2
       const cy = p.y + (p.h - 1) / 2
-      const baseY = Math.max(0, t.worldY(Math.round(cx), Math.round(cy)))
+      // Sit the shop on the LOWEST corner of its footprint so no edge floats over sloped/coastal
+      // ground; the uphill terrain just buries into the solid body, and the foundation plinth below
+      // fills the slope gap. (Was the centre height, which left the downhill side floating.)
+      let loY = Infinity, hiY = 0
+      for (const fx of [p.x, p.x + p.w - 1]) for (const fy of [p.y, p.y + p.h - 1]) {
+        const h = Math.max(0, t.worldY(fx, fy)); if (h < loY) loY = h; if (h > hiY) hiY = h
+      }
+      const baseY = loY
       const front = -p.side // +z when the plot fronts the street to its -y side
 
       const g = new THREE.Group()
       g.position.set(this.wx(cx), baseY, this.wz(cy))
+
+      // Foundation plinth — from the base down past the slope range, so the shop reads as built on the
+      // ground and never floats, even where the coast falls away under the footprint.
+      const foundH = (hiY - loY) + 0.7
+      const found = new THREE.Mesh(
+        new THREE.BoxGeometry(bodyW * 1.02, foundH, bodyD * 1.02),
+        new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.9 }),
+      )
+      found.position.y = -foundH / 2 + 0.02
+      found.castShadow = true
+      g.add(found)
 
       // Body — a dark slate shopfront so the neon reads against it.
       const body = new THREE.Mesh(
@@ -1872,7 +1969,7 @@ export class PlanetRenderer {
     // SMOOTHED per-cell ground (5-point average): tiles follow the land's grade without per-cell
     // flutter. The old single leveled height per homestead left the downhill half of a sloped parcel
     // floating in the air (operator feedback) — now only the house keeps a leveled foundation.
-    const gy = (x: number, y: number) => Math.max(0, this.smoothRoadY(Math.round(x), Math.round(y)))
+    const gy = (x: number, y: number) => this.groundY(x, y)
     const PAD_DEPTH = 0.6 // must match padGeo's y size
 
     let p = 0 // pad instance index
@@ -2093,7 +2190,7 @@ export class PlanetRenderer {
     for (let i = 0; i < n; i++) {
       const a = list[i]!
       if (a.id === this.fpCitizenId) continue // hide the avatar we are looking out of
-      const wy = Math.max(0, t.worldY(Math.round(a.x), Math.round(a.y)))
+      const wy = this.surfaceY(a.x, a.y) // stand ON the road ribbon when on a road, not under it
       this.dummy.position.set(this.wx(a.x), wy, this.wz(a.y))
       this.dummy.rotation.set(0, -a.heading + Math.PI / 2, 0)
       this.dummy.scale.set(1, 1, 1)

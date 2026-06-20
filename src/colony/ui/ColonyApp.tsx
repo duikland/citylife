@@ -10,6 +10,10 @@ import { RadioPanel } from './RadioPanel'
 import { FirstPersonPanel } from './FirstPersonPanel'
 import './colony.css'
 
+// Spec 089 — the CityLife HUD shows only the city-relevant stats (citizens, homesteads, the bank, the
+// commercial district, the border). The old colony-sim survival/economy dashboard (water/food/health/
+// smog/incidents/fever/unrest/seasons/storms/power/etc.) is gated off here. Flip to true to bring it back.
+const OLD_WORLD_STATS = false
 const pad = (n: number) => String(n).padStart(2, '0')
 const raceTime = (ms: number | null) => {
   if (ms === null) return '--'
@@ -228,6 +232,8 @@ export function ColonyApp() {
         )}
         <div className="row"><span>Site</span><b>{ui.biome}</b></div>
         <div className="row"><span>Colonists</span><b>{ui.colonists} / {ui.colony.capacity}</b></div>
+        {/* Spec 089 — the old colony-sim survival/economy dashboard is hidden in the CityLife HUD. */}
+        {OLD_WORLD_STATS && (<>
         <div className="row"><span>Homes watered</span><b style={{ color: ui.colony.watered < 60 ? '#e6c84d' : undefined }}>{ui.colony.watered}%</b></div>
         <div className="row"><span>Homes fed</span><b style={{ color: ui.colony.provisioned < 60 ? '#e6c84d' : undefined }}>{ui.colony.provisioned}%</b></div>
         <div className="row"><span>Homes healthy</span><b style={{ color: ui.colony.health < 60 ? '#e6c84d' : undefined }}>{ui.colony.health}%</b></div>
@@ -287,6 +293,7 @@ export function ColonyApp() {
         {ui.colony.stalls.stalls > 0 && <div className="row"><span>Market</span><b style={{ color: ui.colony.stalls.open ? '#e0b34a' : '#9a8a5a' }} title="Market Stalls — the colony's own home market. Staffed stalls sell surplus linen and folios (above a reserve) to paid colonists, returning a little coin to the treasury each day. They never sell below the reserve, so they never rob the export trade, and custom dries up if wages fall into arrears.">{ui.colony.stalls.stalls} stall{ui.colony.stalls.stalls > 1 ? 's' : ''}{ui.colony.stalls.open ? ` · +${ui.colony.stalls.coinPerDay}/day` : ' · quiet'}</b></div>}
         {ui.colony.porter.sheds > 0 && <div className="row"><span>Porters</span><b style={{ color: ui.colony.porter.working ? '#c79a5a' : '#8a7a5a' }} title="Porter Sheds — the first building whose whole point is to let you SEE the economy. While staffed, porters run handcarts along the roads between buildings, and the colony's goods pile up in crates and sacks that grow when a store fills and shrink as it is used. It invents no new good and changes no number, it gives the economy a body on the island. No porter ever crosses open water.">{ui.colony.porter.sheds} shed{ui.colony.porter.sheds > 1 ? 's' : ''}{ui.colony.porter.working ? ` · ${ui.colony.porter.porters} carts` : ' · idle'}</b></div>}
         {ui.colony.avatar.foundries > 0 && <div className="row"><span>Avatar Foundry</span><b style={{ color: ui.colony.avatar.staffed ? '#9f86d8' : '#7a6e8a' }} title="The Avatar Foundry — the civic hall that mints a citizen avatar (a real Hermes pod in the kooker DMZ namespace, routed through kooker-service-ai) for each approved household, and gives the colony's first-person vision a home on the map. While staffed it can mint up to its capacity of citizen pods. The pod spawn and the kooker user live out-of-process, the Foundry is the in-world gate.">{ui.colony.avatar.foundries} foundry{ui.colony.avatar.staffed ? ` · mints up to ${ui.colony.avatar.capacity}` : ' · unstaffed'}</b></div>}
+        </>)}
         {ui.citizens.count > 0 && <div className="row"><span>Kookerbook</span><b><a href="/kookerbook.html" target="_blank" rel="noreferrer" style={{ color: '#8fb6e8', textDecoration: 'none' }} title="The bot social network — every citizen has a profile page with their home and timeline">📘 open the Book</a></b></div>}
         {ui.citizens.count > 0 && <div className="row"><span>Citizens</span><b style={{ color: ui.citizens.awake > 0 ? '#a0d4f0' : '#7a8a9a' }} title={`Spec 074 — named residents allocated to a plot by the Border Patrol bot. ${ui.citizens.awake} have a live Hermes pod (DMZ namespace, kooker-service-ai routing). ${ui.citizens.list.slice(0,4).map(c => `${c.displayName} at ${c.plotName}`).join(' · ') || '(none yet)'}.`}>{ui.citizens.awake}/{ui.citizens.count} living{ui.citizens.list.length ? ` · ${ui.citizens.list.slice(0,2).map(c => c.displayName.split(' ')[0]).join(', ')}${ui.citizens.list.length > 2 ? '…' : ''}` : ''}</b></div>}
         {ui.citizens.count > 0 && !ui.firstPerson.active && <div className="row"><span>Step in</span><span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{ui.citizens.list.slice(0, 4).map((c) => <button key={c.id} className={c.id === ui.firstPerson.operatorCitizenId ? 'on' : ''} style={{ padding: '1px 6px', fontSize: 11 }} onClick={() => runtime.enterFirstPerson(c.id)} title={c.id === ui.firstPerson.operatorCitizenId ? `This is your citizen — see the world through ${c.displayName}'s eyes` : `Step into ${c.displayName} for a first-person view`}>👁 {c.displayName.split(' ')[0]}{c.id === ui.firstPerson.operatorCitizenId ? ' (you)' : ''}</button>)}</span></div>}
@@ -301,12 +308,13 @@ export function ColonyApp() {
               return <button style={{ padding: '0 6px', fontSize: 10, color: canBuy ? '#8fd0a6' : '#7a6a5a', opacity: canBuy ? 1 : 0.5, cursor: canBuy ? 'pointer' : 'not-allowed' }} disabled={!canBuy} onClick={() => runtime.purchaseLot(firstFree.id, l.id)} title={canBuy ? `${firstFree.displayName} buys the deed for ${l.price} ₭ (≈ R${l.priceZar?.toLocaleString()})` : `${firstFree.displayName} can't afford this plot (wallet ${ui.citizens.wallets[firstFree.id] ?? 0} ₭, price ${l.price} ₭)`}>Buy {l.price} ₭</button>
             })()}
             {l.ownerId && <button style={{ padding: '0 6px', fontSize: 10, color: '#8fd0a6' }} onClick={() => runtime.openBuilder(l.id)} title={l.built ? 'Re-design this house in the House Builder — the current blueprint loads for editing and Accept rebuilds it' : 'Design this house in the House Builder — Accept stores the blueprint and raises the house'}>{l.built ? 'Re-design' : 'Design'}</button>}
-            {l.ownerId && !l.built && !l.reserved && <button style={{ padding: '0 6px', fontSize: 10, color: '#d8a85a' }} onClick={() => runtime.commissionLot(l.id)} title="Hire Viw the Builder — the citizen dreams a home, Viw quotes, they haggle, and the agreed house rises. The deal lands on both their Kookerbook pages.">🛠️ Hire Viw</button>}
+            {l.ownerId && !l.built && !l.reserved && <button style={{ padding: '0 6px', fontSize: 10, color: '#d8a85a' }} onClick={() => runtime.commissionLot(l.id)} title="Hire Zinzaar the Builder — the citizen dreams a home, Zinzaar quotes, they haggle, and the agreed house rises. The deal lands on both their Kookerbook pages.">🛠️ Hire Zinzaar</button>}
             {l.ownerId && !l.built && <button style={{ padding: '0 6px', fontSize: 10 }} onClick={() => runtime.buildHouse(l.id)} title={ui.neighborhood.buildHint}>Build</button>}
             {l.built && !l.reserved && <button style={{ padding: '0 6px', fontSize: 10 }} onClick={() => runtime.demolishLot(l.id)} title="Tear the house down, keep the citizen">Demolish</button>}
             {l.ownerId && !l.reserved && <button style={{ padding: '0 6px', fontSize: 10, color: '#e0584d' }} onClick={() => runtime.demolishLotAndCitizen(l.id)} title="Raze the home AND destroy the citizen and their Hermes agent">Evict</button>}
           </div>
         })}</div>}
+        {OLD_WORLD_STATS && (<>
         {ui.colony.gallery.galleries > 0 && <div className="row"><span>Gallery</span><b style={{ color: ui.colony.gallery.open ? '#e0a83c' : '#9a8a5a' }} title="The Skydeck Gallery — a viewing hall on the mooring deck that charges Kookerverse travellers to see the colony. Its visitor coin scales with how worth-seeing the colony actually is: its liveability, lifted by a finished Horizon Spire and by the Prosperity standing. It is the first income the colony earns purely for being a good place to live, so every coin spent on Planter Squares, clean homes and the monument finally pays its own way. Must be staffed to open.">{ui.colony.gallery.galleries} gallery{ui.colony.gallery.open ? ` · +${ui.colony.gallery.coinPerDay}/day` : ' · quiet'}</b></div>}
         {ui.colony.planters.squares > 0 && <div className="row"><span>Planters</span><b style={{ color: ui.colony.planters.blooming > 0 ? '#6fae5a' : '#7a8a6a' }} title="Planter Squares — the colony's first deliberate beauty. A Square in Bloom (tended by a groundskeeper and watered for most of the last ten days) lifts the desirability of homes around it, raising their liveability and drawing settlers to a colony that looks cared for. Untended or unwatered, it simply gives nothing.">{ui.colony.planters.blooming}/{ui.colony.planters.squares} blooming</b></div>}
         {ui.colony.labour.active && <div className="row"><span>Employment</span><b style={{ color: ui.colony.labour.dragging ? '#e0584d' : ui.colony.labour.unemployment > 0.1 ? '#d8a64a' : '#7faf7a' }} title="The Labour Registry Desk — it keeps an honest count of working-age idle hands. Chronic unemployment (above 10% held a week, or 20% held a fortnight) drags the Prosperity Rank a step or two, and clears once the colony sits below 5% for a week. Without a Registry, idleness never shows in the books.">{Math.round((1 - ui.colony.labour.unemployment) * 100)}% employed{ui.colony.labour.dragging ? ` · Prosperity -${ui.colony.labour.penalty}` : ''}</b></div>}
@@ -329,6 +337,7 @@ export function ColonyApp() {
           <div className="batt-head"><span>Battery</span><b>{pct}% · {Math.round(ui.power.batteryCapWh)}Wh</b></div>
           <div className="bar"><div style={{ width: `${pct}%`, background: battColor }} /></div>
         </div>
+        </>)}
         <div className="row" style={{ marginTop: 10 }}><span>Settlers</span><b>{ui.settlers.count}</b></div>
         {ui.settlers.recent.length > 0 && (
           <div className="settler-list">{ui.settlers.recent.map((s) => <span key={s.id} className="chip">#{s.id} {s.name}</span>)}</div>
@@ -377,12 +386,6 @@ export function ColonyApp() {
           )
         })()}
       </aside>
-
-      <div className="hint">
-        Phase A · A dropship has landed. Solar + lithium battery are your only power.
-        Use <b>Planet / District / Street</b> to zoom, and the view toggles to read the land.
-        <br /><span className="hint-keys"><b>Space</b> pause · <b>1/2/3</b> camera · <b>Z</b> zoning</span>
-      </div>
 
       <RadioPanel runtime={runtime} radio={ui.radio} tv={ui.tv} />
 
