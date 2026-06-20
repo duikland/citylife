@@ -26,6 +26,7 @@ import { greedyMesh } from './voxelMesh'
 import { buildChunkedTerrain, type ChunkedTerrain } from './terrainChunks'
 import { defaultBlueprint, streetDoorDir, type Zone } from '../neighborhood'
 import { buildShoreProps, type ShorePropsLayer } from './shoreProps'
+import { buildFoam, type FoamLayer } from './foamLayer'
 import { buildRaceLayer, type RaceLayer } from './raceLayer'
 import { buildBusLayer, type BusLayer } from './busLayer'
 import type { BusRoute } from '../transit/busRoute'
@@ -53,6 +54,16 @@ export interface AvatarView {
 // dark even at midday — while a local sun still sweeps light across the island for day/night.
 const SKY_DAY = new THREE.Color(0x0b1022)
 const SKY_NIGHT = new THREE.Color(0x03040a)
+// Spec 091 — atmospheric horizon glow. The void zenith stays near-black (SKY_DAY), but by day a soft
+// teal-dusk band lifts at the horizon — a gradient sky dome + distance-fog tinted to this colour — so
+// the world reads with real depth instead of a flat fill. At night daylight=0 collapses it back to the
+// uniform void, so the deep-space look is untouched after dark.
+const HORIZON_GLOW = new THREE.Color(0x2c5a73)
+// Spec 091 — warmer KEY LIGHT. The sun is a warm white when high and deepens to a golden amber as it
+// rakes toward the horizon, so mornings and evenings get a real golden-hour glow instead of a flat white
+// midday. updateDayNight lerps between these by sun height each frame.
+const SUN_HIGH = new THREE.Color(0xfff2d8) // warm white near noon
+const SUN_LOW = new THREE.Color(0xff9a4a) // golden amber near sunrise / sunset
 const OCEAN = 0x143a4a
 const SLAB_ROCK = 0x24242f
 // Spec 078 — Joe the Crab's first-person eye height (low to the ground), vs 1.6 for the human avatars.
@@ -72,6 +83,7 @@ export class PlanetRenderer {
   private controls: OrbitControls
   private sun: THREE.DirectionalLight
   private hemi: THREE.HemisphereLight
+  private skyMat?: THREE.ShaderMaterial // spec 091 — gradient sky-dome material; its colours lerp with daylight
   private oceanGeo?: THREE.BufferGeometry // spec 090 — the living sea: a subdivided disc with animated swells
   private oceanBase?: Float32Array // base (x,y) of each ocean vertex, the wave input
   onGroundClick?: (gx: number, gy: number) => void // spec 090 — set by the runtime; fires on a ground CLICK (not a drag)
@@ -166,6 +178,7 @@ export class PlanetRenderer {
   // Pulsing red nav beacon at the rocket nose — material ref so frame() can blink it.
   private beaconMat: THREE.MeshStandardMaterial | null = null
   private shoreProps: ShorePropsLayer | null = null
+  private foam: FoamLayer | null = null // spec 091 — animated shoreline surf ring
   private raceLayer: RaceLayer | null = null
   private busLayer: BusLayer | null = null
   private roadRibbonGroup: THREE.Group | null = null
@@ -200,7 +213,7 @@ export class PlanetRenderer {
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.1
+    this.renderer.toneMappingExposure = 1.13
     container.appendChild(this.renderer.domElement)
 
     this.scene.background = SKY_DAY.clone()
@@ -241,7 +254,9 @@ export class PlanetRenderer {
       if (hit) this.onGroundClick(hit.gx, hit.gy)
     })
 
-    this.hemi = new THREE.HemisphereLight(0xbfd6e6, 0x35324a, 0.8)
+    // Cool sky fill (0xbfd6e6) against the warm sun key, with a warmer ground bounce (was a cool
+    // 0x35324a) so shadowed faces feel sun-warmed earth rather than cold — a richer key/fill contrast.
+    this.hemi = new THREE.HemisphereLight(0xbfd6e6, 0x473c3a, 0.8)
     this.scene.add(this.hemi)
     this.sun = new THREE.DirectionalLight(0xfff0d8, 1.7)
     this.sun.castShadow = true
@@ -264,7 +279,9 @@ export class PlanetRenderer {
     this.scene.add(this.sun.target)
 
     this.buildPlanet()
+    this.buildSkyDome()
     this.buildOcean()
+    this.buildFoam()
     this.buildTerrain()
     this.buildFoliage()
     this.buildStructures()
@@ -498,6 +515,14 @@ export class PlanetRenderer {
     geo.computeVertexNormals()
   }
 
+  /** Spec 091 — the shoreline SURF: an additive foam ring traced once from the terrain coastline, parked
+   *  just above the living sea. Render-only + deterministic (built from grid data, opacity pulses on the
+   *  wall clock); see foamLayer.ts. */
+  private buildFoam(): void {
+    this.foam = buildFoam({ terrain: this.sim.state.terrain, wx: (x) => this.wx(x), wz: (y) => this.wz(y) })
+    if (this.foam) this.scene.add(this.foam.group)
+  }
+
   private colorFor(mode: ViewMode, i: number, out: THREE.Color): void {
     const t = this.sim.state.terrain
     if (mode === 'biome') {
@@ -646,16 +671,68 @@ export class PlanetRenderer {
     this.controls.update()
   }
 
+  // Spec 091 — the gradient SKY DOME: a huge inward sphere whose fragment colour blends from the
+  // horizon glow up to the void zenith, giving the deep-space backdrop real vertical depth. Drawn first
+  // (renderOrder -1, depthTest off) as a pure backdrop, so the stars, gas giant and island all paint
+  // over it; fog is off so it never washes flat. updateDayNight feeds its two colours each frame.
+  private buildSkyDome(): void {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        topColor: { value: SKY_DAY.clone() },
+        horizonColor: { value: HORIZON_GLOW.clone() },
+        expo: { value: 1.15 },
+      },
+      side: THREE.BackSide,
+      depthWrite: false,
+      depthTest: false,
+      fog: false,
+      vertexShader: `
+        varying vec3 vWorldPosition;
+        void main() {
+          vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 horizonColor;
+        uniform float expo;
+        varying vec3 vWorldPosition;
+        void main() {
+          float h = max(0.0, normalize(vWorldPosition).y);
+          gl_FragColor = vec4(mix(horizonColor, topColor, pow(h, expo)), 1.0);
+        }
+      `,
+    })
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(20000, 32, 16), mat)
+    dome.name = 'SkyDome'
+    dome.renderOrder = -1
+    dome.frustumCulled = false
+    this.scene.add(dome)
+    this.skyMat = mat
+  }
+
   private updateDayNight() {
     const d = this.sim.state.clock.daylight
     const { hour, minute } = this.sim.state.clock
     const sky = SKY_NIGHT.clone().lerp(SKY_DAY, d)
+    // Horizon glow only by day; at night it collapses back to the flat void so deep space is untouched.
+    const horizon = sky.clone().lerp(HORIZON_GLOW, d * 0.85)
     ;(this.scene.background as THREE.Color).copy(sky)
-    ;(this.scene.fog as THREE.Fog).color.copy(sky)
+    // Distance-fog fades to the HORIZON glow (not the zenith void), so far terrain melts into the band —
+    // atmospheric perspective that ties the island edge to the sky.
+    ;(this.scene.fog as THREE.Fog).color.copy(horizon)
+    if (this.skyMat) {
+      ;(this.skyMat.uniforms.topColor.value as THREE.Color).copy(sky)
+      ;(this.skyMat.uniforms.horizonColor.value as THREE.Color).copy(horizon)
+    }
     this.hemi.intensity = 0.35 + d * 0.65
     this.sun.intensity = 0.18 + d * 1.7
     const t = hour + minute / 60
     const ang = ((t - 6) / 12) * Math.PI
+    // Golden-hour key: the lower the sun, the warmer (amber) it burns; high noon stays a warm white.
+    const sunHeight = Math.max(0, Math.sin(ang)) // 0 at the horizon .. 1 at noon
+    this.sun.color.copy(SUN_HIGH).lerp(SUN_LOW, Math.pow(1 - sunHeight, 1.5) * 0.85)
     const r = this.N * 1.1
     // Spec 084 S5 — sun + target translate TOGETHER to the orbit target: the light DIRECTION (and
     // so all shading) is unchanged, but the fixed-extent shadow frustum now sits wherever the
@@ -1352,6 +1429,7 @@ export class PlanetRenderer {
     if (this.raceLayer && this.raceState) this.raceLayer.update(this.raceState, performance.now())
     this.busLayer?.update(performance.now()) // spec 088 — the bus drives its loop between the hoods
     this.updateOcean(performance.now()) // spec 090 — gentle swells roll across the living sea
+    this.foam?.update(performance.now()) // spec 091 — the shoreline surf breathes
     if (this.fpCitizenId && this.avatarSource) {
       // P1 — first-person: park the camera at the citizen's eye and look down their heading. OrbitControls is off.
       const a = this.avatarSource().find((x) => x.id === this.fpCitizenId)
@@ -2321,6 +2399,7 @@ export class PlanetRenderer {
     this.controls.dispose()
     this.composer.dispose()
     this.shoreProps?.dispose()
+    this.foam?.dispose()
     this.clearRaceLayer()
     this.renderer.dispose()
     if (this.renderer.domElement.parentElement === this.container) {
