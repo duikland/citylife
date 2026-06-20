@@ -615,6 +615,14 @@ export class PlanetRenderer {
       roughness: 0.9,
       metalness: 0,
       flatShading: true,
+      // Spec 092 — a dark-green EMISSIVE FLOOR so the trees never crush to pure black at low light. The
+      // dark-green instance colours get almost no illumination at dawn/dusk/night (night sun ~0.18,
+      // hemisphere ~0.35), so without this the cones read as floating black blobs that "breathe" with the
+      // wind sway — especially the near-shore ones silhouetted against the water from a low camera. The
+      // floor is tiny next to the daytime key light (negligible at noon) but keeps trees a readable dark
+      // green after dark, mirroring the same trick the clouds + gulls already use against the void.
+      emissive: 0x1c4a2a,
+      emissiveIntensity: 0.6,
     });
     foliageMat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = { value: 0 };
