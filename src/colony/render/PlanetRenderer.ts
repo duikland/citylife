@@ -702,7 +702,11 @@ export class PlanetRenderer {
     );
     ocean.rotation.x = -Math.PI / 2;
     ocean.position.y = -0.1;
-    ocean.receiveShadow = true;
+    // Spec 092 — the sea must NOT receive shadows. updateOcean recomputes the swell normals every frame,
+    // so with receiveShadow the shadow map false-self-shadows the moving surface → scattered BLACK acne
+    // blobs that "breathe" across the water (the operator's bug). Water showing the island's shadow is
+    // negligible anyway; turning receipt off removes the acne entirely.
+    ocean.receiveShadow = false;
     this.scene.add(ocean);
     this.oceanGeo = geo;
     this.oceanBase = base;
