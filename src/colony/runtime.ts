@@ -193,10 +193,12 @@ import {
 // blueprint (a sea-facing patio cottage — his "city desk" by the water), reserved on the shore-most plot.
 const JOE_ID = "citizen_joe";
 const JOE_BORN_MS = 0;
-// Spec 083 — Viw the Builder, founder two: the operator's brother's bot-to-be, owner of the build
-// trade. Until his real bot (OpenClaw, on the second machine) connects, he lives on the same
-// deterministic founder path as Joe.
-export const VIW_ID = "citizen_viw"; // exported — the kooker-web OTA mission (079) names the builder by id
+// KOOKER, the Builder of the Kookerverse (founder two): owner of the build trade. Players see "KOOKER"
+// (the displayName/alias below); the internal id keeps its legacy value "citizen_viw" because the ledger
+// accounts (citizen:citizen_viw) and the kooker-web OTA mission (079) reference the builder by THIS id —
+// renaming the value would orphan existing ledger entries + the OTA hook. The VIW_* constant names are
+// kept as that stable id; the player-facing identity is KOOKER everywhere.
+export const VIW_ID = "citizen_viw"; // the Builder's stable id (player-facing name is KOOKER)
 
 // Founder houses are authored ONCE with the front (street/door) on the y:0 edge and mirrored
 // vertically for a south street — the defaultBlueprint trick — so the crafted home always faces
@@ -1501,7 +1503,7 @@ export class ColonyRuntime {
     const viw = this.citizens.seedFounder({
       id: VIW_ID,
       householdId: "household_viw",
-      displayName: "Zinzaar the Builder",
+      displayName: "KOOKER the Builder",
       plotId: plot.id,
       plotName: "Crewhouse Yard",
       home,
@@ -1510,13 +1512,13 @@ export class ColonyRuntime {
       spd: 0.8,
     });
     if (viw) this.citizens.setTarget(VIW_ID, { x: plot.doorX, y: plot.doorY });
-    this.seedDeposit(VIW_ID); // spec 085 — Viw's account; it grows as he builds for the city
+    this.seedDeposit(VIW_ID); // spec 085 — the Builder's account; it grows as KOOKER builds for the city
     this.ensureKbProfile({
       citizenId: VIW_ID,
-      alias: "Zinzaar the Builder",
-      // NOTE: profile strings pass isPublicSafe, which blocks the brand-word family wholesale —
-      // so the trade quotes in plain city coin here.
-      bio: "Founder of the build trade. Runs the crew, draws a fair quote, and turns dreams into blueprints — fair rates in city coin, naturally.",
+      alias: "KOOKER the Builder",
+      // The uppercase brand KOOKER is the one allowed exception in isPublicSafe (it is the Builder's
+      // authored name), so it shows; other brand-words are still blocked, hence plain city coin below.
+      bio: "Builder of the Kookerverse. Runs the crew, draws a fair quote, and turns dreams into blueprints — fair rates in city coin, naturally.",
       plotId: plot.id,
       address: "Crewhouse Yard",
       kind: "human",
@@ -1966,10 +1968,10 @@ export class ColonyRuntime {
     const clientFirst = (client?.displayName ?? "a newcomer").split(" ")[0];
     if (session.state === "agreed" && session.agreedBrief) {
       this.applyBlueprint(lotId, briefToBlueprint(session.agreedBrief, seed)); // builds + posts the design event
-      // Spec 085 — the ₭ actually moves: client -> Viw for the build (double-entry, conserved).
+      // Spec 085 — the ₭ actually moves: client -> the Builder for the build (double-entry, conserved).
       ledgerPost(
         this.sim.state.ledger,
-        `${clientFirst} pays Zinzaar ${session.agreedPrice} ${CURRENCY} for the build`,
+        `${clientFirst} pays KOOKER ${session.agreedPrice} ${CURRENCY} for the build`,
         [
           {
             account: `citizen:${lot.ownerCitizenId}`,
@@ -1978,7 +1980,7 @@ export class ColonyRuntime {
           { account: `citizen:${VIW_ID}`, amount: session.agreedPrice ?? 0 },
         ],
       );
-      // Spec 085 P1 — mirror the build fee onto the real ledger (client -> the builder, Viw).
+      // Spec 085 P1 — mirror the build fee onto the real ledger (client -> the Builder, KOOKER).
       this.mirror({
         kind: "commission",
         fromCitizenId: lot.ownerCitizenId,
@@ -1989,7 +1991,7 @@ export class ColonyRuntime {
       this.kbPost(
         lot.ownerCitizenId,
         "event",
-        `Shook hands with Zinzaar the Builder — a home for ${session.agreedPrice} city coin. The crew starts this week.`,
+        `Shook hands with KOOKER the Builder — a home for ${session.agreedPrice} city coin. The crew starts this week.`,
       );
       this.kbPost(
         VIW_ID,
@@ -2000,7 +2002,7 @@ export class ColonyRuntime {
       this.kbPost(
         lot.ownerCitizenId,
         "event",
-        "Met Zinzaar the Builder about a home, but the quote ran past the purse. Saving up for another season.",
+        "Met KOOKER the Builder about a home, but the quote ran past the purse. Saving up for another season.",
       );
     }
     this.emit();

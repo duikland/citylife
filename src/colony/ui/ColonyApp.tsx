@@ -1613,9 +1613,9 @@ export function ColonyApp() {
                         color: "#d8a85a",
                       }}
                       onClick={() => runtime.commissionLot(l.id)}
-                      title="Hire Zinzaar the Builder — the citizen dreams a home, Zinzaar quotes, they haggle, and the agreed house rises. The deal lands on both their Kookerbook pages."
+                      title="Hire KOOKER the Builder — the citizen dreams a home, KOOKER quotes, they haggle, and the agreed house rises. The deal lands on both their Kookerbook pages."
                     >
-                      🛠️ Hire Zinzaar
+                      🛠️ Hire KOOKER
                     </button>
                   )}
                   {l.ownerId && !l.built && (
