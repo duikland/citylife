@@ -38,6 +38,7 @@ import { defaultBlueprint, streetDoorDir, type Zone } from "../neighborhood";
 import { buildShoreProps, type ShorePropsLayer } from "./shoreProps";
 import { buildFoam, type FoamLayer } from "./foamLayer";
 import { buildClouds, type CloudLayer } from "./cloudLayer";
+import { buildAmbient, type AmbientLayer } from "./ambientLayer";
 import { buildRaceLayer, type RaceLayer } from "./raceLayer";
 import { buildBusLayer, type BusLayer } from "./busLayer";
 import type { BusRoute } from "../transit/busRoute";
@@ -77,6 +78,12 @@ const SUN_HIGH = new THREE.Color(0xfff2d8); // warm white near noon
 const SUN_LOW = new THREE.Color(0xff9a4a); // golden amber near sunrise / sunset
 const OCEAN = 0x143a4a;
 const SLAB_ROCK = 0x24242f;
+// Spec 092 — per-house wall tints. Each built home lerps its masonry vertex colours toward one of these
+// (picked deterministically from the house seed) so the city spans a palette instead of all-red-brick.
+const HOUSE_TINTS = [
+  0xc97b5a, 0xd9c0a0, 0x8fa07a, 0x7d93a8, 0xc9a24a, 0xb0543f, 0x9c8aa8,
+  0x9aa05a,
+];
 // Spec 078 — Joe the Crab's first-person eye height (low to the ground), vs 1.6 for the human avatars.
 const CRAB_EYE = 0.42;
 // Spec 076 — instance caps for the homestead neighbourhood (zone pads + spine ribbon; voxel blocks
@@ -111,6 +118,7 @@ export class PlanetRenderer {
   private lastRoadsVersion = -1;
   // Foliage is rebuilt as the colony grows so trees never sit under streets or buildings.
   private foliageMesh?: THREE.InstancedMesh;
+  private foliageWindMat?: THREE.MeshStandardMaterial; // spec 092 — foliage wind-sway material (uTime in frame)
   private lastFoliageSig = -2;
   // Road cells the ambient pedestrians stroll along (their pavement network), refreshed when roads grow.
   private roadCells: { x: number; y: number }[] = [];
@@ -207,6 +215,7 @@ export class PlanetRenderer {
   private shoreProps: ShorePropsLayer | null = null;
   private foam: FoamLayer | null = null; // spec 091 — animated shoreline surf ring
   private clouds: CloudLayer | null = null; // spec 092 — drifting sky clouds
+  private ambient: AmbientLayer | null = null; // spec 092 — gulls gliding over the sea
   private raceLayer: RaceLayer | null = null;
   private busLayer: BusLayer | null = null;
   private roadRibbonGroup: THREE.Group | null = null;
@@ -328,6 +337,7 @@ export class PlanetRenderer {
     this.buildOcean();
     this.buildFoam();
     this.buildClouds();
+    this.buildAmbient();
     this.buildTerrain();
     this.buildFoliage();
     this.buildStructures();
@@ -597,15 +607,35 @@ export class PlanetRenderer {
     const cap = Math.min(cells.length, 6000); // spec 084 S5 — headroom for the 608 world's forests
     const geo = new THREE.ConeGeometry(0.42, 1.1, 6);
     geo.translate(0, 0.55, 0);
-    const mesh = new THREE.InstancedMesh(
-      geo,
-      new THREE.MeshStandardMaterial({
-        roughness: 0.9,
-        metalness: 0,
-        flatShading: true,
-      }),
-      Math.max(1, cap),
-    );
+    // Spec 092 — foliage 2.0: gentle WIND SWAY via a vertex-shader displacement (GPU-cheap for thousands
+    // of trees — one uniform, no per-instance CPU work). The cone tip sways more than the base; each tree
+    // is phased by its world position so the canopy ripples instead of moving in unison. uTime advances
+    // on the wall clock in frame() (render-only, never touches the sim).
+    const foliageMat = new THREE.MeshStandardMaterial({
+      roughness: 0.9,
+      metalness: 0,
+      flatShading: true,
+    });
+    foliageMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.vertexShader =
+        "uniform float uTime;\n" +
+        shader.vertexShader.replace(
+          "#include <begin_vertex>",
+          `#include <begin_vertex>
+          {
+            float windPhase = instanceMatrix[3].x * 0.11 + instanceMatrix[3].z * 0.11;
+            float gust = sin(uTime * 1.15 + windPhase) + 0.35 * sin(uTime * 2.3 + windPhase * 1.7);
+            float hfac = clamp(transformed.y / 1.1, 0.0, 1.0);
+            hfac *= hfac;
+            transformed.x += gust * hfac * 0.05;
+            transformed.z += cos(uTime * 0.9 + windPhase) * hfac * 0.03;
+          }`,
+        );
+      foliageMat.userData.shader = shader;
+    };
+    this.foliageWindMat = foliageMat;
+    const mesh = new THREE.InstancedMesh(geo, foliageMat, Math.max(1, cap));
     mesh.castShadow = true;
     mesh.frustumCulled = false;
     const col = new THREE.Color();
@@ -717,10 +747,35 @@ export class PlanetRenderer {
     if (this.clouds) this.scene.add(this.clouds.group);
   }
 
+  /** Spec 092 — ambient motion: gulls gliding over the sea (see ambientLayer.ts). */
+  private buildAmbient(): void {
+    this.ambient = buildAmbient({ worldSize: this.N });
+    if (this.ambient) this.scene.add(this.ambient.group);
+  }
+
   private colorFor(mode: ViewMode, i: number, out: THREE.Color): void {
     const t = this.sim.state.terrain;
     if (mode === "biome") {
       out.setHex(BIOME_COLOR[t.biome[i] as Biome]);
+      // Spec 092 — richer terrain: break the flat per-biome fill on LAND with deterministic per-cell
+      // variation — a small brightness jitter, an elevation lift (higher ground catches more light), and
+      // a moisture tint (wetter greener, drier warmer) — so plains/forest read as living ground, not one
+      // flat colour. Water cells (under the ocean disc) stay flat.
+      if (t.elev[i]! >= COLONY.world.seaLevel && !t.water[i]) {
+        let h = (i * 2654435761) >>> 0;
+        h = (h ^ (h >>> 15)) >>> 0;
+        out.multiplyScalar(0.93 + (h / 4294967296) * 0.14); // ±7% brightness
+        const lift = (t.elev[i]! - COLONY.world.seaLevel) * 0.16;
+        out.r += lift;
+        out.g += lift;
+        out.b += lift;
+        const m = t.moisture[i]! - 0.5;
+        out.g += m * 0.05; // wetter → greener
+        out.r -= m * 0.03; // drier → warmer
+        out.r = Math.min(1, Math.max(0, out.r));
+        out.g = Math.min(1, Math.max(0, out.g));
+        out.b = Math.min(1, Math.max(0, out.b));
+      }
     } else if (mode === "buildable") {
       const b = t.buildable[i]!;
       if (t.water[i] || t.elev[i]! < COLONY.world.seaLevel)
@@ -2022,7 +2077,12 @@ export class PlanetRenderer {
     this.busLayer?.update(performance.now()); // spec 088 — the bus drives its loop between the hoods
     this.updateOcean(performance.now()); // spec 090 — gentle swells roll across the living sea
     this.foam?.update(performance.now()); // spec 091 — the shoreline surf breathes
+    const fsh = this.foliageWindMat?.userData.shader as
+      | { uniforms: { uTime: { value: number } } }
+      | undefined;
+    if (fsh) fsh.uniforms.uTime.value = performance.now() / 1000; // spec 092 — trees sway in the wind
     this.clouds?.update(performance.now()); // spec 092 — clouds drift across the sky
+    this.ambient?.update(performance.now()); // spec 092 — gulls glide over the sea
     if (this.fpCitizenId && this.avatarSource) {
       // P1 — first-person: park the camera at the citizen's eye and look down their heading. OrbitControls is off.
       const a = this.avatarSource().find((x) => x.id === this.fpCitizenId);
@@ -3348,6 +3408,23 @@ export class PlanetRenderer {
       cell: 1,
       voxelY: VOXEL_Y,
     });
+    // Spec 092 — per-house colour variety: lerp the masonry vertex colours toward a deterministic tint
+    // from the house seed, so homes span a palette instead of all reading as the same red brick. A
+    // partial lerp keeps the per-course banding. Deterministic (seed-driven), render-only.
+    const cAttr = geometry.getAttribute("color") as THREE.BufferAttribute | undefined;
+    if (cAttr) {
+      const tint = new THREE.Color(
+        HOUSE_TINTS[((seed % HOUSE_TINTS.length) + HOUSE_TINTS.length) % HOUSE_TINTS.length]!,
+      );
+      const a = cAttr.array as Float32Array;
+      const k = 0.42;
+      for (let i = 0; i < a.length; i += 3) {
+        a[i] = a[i]! * (1 - k) + tint.r * k;
+        a[i + 1] = a[i + 1]! * (1 - k) + tint.g * k;
+        a[i + 2] = a[i + 2]! * (1 - k) + tint.b * k;
+      }
+      cAttr.needsUpdate = true;
+    }
     const mesh = new THREE.Mesh(geometry, this.mergedHouseMat);
     mesh.name = lotId; // the per-lot incremental rebuild finds + disposes it by name (spec 084 S1)
     mesh.castShadow = true;
@@ -3693,6 +3770,7 @@ export class PlanetRenderer {
     this.shoreProps?.dispose();
     this.foam?.dispose();
     this.clouds?.dispose();
+    this.ambient?.dispose();
     this.clearRaceLayer();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement === this.container) {
