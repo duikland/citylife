@@ -2213,6 +2213,12 @@ export class ColonyRuntime {
   toggleTv(): void {
     this.setTv(!this.tv);
   }
+  /** Login-screen attract backdrop: the cinematic fly-around ONLY, without the global tv-mode body class
+   *  (that class hides the operator HUD, which must never bleed into the authed app). Used by the
+   *  pre-login CinematicBackdrop, which runs its own throwaway runtime behind the login card. */
+  setCinematicOnly(on: boolean): void {
+    this.renderer?.setCinematic(on);
+  }
   /** Toggle the city-plan zoning overlay (zone tints + plot flags). */
   toggleZones(): void {
     this.zonesVisible = !this.zonesVisible;
