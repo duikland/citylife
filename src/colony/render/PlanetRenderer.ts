@@ -386,7 +386,9 @@ export class PlanetRenderer {
     const t = s.terrain
     const N = t.size
     const hash = (n: number) => ((n * 2654435761) >>> 0) / 4294967296
-    const TREE_COLORS = [0x3f6b4a, 0x4f7d5a, 0x5b4a7d, 0x35633f]
+    // Spec 090 — a lusher, more varied alien canopy (bright + deep greens, a teal-green, the violet
+    // flora, a golden-green) so forests read with life and depth instead of a flat dark mass.
+    const TREE_COLORS = [0x55925b, 0x6fb069, 0x3f7d5e, 0x7a5aa8, 0x8fb557, 0x356b46]
     // Cells the colony has cleared: roads, buildings and worksites (each with a one-cell verge), plus the civic core.
     const cleared = new Set<number>()
     const mark = (cx: number, cy: number, rad: number) => {
@@ -434,9 +436,9 @@ export class PlanetRenderer {
       const h1 = hash(i * 7 + 3)
       const h2 = hash(i * 13 + 5)
       const wy = Math.max(0, t.worldY(x, y))
-      const sc = 0.7 + h1 * 0.7
+      const sc = 0.72 + h1 * 0.9
       this.dummy.position.set(this.wx(x) + (h1 - 0.5) * 0.7, wy, this.wz(y) + (h2 - 0.5) * 0.7)
-      this.dummy.scale.set(sc, sc + h2 * 0.6, sc)
+      this.dummy.scale.set(sc, sc + h2 * 1.05, sc)
       this.dummy.rotation.set(0, h2 * Math.PI, 0)
       this.dummy.updateMatrix()
       mesh.setMatrixAt(n, this.dummy.matrix)
