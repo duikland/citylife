@@ -727,6 +727,25 @@ export class PlanetRenderer {
     const t = this.sim.state.terrain;
     if (mode === "biome") {
       out.setHex(BIOME_COLOR[t.biome[i] as Biome]);
+      // Spec 092 — richer terrain: break the flat per-biome fill on LAND with deterministic per-cell
+      // variation — a small brightness jitter, an elevation lift (higher ground catches more light), and
+      // a moisture tint (wetter greener, drier warmer) — so plains/forest read as living ground, not one
+      // flat colour. Water cells (under the ocean disc) stay flat.
+      if (t.elev[i]! >= COLONY.world.seaLevel && !t.water[i]) {
+        let h = (i * 2654435761) >>> 0;
+        h = (h ^ (h >>> 15)) >>> 0;
+        out.multiplyScalar(0.93 + (h / 4294967296) * 0.14); // ±7% brightness
+        const lift = (t.elev[i]! - COLONY.world.seaLevel) * 0.16;
+        out.r += lift;
+        out.g += lift;
+        out.b += lift;
+        const m = t.moisture[i]! - 0.5;
+        out.g += m * 0.05; // wetter → greener
+        out.r -= m * 0.03; // drier → warmer
+        out.r = Math.min(1, Math.max(0, out.r));
+        out.g = Math.min(1, Math.max(0, out.g));
+        out.b = Math.min(1, Math.max(0, out.b));
+      }
     } else if (mode === "buildable") {
       const b = t.buildable[i]!;
       if (t.water[i] || t.elev[i]! < COLONY.world.seaLevel)
