@@ -9,6 +9,7 @@
 // Example (a 6x5 home: living, bedroom and patio, door facing the street to the south):
 //   house{w:6 d:5 wallH:2 door:s} room{kind:living x:0 y:0 w:4 d:3 win:1} room{kind:bedroom x:4 y:0 w:2 d:3 win:1} room{kind:patio x:0 y:3 w:6 d:2 win:0}
 import type { DoorDir } from "./voxelHouse";
+import { FURNITURE_KINDS, type FurnitureKind } from "./furniture";
 
 export type BlueprintScript = string;
 export type RoomKind = "living" | "bedroom" | "garage" | "patio" | "pool";
@@ -28,13 +29,29 @@ export interface Room {
   w: number;
   d: number;
   win: boolean;
+  /** Storey the room sits on (0 = ground). Spec 088 Slice B — multi-level floor plans. Optional and
+   *  absent when 0 so every single-storey script round-trips byte-identically. Capped at storeys-1. */
+  z?: number;
 }
+/** A piece of authored furniture placed inside the house (spec 088). x/y is the blueprint cell it sits
+ *  in (scaled onto the plot like rooms); rot is a quarter-turn clockwise (0..3); z is the storey it sits
+ *  on (0 = ground, Slice B). z is absent when 0 so ground-floor scripts round-trip byte-identically. */
+export interface FurnitureItem {
+  kind: FurnitureKind;
+  x: number;
+  y: number;
+  rot: number;
+  z?: number;
+}
+/** The most furniture a single house may carry — bounds a bot-authored script and keeps the editor sane. */
+export const FURNITURE_ITEM_CAP = 48;
 export interface ParsedBlueprint {
   w: number;
   d: number;
   wallH: number;
   doorDir: DoorDir;
   rooms: Room[];
+  items: FurnitureItem[];
 }
 export interface ValidationResult {
   ok: boolean;
@@ -71,6 +88,16 @@ function intField(
   return n;
 }
 
+/** Like intField but returns a default when the key is absent (the value, if present, must be an int). */
+function optIntField(
+  fields: Record<string, string>,
+  key: string,
+  ctx: string,
+  fallback: number,
+): number {
+  return fields[key] === undefined ? fallback : intField(fields, key, ctx);
+}
+
 /** Parse a blueprint script into a typed ParsedBlueprint. Throws a descriptive Error on malformed input. */
 export function parseBlueprint(script: BlueprintScript): ParsedBlueprint {
   if (typeof script !== "string")
@@ -96,16 +123,38 @@ export function parseBlueprint(script: BlueprintScript): ParsedBlueprint {
       throw new Error(
         `blueprint: room kind must be one of ${ROOM_KINDS.join(" ")}, got ${JSON.stringify(rf["kind"])}`,
       );
-    rooms.push({
+    const room: Room = {
       kind,
       x: intField(rf, "x", "room"),
       y: intField(rf, "y", "room"),
       w: intField(rf, "w", "room"),
       d: intField(rf, "d", "room"),
       win: intField(rf, "win", "room") !== 0,
-    });
+    };
+    // Spec 088 Slice B — only attach z when the script names a storey, so a ground-floor room keeps the
+    // exact pre-storey shape ({kind,x,y,w,d,win}) and serialises back identically.
+    if (rf["z"] !== undefined) room.z = intField(rf, "z", "room");
+    rooms.push(room);
   }
-  return { w, d, wallH, doorDir, rooms };
+  const items: FurnitureItem[] = [];
+  const itemRe = /item\{([^}]*)\}/g;
+  while ((m = itemRe.exec(script)) !== null) {
+    const f = parseFields(m[1]!);
+    const kind = f["kind"] as FurnitureKind;
+    if (!FURNITURE_KINDS.includes(kind))
+      throw new Error(
+        `blueprint: furniture kind must be one of ${FURNITURE_KINDS.join(" ")}, got ${JSON.stringify(f["kind"])}`,
+      );
+    const item: FurnitureItem = {
+      kind,
+      x: intField(f, "x", "item"),
+      y: intField(f, "y", "item"),
+      rot: optIntField(f, "rot", "item", 0),
+    };
+    if (f["z"] !== undefined) item.z = intField(f, "z", "item");
+    items.push(item);
+  }
+  return { w, d, wallH, doorDir, rooms, items };
 }
 
 /** Serialise a ParsedBlueprint back to the canonical single-line script (lossless round-trip). */
@@ -113,9 +162,17 @@ export function blueprintToScript(p: ParsedBlueprint): BlueprintScript {
   const head = `house{w:${p.w} d:${p.d} wallH:${p.wallH} door:${p.doorDir}}`;
   const rooms = p.rooms.map(
     (r) =>
-      `room{kind:${r.kind} x:${r.x} y:${r.y} w:${r.w} d:${r.d} win:${r.win ? 1 : 0}}`,
+      `room{kind:${r.kind} x:${r.x} y:${r.y} w:${r.w} d:${r.d} win:${r.win ? 1 : 0}${
+        r.z ? ` z:${r.z}` : ""
+      }}`,
   );
-  return [head, ...rooms].join(" ");
+  const items = (p.items ?? []).map(
+    (f) =>
+      `item{kind:${f.kind} x:${f.x} y:${f.y} rot:${f.rot}${
+        f.z ? ` z:${f.z}` : ""
+      }}`,
+  );
+  return [head, ...rooms, ...items].join(" ");
 }
 
 /** Does any room touch the house edge the door faces, so the house can actually be entered? */
@@ -169,11 +226,31 @@ export function validateBlueprint(script: BlueprintScript): ValidationResult {
   if (p.w > 24 || p.d > 24) errors.push("house w and d are capped at 24 cells");
   if (p.wallH > 3) errors.push("house wallH is capped at 3 storeys");
   if (p.rooms.length > 16) errors.push("a house is capped at 16 rooms");
+  // Spec 088 Slice B — storeys a design may use is the clamped wall height; a room or item placed above
+  // the top floor has nowhere to stand, so it is rejected (the compiler also clamps, but the validator
+  // surfaces it to the builder before Accept).
+  const storeys = Math.max(1, Math.min(3, p.wallH));
   p.rooms.forEach((r, i) => {
     if (r.w <= 0 || r.d <= 0)
       errors.push(`room ${i} (${r.kind}) must have positive w and d`);
     if (r.x < 0 || r.y < 0 || r.x + r.w > p.w || r.y + r.d > p.d)
       errors.push(`room ${i} (${r.kind}) escapes the house bounds`);
+    if (r.z !== undefined && (r.z < 0 || r.z >= storeys))
+      errors.push(
+        `room ${i} (${r.kind}) storey ${r.z} is outside 0..${storeys - 1}`,
+      );
+  });
+  if (p.items.length > FURNITURE_ITEM_CAP)
+    errors.push(`a house is capped at ${FURNITURE_ITEM_CAP} furniture items`);
+  p.items.forEach((f, i) => {
+    if (f.x < 0 || f.y < 0 || f.x >= p.w || f.y >= p.d)
+      errors.push(`furniture ${i} (${f.kind}) sits outside the house`);
+    if (f.rot < 0 || f.rot > 3)
+      errors.push(`furniture ${i} (${f.kind}) rot must be 0..3`);
+    if (f.z !== undefined && (f.z < 0 || f.z >= storeys))
+      errors.push(
+        `furniture ${i} (${f.kind}) storey ${f.z} is outside 0..${storeys - 1}`,
+      );
   });
   if (p.rooms.length === 0) errors.push("a house needs at least one room");
   else if (!roomTouchesDoorEdge(p))

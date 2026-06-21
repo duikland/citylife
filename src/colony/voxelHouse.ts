@@ -34,7 +34,18 @@ export type BlockKind =
   | "water"
   | "tile"
   | "trim"
-  | "chimney";
+  | "chimney"
+  // Authored furniture (spec 088) — pieces the blueprint can place inside a house via item{...}.
+  | "sofa"
+  | "rug"
+  | "lamp"
+  | "plant"
+  | "desk"
+  | "shelf"
+  | "counter"
+  | "stove"
+  // Multi-level floor plans (spec 088 Slice B) — a stair tread connecting one storey to the next.
+  | "stair";
 export type DoorDir = "n" | "s" | "e" | "w";
 
 export interface Block {
@@ -167,4 +178,15 @@ export const BLOCK_COLOR: Record<BlockKind, number> = {
   tile: 0xc2b59b,
   trim: 0xe8e0d0,
   chimney: 0x7a4030,
+  // Authored furniture (spec 088): warm, distinct tints so a furnished interior reads at a glance.
+  sofa: 0x4a6d9e,
+  rug: 0xb24a52,
+  lamp: 0xffe1a6,
+  plant: 0x47a14e,
+  desk: 0x7c5a34,
+  shelf: 0x6a4a2c,
+  counter: 0xcdbfa3,
+  stove: 0x44464d,
+  // Multi-level (spec 088 Slice B): a warm timber stair tread, distinct from the grey stone "step".
+  stair: 0x9a7846,
 };

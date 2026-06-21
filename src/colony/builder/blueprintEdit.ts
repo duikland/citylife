@@ -3,13 +3,25 @@
 // ParsedBlueprint out, always clamped so the design stays inside the plot and never degenerate. Pure +
 // deterministic (no DOM, no clock, no randomness), so the whole edit grammar is unit-testable in node
 // and a bot driving the UI gets exactly the same semantics as a human clicking it.
-import type { ParsedBlueprint, Room, RoomKind } from "../blueprintScript";
+import {
+  FURNITURE_ITEM_CAP,
+  type FurnitureItem,
+  type ParsedBlueprint,
+  type Room,
+  type RoomKind,
+} from "../blueprintScript";
+import type { FurnitureKind } from "../furniture";
 import type { DoorDir } from "../voxelHouse";
 
 const DOOR_ORDER: readonly DoorDir[] = ["n", "e", "s", "w"];
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/** The top storey index a design may use — the compiler clamps wallH to 1..3 storeys (spec 088 B). */
+export function maxStorey(p: ParsedBlueprint): number {
+  return clamp(Math.round(p.wallH), 1, 3) - 1;
 }
 
 /** A fresh starter design for a w x d plot: a living room across the front two-thirds and a bedroom
@@ -27,23 +39,29 @@ export function defaultDesign(w: number, d: number): ParsedBlueprint {
       { kind: "living", x: 0, y: 0, w: livingW, d: D, win: true },
       { kind: "bedroom", x: livingW, y: 0, w: W - livingW, d: D, win: true },
     ],
+    items: [],
   };
 }
 
 /** Add a room of the given kind. It spawns as a small rect in the first spot where it stays in bounds
  *  (scanning row-major), so repeated adds tile predictably; the design may overlap other rooms — the
  *  validator + the human/bot resolve that by moving it. */
-export function addRoom(p: ParsedBlueprint, kind: RoomKind): ParsedBlueprint {
+export function addRoom(
+  p: ParsedBlueprint,
+  kind: RoomKind,
+  storey = 0,
+): ParsedBlueprint {
   // Spec 084 S4 — on a big estate footprint a fresh 2x2 room reads as a closet; spawn 3x3 there.
   const size = Math.max(p.w, p.d) >= 12 ? 3 : 2;
   const rw = clamp(size, 1, p.w);
   const rd = clamp(size, 1, p.d);
+  const z = clamp(Math.round(storey), 0, maxStorey(p));
   let x = 0,
     y = 0;
-  // prefer a spot not exactly on top of an existing room origin
+  // prefer a spot not on top of an existing room origin ON THE SAME STOREY (rooms stack across storeys)
   outer: for (let yy = 0; yy + rd <= p.d; yy++) {
     for (let xx = 0; xx + rw <= p.w; xx++) {
-      if (!p.rooms.some((r) => r.x === xx && r.y === yy)) {
+      if (!p.rooms.some((r) => r.x === xx && r.y === yy && (r.z ?? 0) === z)) {
         x = xx;
         y = yy;
         break outer;
@@ -58,7 +76,35 @@ export function addRoom(p: ParsedBlueprint, kind: RoomKind): ParsedBlueprint {
     d: rd,
     win: kind !== "pool" && kind !== "patio",
   };
+  if (z > 0) room.z = z;
   return { ...p, rooms: [...p.rooms, room] };
+}
+
+/** Move room i to a different storey, clamped to 0..maxStorey. z is dropped when it lands on the ground
+ *  so the room serialises back to its bare single-level form. */
+export function setRoomStorey(
+  p: ParsedBlueprint,
+  i: number,
+  z: number,
+): ParsedBlueprint {
+  const r = p.rooms[i];
+  if (!r) return p;
+  const nz = clamp(Math.round(z), 0, maxStorey(p));
+  const moved: Room = { ...r };
+  if (nz > 0) moved.z = nz;
+  else delete moved.z;
+  return { ...p, rooms: p.rooms.map((q, k) => (k === i ? moved : q)) };
+}
+
+/** Raise/lower room i by one storey (dz = +1 up, -1 down), clamped to the design's storey range. */
+export function moveRoomStorey(
+  p: ParsedBlueprint,
+  i: number,
+  dz: number,
+): ParsedBlueprint {
+  const r = p.rooms[i];
+  if (!r) return p;
+  return setRoomStorey(p, i, (r.z ?? 0) + dz);
 }
 
 /** Remove room i (no-op when out of range). */
@@ -128,7 +174,147 @@ export function cycleDoor(p: ParsedBlueprint): ParsedBlueprint {
   return { ...p, doorDir: DOOR_ORDER[(i + 1) % DOOR_ORDER.length]! };
 }
 
-/** Set the wall height (storeys), clamped to the compiler's 1..3 range. */
+/** Set the wall height (storeys), clamped to the compiler's 1..3 range. Lowering the wall RE-HOMES any
+ *  room or furniture stranded above the new top floor down onto it (dropping z on the ground), so the
+ *  design always stays valid and Acceptable — a clamp-to-valid op a bot or a human can call blindly. */
 export function setWallH(p: ParsedBlueprint, h: number): ParsedBlueprint {
-  return { ...p, wallH: clamp(Math.round(h), 1, 3) };
+  const wallH = clamp(Math.round(h), 1, 3);
+  const top = wallH - 1; // the new top storey index
+  const rehome = <T extends { z?: number }>(o: T): T => {
+    if ((o.z ?? 0) <= top) return o;
+    const c: T = { ...o };
+    if (top > 0) c.z = top;
+    else delete c.z;
+    return c;
+  };
+  return {
+    ...p,
+    wallH,
+    rooms: p.rooms.map(rehome),
+    items: (p.items ?? []).map(rehome),
+  };
+}
+
+// ── Furniture (spec 088) ──────────────────────────────────────────────────────
+// Pure ops for placing authored furniture in the floor plan. Items live in blueprint-cell coordinates
+// (the same grid as rooms), default rotation 0; the compiler scales and stamps them onto the plot.
+
+/** Place a piece of furniture, centred-ish in the plot in the first reasonably free cell. Capped so a
+ *  runaway placement loop can never blow past the validator's furniture cap. */
+/** The first cell no furniture already occupies on storey `z` (row-major), defaulting to the plot
+ *  centre when every cell is taken. Pure — the spot addItem and the HUD auto-placer drop a new piece. */
+export function freeItemCell(
+  p: ParsedBlueprint,
+  storey = 0,
+): { x: number; y: number } {
+  const items = p.items ?? [];
+  const z = clamp(Math.round(storey), 0, maxStorey(p));
+  for (let yy = 0; yy < p.d; yy++)
+    for (let xx = 0; xx < p.w; xx++)
+      if (!items.some((f) => f.x === xx && f.y === yy && (f.z ?? 0) === z))
+        return { x: xx, y: yy };
+  return { x: Math.floor(p.w / 2), y: Math.floor(p.d / 2) };
+}
+
+export function addItem(
+  p: ParsedBlueprint,
+  kind: FurnitureKind,
+  storey = 0,
+): ParsedBlueprint {
+  const items = p.items ?? [];
+  if (items.length >= FURNITURE_ITEM_CAP) return p;
+  const z = clamp(Math.round(storey), 0, maxStorey(p));
+  // Prefer a cell no other piece already occupies ON THE SAME STOREY, scanning row-major.
+  const { x, y } = freeItemCell(p, z);
+  const item: FurnitureItem = { kind, x, y, rot: 0 };
+  if (z > 0) item.z = z;
+  return { ...p, items: [...items, item] };
+}
+
+/** Move furniture item i to a different storey, clamped to 0..maxStorey; z is dropped on the ground. */
+export function setItemStorey(
+  p: ParsedBlueprint,
+  i: number,
+  z: number,
+): ParsedBlueprint {
+  const items = p.items ?? [];
+  const f = items[i];
+  if (!f) return p;
+  const nz = clamp(Math.round(z), 0, maxStorey(p));
+  const moved: FurnitureItem = { ...f };
+  if (nz > 0) moved.z = nz;
+  else delete moved.z;
+  return { ...p, items: items.map((q, k) => (k === i ? moved : q)) };
+}
+
+/** Raise/lower furniture item i by one storey (dz = +1 up, -1 down), clamped to the storey range. */
+export function moveItemStorey(
+  p: ParsedBlueprint,
+  i: number,
+  dz: number,
+): ParsedBlueprint {
+  const items = p.items ?? [];
+  const f = items[i];
+  if (!f) return p;
+  return setItemStorey(p, i, (f.z ?? 0) + dz);
+}
+
+/** Remove furniture item i (no-op when out of range). */
+export function removeItem(p: ParsedBlueprint, i: number): ParsedBlueprint {
+  const items = p.items ?? [];
+  if (i < 0 || i >= items.length) return p;
+  return { ...p, items: items.filter((_, k) => k !== i) };
+}
+
+/** Move furniture item i by (dx, dy) cells, clamped to the house footprint. */
+export function moveItem(
+  p: ParsedBlueprint,
+  i: number,
+  dx: number,
+  dy: number,
+): ParsedBlueprint {
+  const items = p.items ?? [];
+  const f = items[i];
+  if (!f) return p;
+  const moved: FurnitureItem = {
+    ...f,
+    x: clamp(f.x + dx, 0, p.w - 1),
+    y: clamp(f.y + dy, 0, p.d - 1),
+  };
+  return { ...p, items: items.map((q, k) => (k === i ? moved : q)) };
+}
+
+/** Rotate furniture item i a quarter-turn clockwise (0 -> 1 -> 2 -> 3 -> 0). */
+export function rotateItem(p: ParsedBlueprint, i: number): ParsedBlueprint {
+  const items = p.items ?? [];
+  const f = items[i];
+  if (!f) return p;
+  const turned: FurnitureItem = { ...f, rot: (f.rot + 1) % 4 };
+  return { ...p, items: items.map((q, k) => (k === i ? turned : q)) };
+}
+
+/** Place a piece of furniture at an EXACT cell, rotation and storey — clamped into the plot footprint
+ *  and the design's storeys, rotation normalised to 0..3. Respects the furniture cap (a no-op when the
+ *  design is already full, so a caller can detect "no room" by an unchanged item count). This is the
+ *  spec 088 Slice E primitive: a player drops a piece they OWN into their house at the spot they choose.
+ *  Pure + deterministic. */
+export function placeItemAt(
+  p: ParsedBlueprint,
+  kind: FurnitureKind,
+  x: number,
+  y: number,
+  rot = 0,
+  storey = 0,
+): ParsedBlueprint {
+  const items = p.items ?? [];
+  if (items.length >= FURNITURE_ITEM_CAP) return p;
+  const item: FurnitureItem = {
+    kind,
+    x: clamp(Math.round(x), 0, p.w - 1),
+    y: clamp(Math.round(y), 0, p.d - 1),
+    rot: ((Math.round(rot) % 4) + 4) % 4,
+  };
+  const z = clamp(Math.round(storey), 0, maxStorey(p));
+  if (z > 0) item.z = z;
+  return { ...p, items: [...items, item] };
 }

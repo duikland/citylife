@@ -6,10 +6,74 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
 
 ---
 
+## 0. LATEST STATE (2026-06-21) — supersedes stale branch info below
+
+- **Main is at `0.4.0`** (`deb8355`, PR #66). The **player-onboarding epic is MERGED** (citylife
+  #65 idle-cinematic login, #67 KOOKER-as-Builder + per-player data isolation; kooker-service-user
+  #142 `CITYLIFE_PLAYER` role; kooker-web #362 create+fund 750 KCO+telegram bot). Still pending
+  (operator): seed the `system_cl` KCO reserve; decide on the accounts-lineup fix (first-login player
+  provisioning keyed by the kooker `userId`).
+- **Active branch: `feat/citylife-builder-expansion`** (off `main`) — the **house-builder expansion
+  epic** (/loop). Rolling **PR #68**. A 6-slice plan (see `project_citylife_builder_expansion`
+  memory): **Slice A DONE** = author-able furniture in the blueprint DSL (`item{kind x y rot}` token,
+  `furniture.ts` 11-piece catalog, 8 new furniture BlockKinds, `buildFurnitureItems` compiler stamp,
+  builder furniture palette). **Slice B DONE (2026-06-21, commit `32b7419`)** = multi-level floor
+  plans: optional storey `z` on room{}/item{} (parsed-when-present, serialised-when-nonzero → existing
+  scripts byte-identical), **content-driven** inter-storey floors + a stacked stairwell (only under
+  upper rooms/furniture, so an estate stays under the 60k budget), per-storey dividers, new `stair`
+  BlockKind, editor storey selector + per-floor 2D ghosting + floor ▲/▼ (all `data-build-action`),
+  `setWallH` re-homes stranded content. `tests/multiLevel.test.ts` (21 tests), **790 green**, tsc
+  clean; verified via tests not the 48px preview. Multi-agent adversarial review caught+fixed 3 issues
+  pre-commit. Spec `docs/specs/088-builder-expansion.md`. **Slice C DONE (2026-06-21, commit `86f5939`)** =
+  furniture inventory store `src/colony/bot/furnitureStore.ts` (per-player `OwnedFurniture` keyed by
+  citizenId; two-layer local `citylife.furniture.v1` + best-effort `/kooker/api/v1/citylife/furniture`
+  as the player, mirroring `blueprintStore`; pure add/remove/merge/dedupe ops; isPublicSafe-screened;
+  id recomputed from kind+name so a tampered id cannot spoof). `tests/furnitureStore.test.ts` (13),
+  **803 green**, tsc clean. The kooker-service-user backend it syncs to is **PR #144** (consolidated
+  the old CX-1/CX-2 stores; #139/#140 closed). **Slice D economic core DONE (2026-06-21, commit `60e64a8`)** = furniture studio buy: `furnitureShop.ts`
+  (pure ₭ price table + studio account), `ledgerSync.ts` `furniture_purchase` move (+ `furniturePurchaseBody`
+  FURNITURE_PURCHASE, ref keyed on a lifetime `nextPurchaseSeq`), `runtime.buyFurniture(citizenId,kind,name)`
+  mirroring `buyCommercialShop` (gate→ledgerPost citizen/studio→record inventory→mirror→kbPost). 2 HIGH
+  review bugs fixed (blank-name free furniture; mirror-ref collision on capped qty). `tests/furnitureShop.test.ts`
+  (10), **813 green**. REMAINING for D: the design-studio UI (pick kind/name + buy button, `furniture_studio`
+  business). **Slice E DONE (2026-06-21, commit `c6505e6`)** = place owned furniture into a house:
+  `blueprintEdit.placeItemAt` (pure: place at exact clamped cell/rot/storey, cap-respecting) +
+  `runtime.placeFurnitureFromInventory(citizenId,lotId,itemId,x,y,rot?,z?)` (own-piece + own-lot gated →
+  append to lot blueprint → rebuild via applyBlueprint → consume via removeOwned + best-effort backend).
+  `tests/placeFurniture.test.ts` (8), **821 green**, adversarial review found 0 defects. Known cosmetic
+  for the UI pass: each placement posts a Kookerbook "redesigned" event (N pieces → N posts). **Slice F CORE DONE (2026-06-21, commit `dc69156`)** = Kookerbook furniture marketplace:
+  `src/colony/bot/furnitureMarket.ts` (two-layer public listing board, mirrors furnitureStore; listing
+  `{id,sellerCitizenId,kind,name,price}`, id embeds ownedFurnitureId; isPublicSafe-screened both ways,
+  tamper-proof id, cap 256, backend `/kooker/api/v1/citylife/furniture-market`) + runtime
+  `listFurnitureForSale` / `unlistFurniture` / `marketListings` / `buyFromMarket` (reuses buyFurniture).
+  `tests/furnitureMarket.test.ts` (12), **833 green**, adversarial review 0 defects.
+  **ALL SIX BACKEND SLICES A–F DONE.** UI pass IN PROGRESS: **D furniture-studio panel DONE
+  (commit `0d867c2`)** — a "Furniture studio" HUD panel in `ColonyApp.tsx` (player-gated on
+  `operatorCitizenId`; wallet + owned inventory list + kind/name/Buy → `runtime.buyFurniture`; all
+  `data-build-action`; LIVE-VERIFIED on the dev server via preview tools — set `__colony.setOperatorName(
+  'Joe the Crab')` to reveal the player-gated panel). **EPIC COMPLETE (2026-06-21)** — E place-controls (`246b6bd`) + F marketplace UI (`f8324d3`) DONE.
+  E = "place ↪" per stack → `runtime.placeFurnitureAuto` (new `lotForCitizen` + pure `freeItemCell` →
+  `placeFurnitureFromInventory`). F = "list ⊕" per stack + a "Marketplace" board in the HUD studio panel
+  (`marketListings`/`buyFromMarket`/`unlistFurniture`); ALSO fixed the cosmetic placement event
+  (`applyBlueprint` optional `eventText`, placement passes null). **All six backend slices A–F + the full
+  UI (studio + place + marketplace) are DONE on rolling PR #68 (`duikindiesee/citylife`).** 841 tests
+  green, tsc clean, every slice adversarially reviewed + UI live-verified. Operator to review/merge #68.
+  Optional leftovers: a read-only market browse in `kookerbookMain.tsx`; a physical `furniture_studio`
+  shopfront in `businesses.ts`. Dev server: preview 'citylife' on :5188 (set `__colony.setOperatorName(
+  'Joe the Crab')` to reveal the player furniture panel).
+- **Note:** the builder's 3D preview pane renders ~48px wide in its 3-column layout — verify furniture
+  via tests (a quadCount render-path proof), the 2D plan markers, and the DSL textarea, not the canvas.
+- **Scheduler note (updated):** in-session `ScheduleWakeup` IS firing this session — the /loop runs on
+  it plus background-task completions.
+
+---
+
 ## 1. Where everything is
 
 - **CityLife game (your main lane):** `D:\infra\projects\citylife-visual` — a git **worktree** of the
-  public repo `github.com/duikland/citylife`, on branch **`mechanics/dev`**. Last commit `aa88495`.
+  public repo **`github.com/duikindiesee/citylife`** (transferred from `duikland/citylife` on 2026-06-20,
+  kept PUBLIC). The active branch is in §0 above. NOTE: `kooker-bot-spawner` is a DIFFERENT repo (the
+  Hermes bot spawner) — the builder-expansion PR is `duikindiesee/citylife` #68, not bot-spawner.
 - **Dev server:** `npm run dev` → http://localhost:5188 (binds 127.0.0.1; `?skipauth=1` bypasses the
   login gate in dev). Restart with `npm run dev` run in the background if it's dead.
 - **Stack:** React 19 + TypeScript + Vite + plain three.js. Tests: **vitest** (node env). Pure

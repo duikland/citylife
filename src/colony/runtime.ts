@@ -118,7 +118,13 @@ import {
   type Neighborhood,
   type Lot,
 } from "./neighborhood";
-import { validateBlueprint, parseBlueprint } from "./blueprintScript";
+import {
+  validateBlueprint,
+  parseBlueprint,
+  blueprintToScript,
+  FURNITURE_ITEM_CAP,
+} from "./blueprintScript";
+import { placeItemAt, freeItemCell } from "./builder/blueprintEdit";
 import {
   loadBlueprintsLocal,
   saveBlueprintLocal,
@@ -153,6 +159,27 @@ import {
   type LedgerMove,
   type SyncStatus,
 } from "./bot/ledgerSync";
+import { furniturePriceK, FURNITURE_SHOP_ACCOUNT } from "./furnitureShop";
+import type { FurnitureKind } from "./furniture";
+import {
+  ownedFurnitureId,
+  ownedBy,
+  recordOwnedLocal,
+  saveInventoryBackend,
+  nextPurchaseSeq,
+  loadInventoryLocal,
+  removeOwned,
+  saveInventoryLocal,
+} from "./bot/furnitureStore";
+import {
+  loadMarketLocal,
+  saveMarketLocal,
+  addListing,
+  removeListing,
+  allListings,
+  saveMarketBackend,
+  type FurnitureListing,
+} from "./bot/furnitureMarket";
 import {
   makeCommercialDistrict,
   type CommercialDistrict,
@@ -1666,6 +1693,121 @@ export class ColonyRuntime {
     return this.buyCommercialShop(buyer.id, shop.id) ? buyer.id : null;
   }
 
+  /** Spec 088 Slice D — BUY A FURNITURE PIECE from the studio: a player designs a piece (a catalog kind
+   *  plus their own name) and purchases it with their ₭ wallet. Gated on funds; the price moves citizen
+   *  -> the studio till on the in-game ledger and mirrors to the real kooker-service-ledger
+   *  (FURNITURE_PURCHASE), the piece is recorded into the player's inventory (furnitureStore, Slice C),
+   *  and a Kookerbook event posts. Returns false (no charge, no record) when the citizen is unknown, the
+   *  kind/name is unsafe, or funds fall short. The mirrored seq is the resulting inventory quantity, so
+   *  buying the same design twice never dedupes into one real-ledger transaction. */
+  buyFurniture(citizenId: string, kind: FurnitureKind, name?: string): boolean {
+    const c = this.citizens.byId(citizenId);
+    if (!c) return false;
+    const price = furniturePriceK(kind);
+    if (!Number.isFinite(price) || price <= 0) return false;
+    // Gate on the EXACT ledger balance (walletK rounds, which could let a fractional balance overspend).
+    if (ledgerBalance(this.sim.state.ledger, `citizen:${citizenId}`) < price)
+      return false;
+    // Normalise the name exactly as furnitureStore does (collapse whitespace; a blank name falls back to
+    // the kind) so the id we look up matches the id the store records under — otherwise a blank name
+    // would record a piece the lookup misses, banking it for free on a "failed" buy.
+    const label = (name ?? "").replace(/\s+/g, " ").trim() || kind;
+    // Record into the player's inventory first so an unsafe name (rejected by furnitureStore) blocks the
+    // sale before any money moves.
+    const inv = recordOwnedLocal(citizenId, kind, label, 1);
+    const itemId = ownedFurnitureId(kind, label);
+    const stack = ownedBy(inv, citizenId).find((s) => s.id === itemId);
+    if (!stack) return false; // furnitureStore screened it out (unsafe name / unknown kind) — no charge
+    const posted = ledgerPost(
+      this.sim.state.ledger,
+      `${c.displayName} buys a ${stack.name} from the furniture studio for ${price} ${CURRENCY}`,
+      [
+        { account: `citizen:${citizenId}`, amount: -price },
+        { account: FURNITURE_SHOP_ACCOUNT, amount: price },
+      ],
+    );
+    if (!posted) return false;
+    // The mirror seq is the LIFETIME purchase count (uncapped, persisted), not the held quantity (capped),
+    // so repeat buys of one design never collide on a real-ledger reference.
+    this.mirror({
+      kind: "furniture_purchase",
+      citizenId,
+      itemId,
+      seq: nextPurchaseSeq(citizenId, itemId),
+      amount: price,
+    });
+    // Best-effort: push the updated inventory to the backend as the player (never blocks the game).
+    void saveInventoryBackend(citizenId, ownedBy(inv, citizenId)).catch(() => {});
+    this.kbPost(
+      citizenId,
+      "event",
+      `Bought a ${stack.name} from the furniture studio for ${price} city coin.`,
+    );
+    this.emit();
+    return true;
+  }
+
+  /** Spec 088 Slice F — LIST a furniture design on the Kookerbook marketplace: a seller advertises a
+   *  design they OWN (furnitureStore inventory) on the public board at the studio price, so others can
+   *  browse and buy their own copy. Returns false when the seller does not own the design or the name is
+   *  unsafe (screened by the board). One listing per seller+design; re-listing refreshes the price. */
+  listFurnitureForSale(
+    citizenId: string,
+    kind: FurnitureKind,
+    name: string,
+  ): boolean {
+    const itemId = ownedFurnitureId(kind, name);
+    const stack = ownedBy(loadInventoryLocal(), citizenId).find(
+      (s) => s.id === itemId,
+    );
+    if (!stack) return false; // you can only list a design you own
+    const before = loadMarketLocal();
+    const next = addListing(
+      before,
+      citizenId,
+      stack.kind,
+      stack.name,
+      furniturePriceK(stack.kind),
+    );
+    if (next === before) return false; // screened out (unsafe) or the board is full
+    saveMarketLocal(next);
+    void saveMarketBackend(citizenId, next).catch(() => {});
+    this.kbPost(
+      citizenId,
+      "event",
+      `Listed a ${stack.name} on the marketplace for ${furniturePriceK(stack.kind)} city coin.`,
+    );
+    this.emit();
+    return true;
+  }
+
+  /** Spec 088 Slice F — UNLIST: a seller takes their own listing off the board. Only the listing's owner
+   *  may remove it; an unknown id or another seller's listing is a no-op (returns false). */
+  unlistFurniture(citizenId: string, listingId: string): boolean {
+    const market = loadMarketLocal();
+    const listing = market.find((l) => l.id === listingId);
+    if (!listing || listing.sellerCitizenId !== citizenId) return false;
+    const next = removeListing(market, listingId);
+    saveMarketLocal(next);
+    void saveMarketBackend(citizenId, next).catch(() => {});
+    this.emit();
+    return true;
+  }
+
+  /** Spec 088 Slice F — the public marketplace board (already public-safe screened). */
+  marketListings(): FurnitureListing[] {
+    return allListings(loadMarketLocal());
+  }
+
+  /** Spec 088 Slice F — BUY from the marketplace: acquire your own copy of a listed design from the
+   *  studio (the classifieds reuse the studio buy, charging the buyer's wallet — the listing is an
+   *  advert and stays up). Returns false when the listing is gone or the buy is refused (funds, etc.). */
+  buyFromMarket(buyerId: string, listingId: string): boolean {
+    const listing = loadMarketLocal().find((l) => l.id === listingId);
+    if (!listing) return false;
+    return this.buyFurniture(buyerId, listing.kind, listing.name);
+  }
+
   /** The ₭ price of a plot: its buildable area + a waterfront premium (spec 085). Reserved founder
    *  plots are not for sale (Infinity). */
   plotPriceK(lot: Lot): number {
@@ -1857,7 +1999,11 @@ export class ColonyRuntime {
    *  AND the owning citizen, then raise the house (materials + labour gated — when the colony cannot
    *  afford it the blueprint stays stored and the Build button raises it later). Re-running on a built
    *  lot re-renders the house from the new script (the renderer keys its rebuild on the blueprint). */
-  applyBlueprint(lotId: string, script: string): boolean {
+  applyBlueprint(
+    lotId: string,
+    script: string,
+    eventText?: string | null,
+  ): boolean {
     const lot = this.neighborhood.lots.find((l) => l.id === lotId);
     if (!lot || !lot.ownerCitizenId) return false;
     if (!validateBlueprint(script).ok) return false;
@@ -1869,14 +2015,16 @@ export class ColonyRuntime {
     reserveParcelLand(this.sim.state, lot.driveway);
     const c = this.citizens.byId(lot.ownerCitizenId);
     if (c) c.blueprint = script;
-    // Spec 082 P2 — an accepted design becomes a timeline event on the owner's Kookerbook page.
-    this.kbPost(
-      lot.ownerCitizenId,
-      "event",
-      isRedesign
-        ? "Redesigned their home — a fresh blueprint is on file at the builder desk."
-        : "Designed their own home, blueprint filed and the build crew booked.",
-    );
+    // Spec 082 P2 — an accepted design becomes a timeline event on the owner's Kookerbook page. Callers
+    // may override the message, or pass null to skip it (spec 088 — furniture placement reuses this path
+    // but should not spam a "redesigned their home" post for every piece dropped in).
+    const eventMsg =
+      eventText === undefined
+        ? isRedesign
+          ? "Redesigned their home — a fresh blueprint is on file at the builder desk."
+          : "Designed their own home, blueprint filed and the build crew booked."
+        : eventText;
+    if (eventMsg) this.kbPost(lot.ownerCitizenId, "event", eventMsg);
     // Spec 077 P4.5 — persist the accepted design: locally always (reload-proof offline), and to the
     // citylife backend best-effort as the player (the cross-device copy; a 404 just means the
     // kooker-side endpoint has not shipped yet — never blocks the game).
@@ -1888,6 +2036,77 @@ export class ColonyRuntime {
     if (!lot.built) this.buildHouse(lotId); // best-effort; the stored blueprint survives a failed gate
     this.emit();
     return true;
+  }
+
+  /** Spec 088 Slice E — PLACE OWNED FURNITURE in your house: take a piece the player OWNS (from their
+   *  furnitureStore inventory) and drop it into their lot's blueprint at the chosen cell, rotation and
+   *  storey, rebuild the house from the new script (through the validated applyBlueprint path), and
+   *  consume one from inventory. You may only furnish a lot you own. Returns false — and consumes
+   *  nothing, builds nothing — when the player does not own the piece, the lot is not theirs, the design
+   *  is already full, or the resulting script fails validation. */
+  placeFurnitureFromInventory(
+    citizenId: string,
+    lotId: string,
+    itemId: string,
+    x: number,
+    y: number,
+    rot = 0,
+    z = 0,
+  ): boolean {
+    const inv = loadInventoryLocal();
+    const stack = ownedBy(inv, citizenId).find((s) => s.id === itemId);
+    if (!stack || stack.qty < 1) return false; // the player does not own this piece
+    const lot = this.neighborhood.lots.find((l) => l.id === lotId);
+    if (!lot || lot.ownerCitizenId !== citizenId) return false; // furnish only your own home
+    // Start from the lot's current design (or its default house if undesigned), keeping its door.
+    const doorDir = lot.blueprint
+      ? parseBlueprint(lot.blueprint).doorDir
+      : streetDoorDir(lot);
+    const base =
+      lot.blueprint ?? defaultBlueprint(lot.houseSeed, doorDir, lot.houseZone.w);
+    const p = parseBlueprint(base);
+    if ((p.items?.length ?? 0) >= FURNITURE_ITEM_CAP) return false; // full — consume nothing
+    const script = blueprintToScript(placeItemAt(p, stack.kind, x, y, rot, z));
+    // applyBlueprint validates, stores the design, rebuilds the house and persists it (local + backend).
+    // Pass null so placing a piece does not post a "redesigned their home" event for every drop.
+    if (!this.applyBlueprint(lotId, script, null)) return false;
+    // Consume one of the piece from inventory only once the placement actually took.
+    const inv2 = removeOwned(inv, citizenId, itemId, 1);
+    saveInventoryLocal(inv2);
+    void saveInventoryBackend(citizenId, ownedBy(inv2, citizenId)).catch(
+      () => {},
+    );
+    return true;
+  }
+
+  /** Spec 088 Slice E — the homestead lot a citizen owns (their home), or null. Public so the HUD can
+   *  target the player's own house when they place furniture. One home per citizen (assignLot is 1:1). */
+  lotForCitizen(citizenId: string): Lot | null {
+    return (
+      this.neighborhood.lots.find((l) => l.ownerCitizenId === citizenId) ?? null
+    );
+  }
+
+  /** Spec 088 Slice E — the HUD convenience: place an owned piece into the player's OWN house at an
+   *  auto-chosen free cell (precise placement stays in the builder). Finds their lot and a free cell,
+   *  then delegates to placeFurnitureFromInventory (which gates ownership, rebuilds and consumes one).
+   *  Returns false when the player owns no home or the placement is refused. */
+  placeFurnitureAuto(citizenId: string, itemId: string): boolean {
+    const lot = this.lotForCitizen(citizenId);
+    if (!lot) return false;
+    const base =
+      lot.blueprint ??
+      defaultBlueprint(lot.houseSeed, streetDoorDir(lot), lot.houseZone.w);
+    const cell = freeItemCell(parseBlueprint(base));
+    return this.placeFurnitureFromInventory(
+      citizenId,
+      lot.id,
+      itemId,
+      cell.x,
+      cell.y,
+      0,
+      0,
+    );
   }
 
   /** Spec 077 P4.5 — restore stored designs onto their lots: the local map immediately (so the houses

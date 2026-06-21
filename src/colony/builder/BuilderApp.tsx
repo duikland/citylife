@@ -28,7 +28,15 @@ import {
   setRoomKind,
   cycleDoor,
   setWallH,
+  addItem,
+  removeItem,
+  moveItem,
+  rotateItem,
+  maxStorey,
+  moveRoomStorey,
+  moveItemStorey,
 } from "./blueprintEdit";
+import { FURNITURE_CATALOG, FURNITURE_KINDS } from "../furniture";
 import { BuilderDesk } from "./BuilderDesk";
 
 const ROOM_COLOR: Record<RoomKind, string> = {
@@ -194,11 +202,24 @@ export function BuilderApp() {
     selRef.current = i;
     setSel(i);
   };
+  // Furniture (spec 088) has its own selection, parallel to the room selection. -1 = nothing selected.
+  const [selItem, setSelItem] = useState(-1);
+  const selItemRef = useRef(-1);
+  const selectItem = (i: number) => {
+    selItemRef.current = i;
+    setSelItem(i);
+  };
+  // Slice B — the storey the floor plan is currently editing. Add-room / add-furniture drop onto it and
+  // the 2D plan shows it solid while the other storeys ghost behind. Clamped to the design's storeys.
+  const [activeStorey, setActiveStorey] = useState(0);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const script = blueprintToScript(design);
   const validation = validateBlueprint(script);
   const selRoom = design.rooms[sel];
+  const selItemObj = design.items[selItem];
+  const maxZ = maxStorey(design); // top storey index (wallH-1, clamped 0..2)
+  const storey = Math.min(activeStorey, maxZ); // the active storey, never above the design's top floor
 
   /** Apply an edit as a FUNCTIONAL update so rapid clicks (a Playwright bot, a held key) each operate
    *  on the latest design instead of a stale render closure — without this, N fast clicks collapse to 1.
@@ -214,6 +235,24 @@ export function BuilderApp() {
         : Math.min(selRef.current, Math.max(0, next.rooms.length - 1));
       selRef.current = ns;
       setSel(ns);
+      return next;
+    });
+    setSavedAt(null);
+  };
+
+  /** Apply a FURNITURE edit, keeping the item selection on the latest design (same burst-safe pattern as
+   *  apply). selectLast points at the freshly added piece; otherwise the selection clamps into range. */
+  const applyItem = (
+    op: (p: ParsedBlueprint) => ParsedBlueprint,
+    selectLast = false,
+  ) => {
+    setDesign((prev) => {
+      const next = op(prev);
+      const ns = selectLast
+        ? next.items.length - 1
+        : Math.min(selItemRef.current, next.items.length - 1);
+      selItemRef.current = ns;
+      setSelItem(ns);
       return next;
     });
     setSavedAt(null);
@@ -345,37 +384,48 @@ export function BuilderApp() {
               strokeWidth={1}
             />
           ))}
-          {/* rooms */}
-          {design.rooms.map((r, i) => (
-            <g
-              key={i}
-              data-build-action={`select-room-${i}`}
-              onClick={() => select(i)}
-              style={{ cursor: "pointer" }}
-            >
-              <rect
-                x={r.x * CELL + 2}
-                y={r.y * CELL + 2}
-                width={r.w * CELL - 2}
-                height={r.d * CELL - 2}
-                fill={ROOM_COLOR[r.kind]}
-                fillOpacity={i === sel ? 0.85 : 0.45}
-                stroke={i === sel ? "#ffd76a" : "#46506a"}
-                strokeWidth={i === sel ? 2.5 : 1}
-                rx={3}
-              />
-              <text
-                x={r.x * CELL + 7}
-                y={r.y * CELL + 17}
-                fontSize={11}
-                fill="#0d1119"
-                fontWeight={700}
+          {/* rooms — solid + clickable on the active storey, ghosted on the others (Slice B) */}
+          {design.rooms.map((r, i) => {
+            const onStorey = (r.z ?? 0) === storey;
+            return (
+              <g
+                key={i}
+                data-build-action={onStorey ? `select-room-${i}` : undefined}
+                onClick={onStorey ? () => select(i) : undefined}
+                style={{
+                  cursor: onStorey ? "pointer" : "default",
+                  pointerEvents: onStorey ? "auto" : "none",
+                }}
               >
-                {r.kind}
-                {r.win ? " ⊞" : ""}
-              </text>
-            </g>
-          ))}
+                <rect
+                  x={r.x * CELL + 2}
+                  y={r.y * CELL + 2}
+                  width={r.w * CELL - 2}
+                  height={r.d * CELL - 2}
+                  fill={ROOM_COLOR[r.kind]}
+                  fillOpacity={!onStorey ? 0.12 : i === sel ? 0.85 : 0.45}
+                  stroke={
+                    !onStorey ? "#2c3852" : i === sel ? "#ffd76a" : "#46506a"
+                  }
+                  strokeWidth={i === sel && onStorey ? 2.5 : 1}
+                  strokeDasharray={onStorey ? undefined : "3 3"}
+                  rx={3}
+                />
+                {onStorey && (
+                  <text
+                    x={r.x * CELL + 7}
+                    y={r.y * CELL + 17}
+                    fontSize={11}
+                    fill="#0d1119"
+                    fontWeight={700}
+                  >
+                    {r.kind}
+                    {r.win ? " ⊞" : ""}
+                  </text>
+                )}
+              </g>
+            );
+          })}
           {/* door marker on the house edge */}
           {(() => {
             const mid = {
@@ -395,6 +445,43 @@ export function BuilderApp() {
               />
             );
           })()}
+          {/* furniture markers (spec 088): a glyph at the cell each piece sits in, click to select;
+              ghosted when the piece is on another storey (Slice B) */}
+          {design.items.map((f, i) => {
+            const cx = f.x * CELL + CELL / 2 + 1;
+            const cy = f.y * CELL + CELL / 2 + 1;
+            const onStorey = (f.z ?? 0) === storey;
+            return (
+              <g
+                key={`item-${i}`}
+                data-build-action={onStorey ? `select-item-${i}` : undefined}
+                onClick={onStorey ? () => selectItem(i) : undefined}
+                style={{
+                  cursor: onStorey ? "pointer" : "default",
+                  pointerEvents: onStorey ? "auto" : "none",
+                  opacity: onStorey ? 1 : 0.22,
+                }}
+              >
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={CELL * 0.36}
+                  fill="#0d1119"
+                  fillOpacity={0.85}
+                  stroke={i === selItem && onStorey ? "#ffd76a" : "#9fd0a0"}
+                  strokeWidth={i === selItem && onStorey ? 2.5 : 1.25}
+                />
+                <text
+                  x={cx}
+                  y={cy + CELL * 0.16}
+                  fontSize={CELL * 0.42}
+                  textAnchor="middle"
+                >
+                  {FURNITURE_CATALOG[f.kind].icon}
+                </text>
+              </g>
+            );
+          })}
         </svg>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <button
@@ -407,7 +494,11 @@ export function BuilderApp() {
           <button
             data-build-action="wall-down"
             style={btn}
-            onClick={() => apply((p) => setWallH(p, p.wallH - 1))}
+            onClick={() => {
+              // setWallH re-homes any stranded upper content; keep the active floor in range too.
+              apply((p) => setWallH(p, p.wallH - 1));
+              setActiveStorey((z) => Math.min(z, Math.max(0, design.wallH - 2)));
+            }}
           >
             − storey
           </button>
@@ -419,6 +510,36 @@ export function BuilderApp() {
             + storey
           </button>
         </div>
+        {/* storey selector (spec 088 Slice B) — pick which floor the plan edits; add-room / add-furniture
+            drop onto it and the 2D plan shows it solid while other storeys ghost behind. */}
+        {maxZ >= 1 && (
+          <div
+            data-build-area="storey-selector"
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ opacity: 0.7 }}>Editing floor:</span>
+            {Array.from({ length: maxZ + 1 }, (_, s) => (
+              <button
+                key={s}
+                data-build-action={`select-storey-${s}`}
+                style={{
+                  ...btn,
+                  background: s === storey ? "#2c4566" : "#1c2433",
+                  borderColor: s === storey ? "#ffd76a" : "#34415a",
+                  fontWeight: s === storey ? 700 : 400,
+                }}
+                onClick={() => setActiveStorey(s)}
+              >
+                {s === 0 ? "Ground" : `Floor ${s}`}
+              </button>
+            ))}
+          </div>
+        )}
         <div
           style={{
             display: "flex",
@@ -433,7 +554,7 @@ export function BuilderApp() {
               key={k}
               data-build-action={`add-room-${k}`}
               style={{ ...btn, borderColor: ROOM_COLOR[k] }}
-              onClick={() => apply((p) => addRoom(p, k), true)}
+              onClick={() => apply((p) => addRoom(p, k, storey), true)}
             >
               {k}
             </button>
@@ -449,7 +570,11 @@ export function BuilderApp() {
             }}
           >
             <span style={{ opacity: 0.7 }}>
-              Room {sel} ({selRoom.kind}):
+              Room {sel} ({selRoom.kind}
+              {maxZ >= 1
+                ? ` · ${(selRoom.z ?? 0) === 0 ? "ground" : `floor ${selRoom.z}`}`
+                : ""}
+              ):
             </span>
             <button
               data-build-action="move-left"
@@ -529,10 +654,147 @@ export function BuilderApp() {
                 </option>
               ))}
             </select>
+            {maxZ >= 1 && (
+              <>
+                <button
+                  data-build-action="room-floor-up"
+                  style={btn}
+                  title="move this room up a storey"
+                  onClick={() => {
+                    apply((p) => moveRoomStorey(p, selRef.current, 1));
+                    setActiveStorey(Math.min(maxZ, storey + 1));
+                  }}
+                >
+                  floor ▲
+                </button>
+                <button
+                  data-build-action="room-floor-down"
+                  style={btn}
+                  title="move this room down a storey"
+                  onClick={() => {
+                    apply((p) => moveRoomStorey(p, selRef.current, -1));
+                    setActiveStorey(Math.max(0, storey - 1));
+                  }}
+                >
+                  floor ▼
+                </button>
+              </>
+            )}
             <button
               data-build-action="delete-room"
               style={{ ...btn, color: "#e0584d" }}
               onClick={() => apply((p) => removeRoom(p, selRef.current))}
+            >
+              delete
+            </button>
+          </div>
+        )}
+        {/* furniture palette (spec 088) — place interior pieces; the 3D preview meshes them live */}
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            alignItems: "center",
+            borderTop: "1px solid #232c3f",
+            paddingTop: 8,
+          }}
+        >
+          <span style={{ opacity: 0.7 }}>Furniture:</span>
+          {FURNITURE_KINDS.map((k) => (
+            <button
+              key={k}
+              data-build-action={`add-item-${k}`}
+              title={FURNITURE_CATALOG[k].label}
+              style={{ ...btn, borderColor: "#3a6a4a" }}
+              onClick={() => applyItem((p) => addItem(p, k, storey), true)}
+            >
+              {FURNITURE_CATALOG[k].icon} {FURNITURE_CATALOG[k].label}
+            </button>
+          ))}
+        </div>
+        {selItemObj && (
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ opacity: 0.7 }}>
+              {FURNITURE_CATALOG[selItemObj.kind].icon} {selItemObj.kind} (cell{" "}
+              {selItemObj.x},{selItemObj.y}
+              {maxZ >= 1
+                ? ` · ${(selItemObj.z ?? 0) === 0 ? "ground" : `floor ${selItemObj.z}`}`
+                : ""}
+              ):
+            </span>
+            <button
+              data-build-action="move-item-left"
+              style={btn}
+              onClick={() => applyItem((p) => moveItem(p, selItemRef.current, -1, 0))}
+            >
+              ←
+            </button>
+            <button
+              data-build-action="move-item-right"
+              style={btn}
+              onClick={() => applyItem((p) => moveItem(p, selItemRef.current, 1, 0))}
+            >
+              →
+            </button>
+            <button
+              data-build-action="move-item-up"
+              style={btn}
+              onClick={() => applyItem((p) => moveItem(p, selItemRef.current, 0, -1))}
+            >
+              ↑
+            </button>
+            <button
+              data-build-action="move-item-down"
+              style={btn}
+              onClick={() => applyItem((p) => moveItem(p, selItemRef.current, 0, 1))}
+            >
+              ↓
+            </button>
+            <button
+              data-build-action="rotate-item"
+              style={btn}
+              onClick={() => applyItem((p) => rotateItem(p, selItemRef.current))}
+            >
+              rotate ↻ ({selItemObj.rot * 90}°)
+            </button>
+            {maxZ >= 1 && (
+              <>
+                <button
+                  data-build-action="item-floor-up"
+                  style={btn}
+                  title="move this piece up a storey"
+                  onClick={() => {
+                    applyItem((p) => moveItemStorey(p, selItemRef.current, 1));
+                    setActiveStorey(Math.min(maxZ, storey + 1));
+                  }}
+                >
+                  floor ▲
+                </button>
+                <button
+                  data-build-action="item-floor-down"
+                  style={btn}
+                  title="move this piece down a storey"
+                  onClick={() => {
+                    applyItem((p) => moveItemStorey(p, selItemRef.current, -1));
+                    setActiveStorey(Math.max(0, storey - 1));
+                  }}
+                >
+                  floor ▼
+                </button>
+              </>
+            )}
+            <button
+              data-build-action="delete-item"
+              style={{ ...btn, color: "#e0584d" }}
+              onClick={() => applyItem((p) => removeItem(p, selItemRef.current))}
             >
               delete
             </button>

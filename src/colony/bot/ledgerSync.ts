@@ -22,6 +22,7 @@ const TXNS_PATH = "/kooker/api/ledger/transactions";
 const APP_NAME = "citylife";
 const CURRENCY = "KCO";
 const LAND_OFFICE = "city_treasury"; // the in-game `land` account, mirrored as the city's treasury wallet
+const FURNITURE_SHOP = "furniture_shop"; // the studio's till (matches furnitureShop.FURNITURE_SHOP_ACCOUNT)
 const LS_QUEUE = "citylife.ledgersync.queue.v1";
 const LS_SYNCED = "citylife.ledgersync.synced.v1";
 const QUEUE_CAP = 500; // drop-oldest backstop if the player stays signed out for a very long time
@@ -35,6 +36,16 @@ export type LedgerMove =
       fromCitizenId: string;
       toCitizenId: string;
       lotId: string;
+      amount: number;
+    }
+  // Spec 088 Slice D — a furniture purchase: the player pays the studio. `seq` is the nth time this
+  // player has bought this design (the resulting inventory quantity), so repeat buys of the same piece
+  // each get a distinct, reload-stable reference instead of deduping into one.
+  | {
+      kind: "furniture_purchase";
+      citizenId: string;
+      itemId: string;
+      seq: number;
       amount: number;
     };
 
@@ -56,6 +67,8 @@ export function moveRef(move: LedgerMove): string {
   if (move.kind === "deposit") return `citylife:deposit:${move.citizenId}`;
   if (move.kind === "purchase")
     return `citylife:purchase:${move.citizenId}:${move.lotId}`;
+  if (move.kind === "furniture_purchase")
+    return `citylife:furniture:${move.citizenId}:${move.itemId}:${move.seq}`;
   return `citylife:build:${move.fromCitizenId}:${move.lotId}`;
 }
 
@@ -158,6 +171,35 @@ export function commissionBody(
   };
 }
 
+/** A furniture purchase: the player pays the studio (CREDIT the citizen, DEBIT the studio till). */
+export function furniturePurchaseBody(
+  playerUserId: string,
+  citizenId: string,
+  amount: number,
+  ref: string,
+): TxnBody {
+  return {
+    appName: APP_NAME,
+    transactionType: "FURNITURE_PURCHASE",
+    reference: ref,
+    initiatorId: playerUserId,
+    entries: [
+      {
+        ownerId: citizenId,
+        walletType: "DEFAULT",
+        entryType: "CREDIT",
+        amount,
+      },
+      {
+        ownerId: FURNITURE_SHOP,
+        walletType: "TREASURY",
+        entryType: "DEBIT",
+        amount,
+      },
+    ],
+  };
+}
+
 /** Decode the userId claim from a JWT WITHOUT verifying the signature (verification is the gateway's
  *  job; this only reads who the already-validated token belongs to). Mirrors authClient.jwtExpiresAt. */
 export function userIdFromToken(token: string): string | null {
@@ -185,6 +227,12 @@ function isLedgerMove(v: unknown): v is LedgerMove {
       typeof m["fromCitizenId"] === "string" &&
       typeof m["toCitizenId"] === "string" &&
       typeof m["lotId"] === "string"
+    );
+  if (m["kind"] === "furniture_purchase")
+    return (
+      typeof m["citizenId"] === "string" &&
+      typeof m["itemId"] === "string" &&
+      typeof m["seq"] === "number"
     );
   return false;
 }
@@ -329,6 +377,11 @@ export class LedgerSync {
       return {
         path: TXNS_PATH,
         body: purchaseBody(userId, move.citizenId, move.amount, ref),
+      };
+    if (move.kind === "furniture_purchase")
+      return {
+        path: TXNS_PATH,
+        body: furniturePurchaseBody(userId, move.citizenId, move.amount, ref),
       };
     return {
       path: TXNS_PATH,
