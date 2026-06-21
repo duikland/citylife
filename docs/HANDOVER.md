@@ -24,8 +24,13 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
   BlockKind, editor storey selector + per-floor 2D ghosting + floor ▲/▼ (all `data-build-action`),
   `setWallH` re-homes stranded content. `tests/multiLevel.test.ts` (21 tests), **790 green**, tsc
   clean; verified via tests not the 48px preview. Multi-agent adversarial review caught+fixed 3 issues
-  pre-commit. Spec `docs/specs/088-builder-expansion.md`. Queued: C furniture inventory store
-  (`furnitureStore.ts` two-layer like `kookerbookStore`), D furniture shop (design+buy+ledgerSync), E
+  pre-commit. Spec `docs/specs/088-builder-expansion.md`. **Slice C DONE (2026-06-21, commit `86f5939`)** =
+  furniture inventory store `src/colony/bot/furnitureStore.ts` (per-player `OwnedFurniture` keyed by
+  citizenId; two-layer local `citylife.furniture.v1` + best-effort `/kooker/api/v1/citylife/furniture`
+  as the player, mirroring `blueprintStore`; pure add/remove/merge/dedupe ops; isPublicSafe-screened;
+  id recomputed from kind+name so a tampered id cannot spoof). `tests/furnitureStore.test.ts` (13),
+  **803 green**, tsc clean. The kooker-service-user backend it syncs to is **PR #144** (consolidated
+  the old CX-1/CX-2 stores; #139/#140 closed). Queued: D furniture shop (design+buy+ledgerSync), E
   place-from-inventory, F Kookerbook marketplace tab.
 - **Note:** the builder's 3D preview pane renders ~48px wide in its 3-column layout — verify furniture
   via tests (a quadCount render-path proof), the 2D plan markers, and the DSL textarea, not the canvas.

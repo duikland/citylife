@@ -26,9 +26,7 @@ stamp the game, the builder preview and the Kookerbook card all mesh identically
   furniture `BlockKind`s + colours; `buildFurnitureItems` compiler stamp; pure `addItem/removeItem/
   moveItem/rotateItem`; builder furniture palette + 2D markers + controls. Ground floor only.
 - **B — multi-level floor plans** ✅ DONE (this slice). See the log below.
-- **C — furniture inventory store** (net-new): a `furnitureStore.ts` two-layer store like
-  `kookerbookStore` (localStorage `citylife.furniture.v1` + best-effort `/kooker/api/v1/...`), keyed
-  by citizenId, isPublicSafe-screened.
+- **C — furniture inventory store** ✅ DONE (this slice). See the log below.
 - **D — furniture shop**: a `furniture_studio` business; a design sub-app; `runtime.buyFurniture()`
   mirroring `buyCommercialShop`; a `furniture_purchase` ledger move synced to the real ledger.
 - **E — place owned furniture from inventory into your house**: an inventory item → a blueprint
@@ -92,6 +90,28 @@ renders ~48px wide so interiors can't be eyeballed there; Slice B is verified by
 (18 tests: DSL z round-trip + back-compat, storey-range validation, upper floor slab, stairwell z-span,
 per-storey furniture/flourishes, grid bounds, determinism, a quadCount render-path proof, and the editor
 storey ops) plus the 2D plan markers + the DSL textarea. 787 tests green, tsc clean.
+
+## Slice C — furniture inventory store (DONE)
+
+`src/colony/bot/furnitureStore.ts` — a per-player furniture inventory keyed by citizen id (the pieces a
+player has designed or bought), the foundation Slice D (buy), E (place) and F (marketplace) build on.
+
+- **Model** — `OwnedFurniture { id, kind, name, qty }`, `FurnitureInventory = Record<citizenId,
+  OwnedFurniture[]>`. The `id` is `${kind}:${nameSlug}`, recomputed from kind+name on every read, so the
+  same design dedupes and a tampered id can never spoof a stack. Caps: `FURNITURE_STACK_CAP` 99 per
+  stack, `FURNITURE_STACKS_CAP` 64 distinct designs per player.
+- **Pure ops** (node-testable, no DOM) — `addOwned` (append/increment), `removeOwned` (drop the stack at
+  zero and the citizen key when empty), `ownedBy`, `mergeInventories`, `ownedFurnitureId`.
+- **Two layers, fail-soft, mirroring `blueprintStore`** — LOCAL `localStorage` map `citylife.furniture.v1`;
+  BACKEND best-effort PUT/GET to `/kooker/api/v1/citylife/furniture` as the logged-in player (tolerates a
+  404 while the endpoint ships; backend wins per citizen on restore). The kooker-side store lives in
+  `kooker-service-user` (consolidated in PR #144 alongside blueprints/commercial/kookerbook).
+- **Safety** — every stack is `isPublicSafe`-screened (a custom label can never carry a brand word onto
+  the marketplace) and its kind must be a real catalog piece, on every read AND write.
+- `tests/furnitureStore.test.ts` (13 tests) covers dedup, caps, screening, the tamper/id-recompute
+  defence, immutability, the merge semantics and the local round-trip. 803 tests green, tsc clean. A
+  single-agent adversarial review found no high/medium defects; three low fixes folded in (sum duplicate
+  stacks, cap-after-sort, reject non-positive qty).
 
 ## Hard rules carried from the epic
 
