@@ -91,7 +91,9 @@ describe("compiler — multi-level structure", () => {
     // structure), so coverage is well over 90% rather than exactly 324.
     const inBedroom = (b: { x: number; y: number }) =>
       b.x >= N && b.x < 4 * N && b.y >= N && b.y < 4 * N;
-    expect(slab.filter(inBedroom).length).toBeGreaterThan(0.9 * (3 * N) * (3 * N));
+    expect(slab.filter(inBedroom).length).toBeGreaterThan(
+      0.9 * (3 * N) * (3 * N),
+    );
     // (the slab may also carry a small landing pad under the stairwell — that's expected, not asserted)
   });
 
@@ -116,8 +118,12 @@ describe("compiler — multi-level structure", () => {
   it("furniture placed on an upper storey stamps above the ground storey", () => {
     const ground = compile(`${GROUND_ONLY} item{kind:sofa x:2 y:2 rot:0}`);
     const upper = compile(`${GROUND_ONLY} item{kind:sofa x:2 y:2 rot:0 z:1}`);
-    const gz = Math.min(...ground.blocks.filter((b) => b.kind === "sofa").map((b) => b.z));
-    const uz = Math.min(...upper.blocks.filter((b) => b.kind === "sofa").map((b) => b.z));
+    const gz = Math.min(
+      ...ground.blocks.filter((b) => b.kind === "sofa").map((b) => b.z),
+    );
+    const uz = Math.min(
+      ...upper.blocks.filter((b) => b.kind === "sofa").map((b) => b.z),
+    );
     expect(gz).toBe(floorSub); // ground sofa rests on the ground slab
     expect(uz).toBe(floorSub + N); // upper sofa rests on the storey-1 floor
   });

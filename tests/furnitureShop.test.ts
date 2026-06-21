@@ -94,7 +94,9 @@ describe("furnitureShop — the real-ledger mirror", () => {
       seq,
       amount: 20,
     });
-    expect(moveRef(mk(1))).toBe("citylife:furniture:citizen_dax:sofa:cozy-couch:1");
+    expect(moveRef(mk(1))).toBe(
+      "citylife:furniture:citizen_dax:sofa:cozy-couch:1",
+    );
     expect(moveRef(mk(1))).toBe(moveRef(mk(1))); // stable
     expect(moveRef(mk(2))).not.toBe(moveRef(mk(1))); // a second buy is a distinct move
   });
@@ -176,7 +178,10 @@ describe("runtime.buyFurniture — design + buy (spec 088 Slice D)", () => {
     rt.buyFurniture(buyer, "lamp", "Reading Lamp"); // same design again
     const moves = spy.mock.calls
       .map((c) => c[0] as any)
-      .filter((m) => m.kind === "furniture_purchase" && m.itemId === "lamp:reading-lamp");
+      .filter(
+        (m) =>
+          m.kind === "furniture_purchase" && m.itemId === "lamp:reading-lamp",
+      );
     expect(moves.map((m) => m.seq)).toEqual([1, 2]); // distinct purchases, not deduped
     expect(rt.walletK(buyer)).toBeGreaterThanOrEqual(0);
   });

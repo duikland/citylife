@@ -51,7 +51,7 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
   (commit `0d867c2`)** — a "Furniture studio" HUD panel in `ColonyApp.tsx` (player-gated on
   `operatorCitizenId`; wallet + owned inventory list + kind/name/Buy → `runtime.buyFurniture`; all
   `data-build-action`; LIVE-VERIFIED on the dev server via preview tools — set `__colony.setOperatorName(
-  'Joe the Crab')` to reveal the player-gated panel). **EPIC COMPLETE (2026-06-21)** — E place-controls (`246b6bd`) + F marketplace UI (`f8324d3`) DONE.
+'Joe the Crab')` to reveal the player-gated panel). **EPIC COMPLETE (2026-06-21)** — E place-controls (`246b6bd`) + F marketplace UI (`f8324d3`) DONE.
   E = "place ↪" per stack → `runtime.placeFurnitureAuto` (new `lotForCitizen` + pure `freeItemCell` →
   `placeFurnitureFromInventory`). F = "list ⊕" per stack + a "Marketplace" board in the HUD studio panel
   (`marketListings`/`buyFromMarket`/`unlistFurniture`); ALSO fixed the cosmetic placement event
@@ -60,7 +60,7 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
   green, tsc clean, every slice adversarially reviewed + UI live-verified. Operator to review/merge #68.
   Optional leftovers: a read-only market browse in `kookerbookMain.tsx`; a physical `furniture_studio`
   shopfront in `businesses.ts`. Dev server: preview 'citylife' on :5188 (set `__colony.setOperatorName(
-  'Joe the Crab')` to reveal the player furniture panel).
+'Joe the Crab')` to reveal the player furniture panel).
 - **Note:** the builder's 3D preview pane renders ~48px wide in its 3-column layout — verify furniture
   via tests (a quadCount render-path proof), the 2D plan markers, and the DSL textarea, not the canvas.
 - **Scheduler note (updated):** in-session `ScheduleWakeup` IS firing this session — the /loop runs on

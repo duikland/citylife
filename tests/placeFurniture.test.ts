@@ -103,7 +103,8 @@ describe("freeItemCell — auto placement spot (pure)", () => {
   it("defaults to the plot centre when every cell on the storey is taken", () => {
     const items = [];
     for (let y = 0; y < 3; y++)
-      for (let x = 0; x < 3; x++) items.push({ kind: "lamp" as const, x, y, rot: 0 });
+      for (let x = 0; x < 3; x++)
+        items.push({ kind: "lamp" as const, x, y, rot: 0 });
     const p: ParsedBlueprint = { ...defaultDesign(3, 3), items };
     expect(freeItemCell(p)).toEqual({ x: 1, y: 1 });
   });
@@ -115,10 +116,11 @@ describe("runtime.placeFurnitureFromInventory (spec 088 Slice E)", () => {
   });
 
   /** A citizen who owns a built, blueprinted lot (the founders are crafted on boot). */
-  function ownerAndLot(rt: ColonyRuntime): { citizenId: string; lotId: string } {
-    const lot = rt.lots().find(
-      (l) => l.ownerCitizenId && l.blueprint,
-    )!;
+  function ownerAndLot(rt: ColonyRuntime): {
+    citizenId: string;
+    lotId: string;
+  } {
+    const lot = rt.lots().find((l) => l.ownerCitizenId && l.blueprint)!;
     return { citizenId: lot.ownerCitizenId!, lotId: lot.id };
   }
 
@@ -128,7 +130,13 @@ describe("runtime.placeFurnitureFromInventory (spec 088 Slice E)", () => {
     recordOwnedLocal(citizenId, "lamp", "Reading Lamp", 1);
 
     expect(
-      rt.placeFurnitureFromInventory(citizenId, lotId, "lamp:reading-lamp", 1, 1),
+      rt.placeFurnitureFromInventory(
+        citizenId,
+        lotId,
+        "lamp:reading-lamp",
+        1,
+        1,
+      ),
     ).toBe(true);
 
     // the blueprint now carries the item, and it compiles
@@ -159,9 +167,7 @@ describe("runtime.placeFurnitureFromInventory (spec 088 Slice E)", () => {
     expect(
       rt.placeFurnitureFromInventory(citizenId, lotId, "sofa:nope", 1, 1),
     ).toBe(false);
-    expect(rt.lots().find((l) => l.id === lotId)!.blueprint).toBe(
-      before,
-    );
+    expect(rt.lots().find((l) => l.id === lotId)!.blueprint).toBe(before);
   });
 
   it("lotForCitizen returns the citizen's home lot, null for a lotless citizen", () => {
@@ -177,9 +183,9 @@ describe("runtime.placeFurnitureFromInventory (spec 088 Slice E)", () => {
     recordOwnedLocal(citizenId, "lamp", "Desk Lamp", 1);
     expect(rt.placeFurnitureAuto(citizenId, "lamp:desk-lamp")).toBe(true);
     const lot = rt.lotForCitizen(citizenId)!;
-    expect(parseBlueprint(lot.blueprint!).items.some((f) => f.kind === "lamp")).toBe(
-      true,
-    );
+    expect(
+      parseBlueprint(lot.blueprint!).items.some((f) => f.kind === "lamp"),
+    ).toBe(true);
     expect(loadInventoryLocal()[citizenId]).toBeUndefined(); // consumed
   });
 
@@ -219,12 +225,18 @@ describe("runtime.placeFurnitureFromInventory (spec 088 Slice E)", () => {
     const rt = new ColonyRuntime(42);
     const { citizenId } = ownerAndLot(rt);
     // a different owner's lot
-    const otherLot = rt.lots().find(
-      (l) => l.ownerCitizenId && l.ownerCitizenId !== citizenId,
-    )!;
+    const otherLot = rt
+      .lots()
+      .find((l) => l.ownerCitizenId && l.ownerCitizenId !== citizenId)!;
     recordOwnedLocal(citizenId, "plant", "Fern", 1);
     expect(
-      rt.placeFurnitureFromInventory(citizenId, otherLot.id, "plant:fern", 1, 1),
+      rt.placeFurnitureFromInventory(
+        citizenId,
+        otherLot.id,
+        "plant:fern",
+        1,
+        1,
+      ),
     ).toBe(false);
     // the piece is NOT consumed on a refused placement
     expect(ownedBy(loadInventoryLocal(), citizenId)[0]).toMatchObject({

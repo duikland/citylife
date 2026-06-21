@@ -287,7 +287,17 @@ export function compileBlueprint(
 
   // 3. GROUND DIVIDERS — brick walls along room boundaries, only on cells the room still OWNS (a later
   //    overlapping room carves them away). One storey tall when rooms stack above, else full shell height.
-  buildDividers(g, groundRooms, owner, w, d, n, floorSub, perStorey ? n : wallSub, seed);
+  buildDividers(
+    g,
+    groundRooms,
+    owner,
+    w,
+    d,
+    n,
+    floorSub,
+    perStorey ? n : wallSub,
+    seed,
+  );
 
   // 4. ROOF slab one micro-level above the walls, over enclosed rooms only (outdoor cells stay open).
   buildRoof(g, groundRooms, owner, w, d, n, floorSub + wallSub, seed, outdoor);
@@ -323,7 +333,18 @@ export function compileBlueprint(
     for (const r of upperRooms) topUsed = Math.max(topUsed, r.z ?? 0);
     for (const f of upperItems) topUsed = Math.max(topUsed, f.z ?? 0);
     const stair = pickStairCell(w, d, door, outdoor, seed);
-    buildUpperFloors(g, upperRooms, upperItems, p, w, d, n, floorSub, stair, topUsed);
+    buildUpperFloors(
+      g,
+      upperRooms,
+      upperItems,
+      p,
+      w,
+      d,
+      n,
+      floorSub,
+      stair,
+      topUsed,
+    );
     if (stair) placeStairs(g, n, floorSub, topUsed, stair);
     for (let s = 1; s <= topUsed; s++) {
       const baseZ = floorSub + s * n; // the stand level (and furniture floor) of storey s
@@ -741,7 +762,8 @@ function buildUpperFloors(
   }
   // A landing under the stairwell on every used storey so a flight always arrives on solid floor even
   // when no room sits directly above the stairs.
-  if (stair) for (let s = 1; s <= topUsed; s++) fillCell(stair.cx, stair.cy, slabZ(s));
+  if (stair)
+    for (let s = 1; s <= topUsed; s++) fillCell(stair.cx, stair.cy, slabZ(s));
 }
 
 /** SLICE B — choose the enclosed interior cell that hosts the stairwell: farthest from the door (so it

@@ -2037,12 +2037,20 @@ export function ColonyApp() {
                 </div>
                 {inv.length > 0 ? (
                   inv.map((s) => (
-                    <div className="row" key={s.id} data-build-area={`inv-${s.id}`}>
+                    <div
+                      className="row"
+                      key={s.id}
+                      data-build-area={`inv-${s.id}`}
+                    >
                       <span>
                         {FURNITURE_CATALOG[s.kind].icon} {s.name}
                       </span>
                       <span
-                        style={{ display: "flex", alignItems: "center", gap: 6 }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
                       >
                         <b>×{s.qty}</b>
                         <button
@@ -2081,12 +2089,14 @@ export function ColonyApp() {
                     className="furn-field"
                     data-build-action="furniture-kind"
                     value={furnKind}
-                    onChange={(e) => setFurnKind(e.target.value as FurnitureKind)}
+                    onChange={(e) =>
+                      setFurnKind(e.target.value as FurnitureKind)
+                    }
                   >
                     {FURNITURE_KINDS.map((k) => (
                       <option key={k} value={k}>
-                        {FURNITURE_CATALOG[k].icon} {FURNITURE_CATALOG[k].label} ·{" "}
-                        {ui.bank.currency}
+                        {FURNITURE_CATALOG[k].icon} {FURNITURE_CATALOG[k].label}{" "}
+                        · {ui.bank.currency}
                         {furniturePriceK(k)}
                       </option>
                     ))}
@@ -2110,11 +2120,18 @@ export function ColonyApp() {
                       : "Not enough city coin for this piece"
                   }
                   onClick={() => {
-                    if (runtime.buyFurniture(me, furnKind, furnName.trim() || furnKind))
+                    if (
+                      runtime.buyFurniture(
+                        me,
+                        furnKind,
+                        furnName.trim() || furnKind,
+                      )
+                    )
                       setFurnName("");
                   }}
                 >
-                  {FURNITURE_CATALOG[furnKind].icon} Design + buy · {ui.bank.currency}
+                  {FURNITURE_CATALOG[furnKind].icon} Design + buy ·{" "}
+                  {ui.bank.currency}
                   {price}
                 </button>
                 {/* Marketplace (spec 088 Slice F UI) — the public board: browse listings, buy your own
@@ -2125,8 +2142,8 @@ export function ColonyApp() {
                   const nameOf = (cid: string) =>
                     cid === me
                       ? "you"
-                      : (ui.citizens.list.find((x) => x.id === cid)?.displayName ??
-                        "a resident");
+                      : (ui.citizens.list.find((x) => x.id === cid)
+                          ?.displayName ?? "a resident");
                   return (
                     <div
                       data-build-area="furniture-market"
@@ -2181,7 +2198,9 @@ export function ColonyApp() {
                                 className="furn-place"
                                 data-build-action={`unlist-${l.id}`}
                                 title="Remove your listing"
-                                onClick={() => runtime.unlistFurniture(me, l.id)}
+                                onClick={() =>
+                                  runtime.unlistFurniture(me, l.id)
+                                }
                               >
                                 ✕
                               </button>

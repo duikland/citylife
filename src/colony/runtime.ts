@@ -1737,7 +1737,9 @@ export class ColonyRuntime {
       amount: price,
     });
     // Best-effort: push the updated inventory to the backend as the player (never blocks the game).
-    void saveInventoryBackend(citizenId, ownedBy(inv, citizenId)).catch(() => {});
+    void saveInventoryBackend(citizenId, ownedBy(inv, citizenId)).catch(
+      () => {},
+    );
     this.kbPost(
       citizenId,
       "event",
@@ -2063,7 +2065,8 @@ export class ColonyRuntime {
       ? parseBlueprint(lot.blueprint).doorDir
       : streetDoorDir(lot);
     const base =
-      lot.blueprint ?? defaultBlueprint(lot.houseSeed, doorDir, lot.houseZone.w);
+      lot.blueprint ??
+      defaultBlueprint(lot.houseSeed, doorDir, lot.houseZone.w);
     const p = parseBlueprint(base);
     if ((p.items?.length ?? 0) >= FURNITURE_ITEM_CAP) return false; // full — consume nothing
     const script = blueprintToScript(placeItemAt(p, stack.kind, x, y, rot, z));
