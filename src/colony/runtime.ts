@@ -172,6 +172,15 @@ import {
   saveInventoryLocal,
 } from "./bot/furnitureStore";
 import {
+  loadMarketLocal,
+  saveMarketLocal,
+  addListing,
+  removeListing,
+  allListings,
+  saveMarketBackend,
+  type FurnitureListing,
+} from "./bot/furnitureMarket";
+import {
   makeCommercialDistrict,
   type CommercialDistrict,
   type ShopKind,
@@ -1736,6 +1745,67 @@ export class ColonyRuntime {
     );
     this.emit();
     return true;
+  }
+
+  /** Spec 088 Slice F — LIST a furniture design on the Kookerbook marketplace: a seller advertises a
+   *  design they OWN (furnitureStore inventory) on the public board at the studio price, so others can
+   *  browse and buy their own copy. Returns false when the seller does not own the design or the name is
+   *  unsafe (screened by the board). One listing per seller+design; re-listing refreshes the price. */
+  listFurnitureForSale(
+    citizenId: string,
+    kind: FurnitureKind,
+    name: string,
+  ): boolean {
+    const itemId = ownedFurnitureId(kind, name);
+    const stack = ownedBy(loadInventoryLocal(), citizenId).find(
+      (s) => s.id === itemId,
+    );
+    if (!stack) return false; // you can only list a design you own
+    const before = loadMarketLocal();
+    const next = addListing(
+      before,
+      citizenId,
+      stack.kind,
+      stack.name,
+      furniturePriceK(stack.kind),
+    );
+    if (next === before) return false; // screened out (unsafe) or the board is full
+    saveMarketLocal(next);
+    void saveMarketBackend(citizenId, next).catch(() => {});
+    this.kbPost(
+      citizenId,
+      "event",
+      `Listed a ${stack.name} on the marketplace for ${furniturePriceK(stack.kind)} city coin.`,
+    );
+    this.emit();
+    return true;
+  }
+
+  /** Spec 088 Slice F — UNLIST: a seller takes their own listing off the board. Only the listing's owner
+   *  may remove it; an unknown id or another seller's listing is a no-op (returns false). */
+  unlistFurniture(citizenId: string, listingId: string): boolean {
+    const market = loadMarketLocal();
+    const listing = market.find((l) => l.id === listingId);
+    if (!listing || listing.sellerCitizenId !== citizenId) return false;
+    const next = removeListing(market, listingId);
+    saveMarketLocal(next);
+    void saveMarketBackend(citizenId, next).catch(() => {});
+    this.emit();
+    return true;
+  }
+
+  /** Spec 088 Slice F — the public marketplace board (already public-safe screened). */
+  marketListings(): FurnitureListing[] {
+    return allListings(loadMarketLocal());
+  }
+
+  /** Spec 088 Slice F — BUY from the marketplace: acquire your own copy of a listed design from the
+   *  studio (the classifieds reuse the studio buy, charging the buyer's wallet — the listing is an
+   *  advert and stays up). Returns false when the listing is gone or the buy is refused (funds, etc.). */
+  buyFromMarket(buyerId: string, listingId: string): boolean {
+    const listing = loadMarketLocal().find((l) => l.id === listingId);
+    if (!listing) return false;
+    return this.buyFurniture(buyerId, listing.kind, listing.name);
   }
 
   /** The ₭ price of a plot: its buildable area + a waterfront premium (spec 085). Reserved founder
