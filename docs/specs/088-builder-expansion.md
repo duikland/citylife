@@ -197,10 +197,18 @@ all three share the 48px-preview verification constraint and can reuse component
   an auto free cell via the new pure `freeItemCell`, delegates to `placeFurnitureFromInventory`); disabled
   until the player owns a home. Live-verified (place appends `item{}` to the lot blueprint + consumes the
   piece, no console errors). New runtime `lotForCitizen`. `data-build-action="place-item-${id}"`.
-- **F — Kookerbook market tab**: the board (`runtime.marketListings`), List-for-sale + Unlist
-  (`listFurnitureForSale` / `unlistFurniture`), and Buy (`buyFromMarket`). Fix the cosmetic
-  "redesigned their home" Kookerbook event on furniture placement here.
+- **F — marketplace UI** ✅ DONE (commit `f8324d3`): surfaced in the HUD studio panel (NOT
+  `kookerbookMain.tsx` — that page has no `ColonyRuntime`). A "list ⊕" button per owned stack
+  (`listFurnitureForSale`) + a "Marketplace" board (`marketListings`) with seller/icon/name/price, a Buy
+  per listing (`buyFromMarket`, funds-gated) and an "✕" unlist on your own (`unlistFurniture`). Live-verified
+  (buy→list→board→buy-from-board→unlist, no console errors). Also fixed the cosmetic placement event:
+  `applyBlueprint` gained an optional `eventText` (null = skip) and placement passes null.
 - Every control carries a `data-build-action` selector for Hermes-bot driving.
+
+**EPIC COMPLETE** — all six backend slices (A–F) and the full UI (studio + place + marketplace) are done,
+on rolling PR #68. 841 tests green, tsc clean, every slice adversarially reviewed and the UI live-verified.
+A read-only marketplace browse view could later be mirrored into Kookerbook (`kookerbookMain.tsx`), and a
+physical `furniture_studio` shopfront building in `businesses.ts` remains an optional flourish.
 
 ## Hard rules carried from the epic
 
