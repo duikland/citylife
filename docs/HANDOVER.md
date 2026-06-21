@@ -41,9 +41,15 @@ docs for whatever slice you pick up. Your persistent memory (`MEMORY.md` + the `
   `runtime.placeFurnitureFromInventory(citizenId,lotId,itemId,x,y,rot?,z?)` (own-piece + own-lot gated →
   append to lot blueprint → rebuild via applyBlueprint → consume via removeOwned + best-effort backend).
   `tests/placeFurniture.test.ts` (8), **821 green**, adversarial review found 0 defects. Known cosmetic
-  for the UI pass: each placement posts a Kookerbook "redesigned" event (N pieces → N posts). Queued:
-  **F — Kookerbook marketplace/classifieds tab** (list furniture for sale public-safe only, Buy wired to
-  `runtime.buyFurniture`) + the deferred UI pass (D design-studio panel, E place-controls, F market tab).
+  for the UI pass: each placement posts a Kookerbook "redesigned" event (N pieces → N posts). **Slice F CORE DONE (2026-06-21, commit `dc69156`)** = Kookerbook furniture marketplace:
+  `src/colony/bot/furnitureMarket.ts` (two-layer public listing board, mirrors furnitureStore; listing
+  `{id,sellerCitizenId,kind,name,price}`, id embeds ownedFurnitureId; isPublicSafe-screened both ways,
+  tamper-proof id, cap 256, backend `/kooker/api/v1/citylife/furniture-market`) + runtime
+  `listFurnitureForSale` / `unlistFurniture` / `marketListings` / `buyFromMarket` (reuses buyFurniture).
+  `tests/furnitureMarket.test.ts` (12), **833 green**, adversarial review 0 defects.
+  **ALL SIX BACKEND SLICES A–F DONE.** REMAINING = one **UI pass** (deferred together): D furniture-studio
+  panel + `furniture_studio` business, E place-controls (builder placement mode), F Kookerbook market tab;
+  every control needs `data-build-action`; fix the cosmetic per-placement "redesigned" Kookerbook event then.
 - **Note:** the builder's 3D preview pane renders ~48px wide in its 3-column layout — verify furniture
   via tests (a quadCount render-path proof), the 2D plan markers, and the DSL textarea, not the canvas.
 - **Scheduler note (updated):** in-session `ScheduleWakeup` IS firing this session — the /loop runs on

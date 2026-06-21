@@ -31,8 +31,8 @@ stamp the game, the builder preview and the Kookerbook card all mesh identically
   the `furniture_purchase` ledger mirror); the design-studio UI is the remaining piece. See the log below.
 - **E — place owned furniture from inventory into your house** ✅ DONE (this slice — the runtime + pure
   transform; place-controls UI deferred). See the log below.
-- **F — Kookerbook marketplace / classifieds tab**: list furniture for sale (public-safe only,
-  respecting player data isolation); Buy wired to `runtime.buyFurniture`.
+- **F — Kookerbook marketplace / classifieds**: core ✅ DONE (this slice — the listing store + runtime
+  wiring); the visible market tab is in the UI pass. See the log below.
 
 ## Slice B — multi-level floor plans (DONE)
 
@@ -159,6 +159,41 @@ inventory.
 - **Known cosmetic item for the UI pass**: each placement routes through `applyBlueprint`, which posts a
   Kookerbook "redesigned their home" event — so furnishing N pieces yields N posts. Revisit (a
   furniture-specific or debounced event) when placement gets a real UI.
+
+## Slice F — Kookerbook furniture marketplace (core DONE)
+
+A player advertises a furniture design they own on a public board; others browse and buy their own copy
+from the studio (the classifieds reuse the Slice D studio buy). Core done this slice; the visible market
+tab is in the UI pass.
+
+- **`furnitureMarket.ts`** — a two-layer public listing board mirroring `furnitureStore`: local
+  `citylife.furniture.market.v1` + best-effort PUT/GET `/kooker/api/v1/citylife/furniture-market` as the
+  player. Listing `{id, sellerCitizenId, kind, name, price}`; `id = ${sellerCitizenId}:${ownedFurnitureId(
+  kind,name)}` so it embeds the inventory itemId and one seller holds one listing per design. Pure ops
+  `addListing` / `removeListing` / `allListings` / `listingsBySeller` / `mergeMarkets` (backend wins per
+  id). **Player data isolation**: every listing is `isPublicSafe`-screened on write AND read, so a
+  brand-word listing is never stored or returned; the id is recomputed (tamper-proof); board capped at 256.
+- **`runtime`** — `listFurnitureForSale(citizenId, kind, name)` (advertise a design you OWN via
+  `ownedBy`, at the studio price), `unlistFurniture(citizenId, listingId)` (only the seller may remove),
+  `marketListings()` (the screened board), `buyFromMarket(buyerId, listingId)` (acquire your own copy via
+  `buyFurniture` — charges the buyer, the advert stays up).
+- `tests/furnitureMarket.test.ts` (12): listing id, dedup/cap/re-list, screening, merge, the local
+  round-trip, and the runtime list/unlist/buy + ownership paths. 833 tests green, tsc clean. A single-agent
+  adversarial review found NO defects.
+
+## The deferred UI pass (after the backends)
+
+All six backend slices (A–F) are done. The remaining work is one **UI pass**, best done together since
+all three share the 48px-preview verification constraint and can reuse components:
+
+- **D — furniture studio panel**: pick a kind + type a name + Buy (wires `runtime.buyFurniture`); a
+  `furniture_studio` business in `businesses.ts`.
+- **E — place-controls**: from the inventory, drop a piece into the house (wires
+  `runtime.placeFurnitureFromInventory`) — a builder placement mode.
+- **F — Kookerbook market tab**: the board (`runtime.marketListings`), List-for-sale + Unlist
+  (`listFurnitureForSale` / `unlistFurniture`), and Buy (`buyFromMarket`). Fix the cosmetic
+  "redesigned their home" Kookerbook event on furniture placement here.
+- Every control carries a `data-build-action` selector for Hermes-bot driving.
 
 ## Hard rules carried from the epic
 
