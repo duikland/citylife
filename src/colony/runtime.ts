@@ -153,6 +153,15 @@ import {
   type LedgerMove,
   type SyncStatus,
 } from "./bot/ledgerSync";
+import { furniturePriceK, FURNITURE_SHOP_ACCOUNT } from "./furnitureShop";
+import type { FurnitureKind } from "./furniture";
+import {
+  ownedFurnitureId,
+  ownedBy,
+  recordOwnedLocal,
+  saveInventoryBackend,
+  nextPurchaseSeq,
+} from "./bot/furnitureStore";
 import {
   makeCommercialDistrict,
   type CommercialDistrict,
@@ -1664,6 +1673,60 @@ export class ColonyRuntime {
       )[0];
     if (!buyer) return null;
     return this.buyCommercialShop(buyer.id, shop.id) ? buyer.id : null;
+  }
+
+  /** Spec 088 Slice D — BUY A FURNITURE PIECE from the studio: a player designs a piece (a catalog kind
+   *  plus their own name) and purchases it with their ₭ wallet. Gated on funds; the price moves citizen
+   *  -> the studio till on the in-game ledger and mirrors to the real kooker-service-ledger
+   *  (FURNITURE_PURCHASE), the piece is recorded into the player's inventory (furnitureStore, Slice C),
+   *  and a Kookerbook event posts. Returns false (no charge, no record) when the citizen is unknown, the
+   *  kind/name is unsafe, or funds fall short. The mirrored seq is the resulting inventory quantity, so
+   *  buying the same design twice never dedupes into one real-ledger transaction. */
+  buyFurniture(citizenId: string, kind: FurnitureKind, name?: string): boolean {
+    const c = this.citizens.byId(citizenId);
+    if (!c) return false;
+    const price = furniturePriceK(kind);
+    if (!Number.isFinite(price) || price <= 0) return false;
+    // Gate on the EXACT ledger balance (walletK rounds, which could let a fractional balance overspend).
+    if (ledgerBalance(this.sim.state.ledger, `citizen:${citizenId}`) < price)
+      return false;
+    // Normalise the name exactly as furnitureStore does (collapse whitespace; a blank name falls back to
+    // the kind) so the id we look up matches the id the store records under — otherwise a blank name
+    // would record a piece the lookup misses, banking it for free on a "failed" buy.
+    const label = (name ?? "").replace(/\s+/g, " ").trim() || kind;
+    // Record into the player's inventory first so an unsafe name (rejected by furnitureStore) blocks the
+    // sale before any money moves.
+    const inv = recordOwnedLocal(citizenId, kind, label, 1);
+    const itemId = ownedFurnitureId(kind, label);
+    const stack = ownedBy(inv, citizenId).find((s) => s.id === itemId);
+    if (!stack) return false; // furnitureStore screened it out (unsafe name / unknown kind) — no charge
+    const posted = ledgerPost(
+      this.sim.state.ledger,
+      `${c.displayName} buys a ${stack.name} from the furniture studio for ${price} ${CURRENCY}`,
+      [
+        { account: `citizen:${citizenId}`, amount: -price },
+        { account: FURNITURE_SHOP_ACCOUNT, amount: price },
+      ],
+    );
+    if (!posted) return false;
+    // The mirror seq is the LIFETIME purchase count (uncapped, persisted), not the held quantity (capped),
+    // so repeat buys of one design never collide on a real-ledger reference.
+    this.mirror({
+      kind: "furniture_purchase",
+      citizenId,
+      itemId,
+      seq: nextPurchaseSeq(citizenId, itemId),
+      amount: price,
+    });
+    // Best-effort: push the updated inventory to the backend as the player (never blocks the game).
+    void saveInventoryBackend(citizenId, ownedBy(inv, citizenId)).catch(() => {});
+    this.kbPost(
+      citizenId,
+      "event",
+      `Bought a ${stack.name} from the furniture studio for ${price} city coin.`,
+    );
+    this.emit();
+    return true;
   }
 
   /** The ₭ price of a plot: its buildable area + a waterfront premium (spec 085). Reserved founder

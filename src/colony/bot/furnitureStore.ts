@@ -16,6 +16,7 @@ import { FURNITURE_KINDS, type FurnitureKind } from "../furniture";
 import { isPublicSafe } from "../newcomers";
 
 const LS_FURNITURE = "citylife.furniture.v1";
+const LS_BOUGHT = "citylife.furniture.bought.v1";
 const BACKEND_PATH = "/kooker/api/v1/citylife/furniture";
 
 /** The most of a single design a player may stack, and the most distinct designs they may hold — bounds
@@ -227,13 +228,41 @@ export function recordOwnedLocal(
   return next;
 }
 
-/** Forget all locally stored inventory (colony reset). */
+/** Forget all locally stored inventory (colony reset), including the lifetime purchase counters. */
 export function clearInventoryLocal(): void {
   try {
     localStorage.removeItem(LS_FURNITURE);
+    localStorage.removeItem(LS_BOUGHT);
   } catch {
     /* no storage */
   }
+}
+
+/** Increment and return the LIFETIME purchase count for a (citizen, design) — a monotonic, UNCAPPED,
+ *  reload-stable sequence, kept separate from the held quantity (which is capped at FURNITURE_STACK_CAP
+ *  and can be removed). Spec 088 Slice D uses it as the real-ledger mirror's seq so that repeat buys of
+ *  the same design never collide on a reference (which would dedupe a genuine sale away), even past the
+ *  stack cap. Best-effort: with no storage it can only count within the session (so does the whole
+ *  mirror), which is the degraded dev case, not production. */
+export function nextPurchaseSeq(citizenId: string, itemId: string): number {
+  let all: Record<string, Record<string, number>> = {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LS_BOUGHT) ?? "{}");
+    if (parsed && typeof parsed === "object") all = parsed;
+  } catch {
+    all = {};
+  }
+  const forCitizen = all[citizenId] ?? {};
+  const prev = typeof forCitizen[itemId] === "number" ? forCitizen[itemId]! : 0;
+  const next = prev + 1;
+  forCitizen[itemId] = next;
+  all[citizenId] = forCitizen;
+  try {
+    localStorage.setItem(LS_BOUGHT, JSON.stringify(all));
+  } catch {
+    /* no storage */
+  }
+  return next;
 }
 
 // ── BACKEND layer (best-effort, as the logged-in player) ─────────────────────────
