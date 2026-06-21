@@ -118,7 +118,13 @@ import {
   type Neighborhood,
   type Lot,
 } from "./neighborhood";
-import { validateBlueprint, parseBlueprint } from "./blueprintScript";
+import {
+  validateBlueprint,
+  parseBlueprint,
+  blueprintToScript,
+  FURNITURE_ITEM_CAP,
+} from "./blueprintScript";
+import { placeItemAt } from "./builder/blueprintEdit";
 import {
   loadBlueprintsLocal,
   saveBlueprintLocal,
@@ -161,6 +167,9 @@ import {
   recordOwnedLocal,
   saveInventoryBackend,
   nextPurchaseSeq,
+  loadInventoryLocal,
+  removeOwned,
+  saveInventoryLocal,
 } from "./bot/furnitureStore";
 import {
   makeCommercialDistrict,
@@ -1950,6 +1959,46 @@ export class ColonyRuntime {
     });
     if (!lot.built) this.buildHouse(lotId); // best-effort; the stored blueprint survives a failed gate
     this.emit();
+    return true;
+  }
+
+  /** Spec 088 Slice E — PLACE OWNED FURNITURE in your house: take a piece the player OWNS (from their
+   *  furnitureStore inventory) and drop it into their lot's blueprint at the chosen cell, rotation and
+   *  storey, rebuild the house from the new script (through the validated applyBlueprint path), and
+   *  consume one from inventory. You may only furnish a lot you own. Returns false — and consumes
+   *  nothing, builds nothing — when the player does not own the piece, the lot is not theirs, the design
+   *  is already full, or the resulting script fails validation. */
+  placeFurnitureFromInventory(
+    citizenId: string,
+    lotId: string,
+    itemId: string,
+    x: number,
+    y: number,
+    rot = 0,
+    z = 0,
+  ): boolean {
+    const inv = loadInventoryLocal();
+    const stack = ownedBy(inv, citizenId).find((s) => s.id === itemId);
+    if (!stack || stack.qty < 1) return false; // the player does not own this piece
+    const lot = this.neighborhood.lots.find((l) => l.id === lotId);
+    if (!lot || lot.ownerCitizenId !== citizenId) return false; // furnish only your own home
+    // Start from the lot's current design (or its default house if undesigned), keeping its door.
+    const doorDir = lot.blueprint
+      ? parseBlueprint(lot.blueprint).doorDir
+      : streetDoorDir(lot);
+    const base =
+      lot.blueprint ?? defaultBlueprint(lot.houseSeed, doorDir, lot.houseZone.w);
+    const p = parseBlueprint(base);
+    if ((p.items?.length ?? 0) >= FURNITURE_ITEM_CAP) return false; // full — consume nothing
+    const script = blueprintToScript(placeItemAt(p, stack.kind, x, y, rot, z));
+    // applyBlueprint validates, stores the design, rebuilds the house and persists it (local + backend).
+    if (!this.applyBlueprint(lotId, script)) return false;
+    // Consume one of the piece from inventory only once the placement actually took.
+    const inv2 = removeOwned(inv, citizenId, itemId, 1);
+    saveInventoryLocal(inv2);
+    void saveInventoryBackend(citizenId, ownedBy(inv2, citizenId)).catch(
+      () => {},
+    );
     return true;
   }
 

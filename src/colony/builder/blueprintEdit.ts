@@ -287,3 +287,29 @@ export function rotateItem(p: ParsedBlueprint, i: number): ParsedBlueprint {
   const turned: FurnitureItem = { ...f, rot: (f.rot + 1) % 4 };
   return { ...p, items: items.map((q, k) => (k === i ? turned : q)) };
 }
+
+/** Place a piece of furniture at an EXACT cell, rotation and storey — clamped into the plot footprint
+ *  and the design's storeys, rotation normalised to 0..3. Respects the furniture cap (a no-op when the
+ *  design is already full, so a caller can detect "no room" by an unchanged item count). This is the
+ *  spec 088 Slice E primitive: a player drops a piece they OWN into their house at the spot they choose.
+ *  Pure + deterministic. */
+export function placeItemAt(
+  p: ParsedBlueprint,
+  kind: FurnitureKind,
+  x: number,
+  y: number,
+  rot = 0,
+  storey = 0,
+): ParsedBlueprint {
+  const items = p.items ?? [];
+  if (items.length >= FURNITURE_ITEM_CAP) return p;
+  const item: FurnitureItem = {
+    kind,
+    x: clamp(Math.round(x), 0, p.w - 1),
+    y: clamp(Math.round(y), 0, p.d - 1),
+    rot: ((Math.round(rot) % 4) + 4) % 4,
+  };
+  const z = clamp(Math.round(storey), 0, maxStorey(p));
+  if (z > 0) item.z = z;
+  return { ...p, items: [...items, item] };
+}
