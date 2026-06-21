@@ -12,7 +12,10 @@ import {
   MARKET_LISTINGS_CAP,
   type Market,
 } from "../src/colony/bot/furnitureMarket";
-import { ownedFurnitureId, recordOwnedLocal } from "../src/colony/bot/furnitureStore";
+import {
+  ownedFurnitureId,
+  recordOwnedLocal,
+} from "../src/colony/bot/furnitureStore";
 import { furniturePriceK } from "../src/colony/furnitureShop";
 import { ColonyRuntime } from "../src/colony/runtime";
 
@@ -89,7 +92,13 @@ describe("furnitureMarket — pure model ops (spec 088 Slice F)", () => {
     m = addListing(m, "citizen_b", "bed", "Bed", 22);
     expect(removeListing(m, "citizen_a:sofa:couch")).toHaveLength(1);
     const backend: Market = [
-      { id: "citizen_b:bed:bed", sellerCitizenId: "citizen_b", kind: "bed", name: "Bed", price: 30 },
+      {
+        id: "citizen_b:bed:bed",
+        sellerCitizenId: "citizen_b",
+        kind: "bed",
+        name: "Bed",
+        price: 30,
+      },
     ];
     const merged = mergeMarkets(m, backend);
     expect(merged.find((l) => l.id === "citizen_b:bed:bed")!.price).toBe(30); // backend wins
@@ -113,23 +122,55 @@ describe("furnitureMarket — local persistence + safety", () => {
   it("round-trips the board through localStorage and clear wipes it", () => {
     saveMarketLocal(addListing([], "citizen_a", "sofa", "Couch", 20));
     expect(loadMarketLocal()).toEqual([
-      { id: "citizen_a:sofa:couch", sellerCitizenId: "citizen_a", kind: "sofa", name: "Couch", price: 20 },
+      {
+        id: "citizen_a:sofa:couch",
+        sellerCitizenId: "citizen_a",
+        kind: "sofa",
+        name: "Couch",
+        price: 20,
+      },
     ]);
     clearMarketLocal();
     expect(loadMarketLocal()).toEqual([]);
   });
 
   it("drops corrupt / unsafe listings on LOAD — tampering cannot reach the board", () => {
-    (globalThis as unknown as { localStorage: MemStorage }).localStorage.setItem(
+    (
+      globalThis as unknown as { localStorage: MemStorage }
+    ).localStorage.setItem(
       "citylife.furniture.market.v1",
       JSON.stringify([
-        { id: "x", sellerCitizenId: "a", kind: "throne", name: "Throne", price: 5 }, // bad kind
-        { id: "y", sellerCitizenId: "a", kind: "sofa", name: "kooker couch", price: 5 }, // unsafe
-        { id: "z", sellerCitizenId: "a", kind: "bed", name: "Real Bed", price: 22 }, // good
+        {
+          id: "x",
+          sellerCitizenId: "a",
+          kind: "throne",
+          name: "Throne",
+          price: 5,
+        }, // bad kind
+        {
+          id: "y",
+          sellerCitizenId: "a",
+          kind: "sofa",
+          name: "kooker couch",
+          price: 5,
+        }, // unsafe
+        {
+          id: "z",
+          sellerCitizenId: "a",
+          kind: "bed",
+          name: "Real Bed",
+          price: 22,
+        }, // good
       ]),
     );
     expect(loadMarketLocal()).toEqual([
-      { id: "a:bed:real-bed", sellerCitizenId: "a", kind: "bed", name: "Real Bed", price: 22 },
+      {
+        id: "a:bed:real-bed",
+        sellerCitizenId: "a",
+        kind: "bed",
+        name: "Real Bed",
+        price: 22,
+      },
     ]);
   });
 });

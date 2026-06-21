@@ -71,7 +71,10 @@ function safeOwned(e: unknown): OwnedFurniture | null {
     name?: unknown;
     qty?: unknown;
   };
-  if (typeof kind !== "string" || !FURNITURE_KINDS.includes(kind as FurnitureKind))
+  if (
+    typeof kind !== "string" ||
+    !FURNITURE_KINDS.includes(kind as FurnitureKind)
+  )
     return null;
   if (typeof name !== "string" || typeof qty !== "number") return null;
   const nm = normalizeName(kind as FurnitureKind, name);
@@ -290,7 +293,10 @@ export async function saveInventoryBackend(
     });
     return resp.ok ? { ok: true } : { ok: false, error: `HTTP ${resp.status}` };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "network error" };
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "network error",
+    };
   }
 }
 

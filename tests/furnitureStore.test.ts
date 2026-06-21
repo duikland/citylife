@@ -79,7 +79,13 @@ describe("furnitureStore — pure model ops (spec 088 Slice C)", () => {
 
   it("addOwned caps a stack quantity and the number of distinct designs", () => {
     let inv: FurnitureInventory = {};
-    inv = addOwned(inv, "citizen_a", "rug", "Big Rug", FURNITURE_STACK_CAP + 50);
+    inv = addOwned(
+      inv,
+      "citizen_a",
+      "rug",
+      "Big Rug",
+      FURNITURE_STACK_CAP + 50,
+    );
     expect(ownedBy(inv, "citizen_a")[0]!.qty).toBe(FURNITURE_STACK_CAP);
     // fill past the distinct-design cap — the overflow design is dropped
     let inv2: FurnitureInventory = {};
@@ -146,7 +152,9 @@ describe("furnitureStore — local persistence + safety", () => {
   });
 
   it("drops corrupt and unsafe stacks on LOAD — tampering cannot reach the builder", () => {
-    (globalThis as unknown as { localStorage: MemStorage }).localStorage.setItem(
+    (
+      globalThis as unknown as { localStorage: MemStorage }
+    ).localStorage.setItem(
       "citylife.furniture.v1",
       JSON.stringify({
         citizen_a: [
@@ -165,7 +173,9 @@ describe("furnitureStore — local persistence + safety", () => {
   });
 
   it("merges duplicate-id stacks on load and rejects non-positive quantities", () => {
-    (globalThis as unknown as { localStorage: MemStorage }).localStorage.setItem(
+    (
+      globalThis as unknown as { localStorage: MemStorage }
+    ).localStorage.setItem(
       "citylife.furniture.v1",
       JSON.stringify({
         citizen_a: [

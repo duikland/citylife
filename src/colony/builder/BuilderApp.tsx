@@ -497,7 +497,9 @@ export function BuilderApp() {
             onClick={() => {
               // setWallH re-homes any stranded upper content; keep the active floor in range too.
               apply((p) => setWallH(p, p.wallH - 1));
-              setActiveStorey((z) => Math.min(z, Math.max(0, design.wallH - 2)));
+              setActiveStorey((z) =>
+                Math.min(z, Math.max(0, design.wallH - 2)),
+              );
             }}
           >
             − storey
@@ -733,35 +735,45 @@ export function BuilderApp() {
             <button
               data-build-action="move-item-left"
               style={btn}
-              onClick={() => applyItem((p) => moveItem(p, selItemRef.current, -1, 0))}
+              onClick={() =>
+                applyItem((p) => moveItem(p, selItemRef.current, -1, 0))
+              }
             >
               ←
             </button>
             <button
               data-build-action="move-item-right"
               style={btn}
-              onClick={() => applyItem((p) => moveItem(p, selItemRef.current, 1, 0))}
+              onClick={() =>
+                applyItem((p) => moveItem(p, selItemRef.current, 1, 0))
+              }
             >
               →
             </button>
             <button
               data-build-action="move-item-up"
               style={btn}
-              onClick={() => applyItem((p) => moveItem(p, selItemRef.current, 0, -1))}
+              onClick={() =>
+                applyItem((p) => moveItem(p, selItemRef.current, 0, -1))
+              }
             >
               ↑
             </button>
             <button
               data-build-action="move-item-down"
               style={btn}
-              onClick={() => applyItem((p) => moveItem(p, selItemRef.current, 0, 1))}
+              onClick={() =>
+                applyItem((p) => moveItem(p, selItemRef.current, 0, 1))
+              }
             >
               ↓
             </button>
             <button
               data-build-action="rotate-item"
               style={btn}
-              onClick={() => applyItem((p) => rotateItem(p, selItemRef.current))}
+              onClick={() =>
+                applyItem((p) => rotateItem(p, selItemRef.current))
+              }
             >
               rotate ↻ ({selItemObj.rot * 90}°)
             </button>
@@ -794,7 +806,9 @@ export function BuilderApp() {
             <button
               data-build-action="delete-item"
               style={{ ...btn, color: "#e0584d" }}
-              onClick={() => applyItem((p) => removeItem(p, selItemRef.current))}
+              onClick={() =>
+                applyItem((p) => removeItem(p, selItemRef.current))
+              }
             >
               delete
             </button>

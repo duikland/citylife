@@ -24,7 +24,7 @@ stamp the game, the builder preview and the Kookerbook card all mesh identically
 - **A — author-able furniture in the DSL** ✅ DONE (commits c4a85d4 + d27bca9). New `item{kind x y rot}`
   token; `furniture.ts` catalog (11 pieces) as deterministic micro-block stamps + rotation; 8 new
   furniture `BlockKind`s + colours; `buildFurnitureItems` compiler stamp; pure `addItem/removeItem/
-  moveItem/rotateItem`; builder furniture palette + 2D markers + controls. Ground floor only.
+moveItem/rotateItem`; builder furniture palette + 2D markers + controls. Ground floor only.
 - **B — multi-level floor plans** ✅ DONE (this slice). See the log below.
 - **C — furniture inventory store** ✅ DONE (this slice). See the log below.
 - **D — furniture shop**: economic core ✅ DONE (this slice — pricing + `runtime.buyFurniture()` +
@@ -97,7 +97,7 @@ storey ops) plus the 2D plan markers + the DSL textarea. 787 tests green, tsc cl
 player has designed or bought), the foundation Slice D (buy), E (place) and F (marketplace) build on.
 
 - **Model** — `OwnedFurniture { id, kind, name, qty }`, `FurnitureInventory = Record<citizenId,
-  OwnedFurniture[]>`. The `id` is `${kind}:${nameSlug}`, recomputed from kind+name on every read, so the
+OwnedFurniture[]>`. The `id` is `${kind}:${nameSlug}`, recomputed from kind+name on every read, so the
   same design dedupes and a tampered id can never spoof a stack. Caps: `FURNITURE_STACK_CAP` 99 per
   stack, `FURNITURE_STACKS_CAP` 64 distinct designs per player.
 - **Pure ops** (node-testable, no DOM) — `addOwned` (append/increment), `removeOwned` (drop the stack at
@@ -169,7 +169,7 @@ tab is in the UI pass.
 - **`furnitureMarket.ts`** — a two-layer public listing board mirroring `furnitureStore`: local
   `citylife.furniture.market.v1` + best-effort PUT/GET `/kooker/api/v1/citylife/furniture-market` as the
   player. Listing `{id, sellerCitizenId, kind, name, price}`; `id = ${sellerCitizenId}:${ownedFurnitureId(
-  kind,name)}` so it embeds the inventory itemId and one seller holds one listing per design. Pure ops
+kind,name)}` so it embeds the inventory itemId and one seller holds one listing per design. Pure ops
   `addListing` / `removeListing` / `allListings` / `listingsBySeller` / `mergeMarkets` (backend wins per
   id). **Player data isolation**: every listing is `isPublicSafe`-screened on write AND read, so a
   brand-word listing is never stored or returned; the id is recomputed (tamper-proof); board capped at 256.

@@ -23,7 +23,8 @@ import {
 } from "../src/colony/builder/blueprintEdit";
 
 const N = HOUSE_VOXEL_N;
-const BASE = "house{w:6 d:5 wallH:2 door:s} room{kind:living x:0 y:0 w:6 d:5 win:1}";
+const BASE =
+  "house{w:6 d:5 wallH:2 door:s} room{kind:living x:0 y:0 w:6 d:5 win:1}";
 
 describe("furniture catalog + stamps", () => {
   it("every catalog entry produces at least one block and stays inside the cell", () => {
@@ -97,9 +98,9 @@ describe("blueprint DSL — furniture items", () => {
   });
 
   it("validation flags out-of-bounds, bad rotation and over-cap furniture", () => {
-    expect(validateBlueprint(`${BASE} item{kind:bed x:9 y:1 rot:0}`).errors).toContain(
-      "furniture 0 (bed) sits outside the house",
-    );
+    expect(
+      validateBlueprint(`${BASE} item{kind:bed x:9 y:1 rot:0}`).errors,
+    ).toContain("furniture 0 (bed) sits outside the house");
     expect(
       validateBlueprint(`${BASE} item{kind:bed x:1 y:1 rot:7}`).errors,
     ).toContain("furniture 0 (bed) rot must be 0..3");
@@ -114,13 +115,17 @@ describe("blueprint DSL — furniture items", () => {
 describe("compiler — furniture stamping", () => {
   function kindsOf(script: string): Set<string> {
     return new Set(
-      compileBlueprint(script, { w: 6, d: 5, seed: 7 }).blocks.map((b) => b.kind),
+      compileBlueprint(script, { w: 6, d: 5, seed: 7 }).blocks.map(
+        (b) => b.kind,
+      ),
     );
   }
 
   it("a placed sofa adds sofa blocks the bare house never had", () => {
     expect(kindsOf(BASE).has("sofa")).toBe(false);
-    expect(kindsOf(`${BASE} item{kind:sofa x:2 y:2 rot:0}`).has("sofa")).toBe(true);
+    expect(kindsOf(`${BASE} item{kind:sofa x:2 y:2 rot:0}`).has("sofa")).toBe(
+      true,
+    );
   });
 
   it("furniture lands above the floor slab (z >= 1), never under it", () => {

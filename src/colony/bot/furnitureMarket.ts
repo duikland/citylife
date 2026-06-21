@@ -94,8 +94,13 @@ export function allListings(market: Market): Market {
 }
 
 /** The listings a given seller has on the board. Pure. */
-export function listingsBySeller(market: Market, sellerCitizenId: string): Market {
-  return market.filter((l) => l.sellerCitizenId === sellerCitizenId).map((l) => ({ ...l }));
+export function listingsBySeller(
+  market: Market,
+  sellerCitizenId: string,
+): Market {
+  return market
+    .filter((l) => l.sellerCitizenId === sellerCitizenId)
+    .map((l) => ({ ...l }));
 }
 
 /** Add (or update) a listing. Rejects an unsafe name / unknown kind / non-positive price by returning the
@@ -194,7 +199,10 @@ export async function saveMarketBackend(
     });
     return resp.ok ? { ok: true } : { ok: false, error: `HTTP ${resp.status}` };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "network error" };
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "network error",
+    };
   }
 }
 
