@@ -3294,6 +3294,25 @@ export class PlanetRenderer {
       const hcx = lot.houseZone.x + (lot.houseZone.w - 1) / 2,
         hcy = lot.houseZone.y + (lot.houseZone.d - 1) / 2;
       const py = gy(hcx, hcy);
+      // Spec 093 — FOUNDATION + LEVEL SEATING. A flat house on sloped ground either floats (its floor
+      // above the dropped-away terrain) or has the terrain poke UP through its floor — Joe's steep
+      // sea-facing plot showed both. Sample the terrain under the whole footprint, seat the house at its
+      // HIGHEST point (so nothing pokes through the floor), and fill the gap below with a solid foundation
+      // plinth down to the LOWEST point — so a hillside home reads as a terraced foundation (flush on the
+      // uphill side, a terrace wall on the downhill side) instead of a floating/buried mess. Render-only.
+      const ht = this.sim.state.terrain;
+      let fmin = Infinity,
+        fmax = 0;
+      for (let yy = 0; yy < lot.houseZone.d; yy++)
+        for (let xx = 0; xx < lot.houseZone.w; xx++) {
+          const h = Math.max(
+            0,
+            ht.worldY(lot.houseZone.x + xx, lot.houseZone.y + yy),
+          );
+          if (h < fmin) fmin = h;
+          if (h > fmax) fmax = h;
+        }
+      const houseFloorY = Math.max(py, fmax); // never below the centre fallback
       // surveyed homestead ground (drawn whether or not it is built, so the borders read immediately).
       // Distinct pad heights (garden < farm < house < driveway) avoid coplanar z-fighting.
       padRect(
@@ -3305,6 +3324,21 @@ export class PlanetRenderer {
         lot.built ? 0x6b5a44 : 0x5c5140,
         py,
       );
+      // The foundation plinth under a BUILT house: a solid block from just under the lowest footprint
+      // terrain up to the floor, so the downhill side never shows a gap and the uphill side sits flush.
+      // Only when the slope is real (else a negligible sliver), and it shares the lot's stone palette.
+      if (lot.built && fmax - fmin > 0.18) {
+        block(
+          hcx,
+          hcy,
+          lot.houseZone.w,
+          (fmax + 0.05 - (fmin - 0.05)) / BH,
+          lot.houseZone.d,
+          0,
+          0x7d7468, // warm stone foundation / terrace
+          fmin - 0.05,
+        );
+      }
       for (let yy = lot.garden.y; yy < lot.garden.y + lot.garden.d; yy++)
         for (let xx = lot.garden.x; xx < lot.garden.x + lot.garden.w; xx++)
           padCell(xx, yy, 0.038, 0x4f6f33);
@@ -3321,7 +3355,9 @@ export class PlanetRenderer {
       // every house in the street (the old wholesale mergedHouseGroup teardown made each save pay
       // for the whole neighborhood). Keyed on exactly what the compiled mesh depends on.
       const doorDir = streetDoorDir(lot); // single source — only the no-blueprint fallback uses it
-      const houseKey = lot.built ? `${lot.blueprint ?? ""}~${py}` : "";
+      const houseKey = lot.built
+        ? `${lot.blueprint ?? ""}~${houseFloorY.toFixed(2)}`
+        : "";
       if (this.lotHouseKey.get(lot.id) !== houseKey) {
         const old = this.mergedHouseGroup.getObjectByName(lot.id) as
           | THREE.Mesh
@@ -3340,7 +3376,7 @@ export class PlanetRenderer {
             lot.blueprint ??
               defaultBlueprint(lot.houseSeed, doorDir, lot.houseZone.w),
             lot.houseSeed,
-            py,
+            houseFloorY,
           );
         }
         this.lotHouseKey.set(lot.id, houseKey);
