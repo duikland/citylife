@@ -2164,6 +2164,14 @@ export class ColonyRuntime {
     }));
   }
 
+  /** Spec 089 — the number of storeys a lot's house has (1..3), so the HUD can show per-floor arrange
+   *  controls only on a multi-storey home. 1 for an unbuilt/unknown lot. */
+  houseStoreys(lotId: string): number {
+    const lot = this.neighborhood.lots.find((l) => l.id === lotId);
+    if (!lot || !lot.blueprint) return 1;
+    return Math.max(1, Math.min(3, parseBlueprint(lot.blueprint).wallH));
+  }
+
   /** Apply a pure furniture edit to a lot you OWN and rebuild the house. The lot must be yours and
    *  already designed. Returns false (no change) otherwise or if the result fails validation. Private
    *  spine for the public move/rotate/restack ops. */
