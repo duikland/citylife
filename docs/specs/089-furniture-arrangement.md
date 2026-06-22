@@ -44,9 +44,26 @@ not own.
 between floors (+clamp), remove→inventory (+out-of-range no-op + ownership refusal). 849 tests green, tsc
 clean. Single-agent adversarial review: **0 real defects**.
 
-## Next
+## The arrange UI (DONE — commit `7a25164`)
 
-The **arrange UI** — a HUD furniture-arrangement mode that lists the placed pieces and gives each
-move / rotate / floor / remove controls (every control with a `data-build-action` for bot driving),
-verified on the dev server. Optionally a `name` field on the `item{}` DSL so a placed piece keeps its
-identity through a remove.
+A **"Rearrange home"** subsection in the HUD Furniture studio panel (`ColonyApp.tsx`), shown for the
+signed-in player's own house. It lists `runtime.placedFurniture(myLot.id)`; each piece is a compact row
+(icon + kind + cell + floor) with controls: **move ←→↑↓** (`moveArrangedFurniture` deltas), **rotate ↻**
+(`rotateArrangedFurniture`), **floor ▲▼** (`restackArrangedFurniture`, shown only when
+`runtime.houseStoreys(lotId) > 1`), and **remove ✕** (`removeArrangedFurniture` → back to inventory).
+Every control carries a `data-build-action` (`arrange-move-${i}-${dir}` / `arrange-rotate-${i}` /
+`arrange-floor-${i}-up|down` / `arrange-remove-${i}`). New `runtime.houseStoreys(lotId)` gates the floor
+controls. `.arrange-btn` CSS.
+
+**Live-verified** on the dev server: a two-storey house with two placed pieces rendered all 16 controls;
+clicking them slid the sofa, rotated it, moved it up a floor, and removed the lamp back to inventory —
+no console errors. 849 tests green, tsc clean. Adversarial review: 0 defects.
+
+**FEATURE COMPLETE** (runtime + UI) on PR #73.
+
+## Optional future enhancement
+
+A `name` field on the `item{}` DSL so a placed piece keeps its custom name (a removed "Cozy Couch" comes
+back as a plain sofa today, since the blueprint stores only the kind). The DSL is space-delimited, so a
+free-text name needs encoding (slug or escaped spaces) — deferred as fiddly polish, not part of the core
+"arrange whenever" ask.
