@@ -57,6 +57,37 @@ describe("first-person route dogfood", () => {
     expect(ui.firstPerson.blockedReason).toBe("building");
   });
 
+  it("reports when first-person walking is blocked by a reserved parcel footprint", () => {
+    const rt = new ColonyRuntime(4242);
+    const me = rt.getUiState().citizens.list[0]!;
+    const terrain = rt.sim.state.terrain;
+    let cell: { x: number; y: number } | null = null;
+    for (let y = 1; y < terrain.size - 1 && !cell; y++) {
+      for (let x = 1; x < terrain.size - 2 && !cell; x++) {
+        if (
+          !terrain.isWater(x, y) &&
+          !terrain.isWater(x + 1, y) &&
+          !rt.sim.state.roadSet.has(`${x + 1},${y}`)
+        ) {
+          cell = { x, y };
+        }
+      }
+    }
+    if (!cell) throw new Error("test terrain needs adjacent non-road land cells");
+    rt.sim.state.occupied.add(`${cell.x + 1},${cell.y}`);
+    rt.enterFirstPerson(me.id);
+    const start = { x: cell.x + 0.45, y: cell.y };
+    expect(rt.placeFirstPersonDogfood(start, 0)).toBe(true);
+
+    rt.setFpKey("KeyW", true);
+    rt.stepFirstPersonDogfood(0.25);
+    rt.setFpKey("KeyW", false);
+
+    const ui = rt.getUiState();
+    expect(ui.firstPerson.view!.citizen.positionXY).toEqual(start);
+    expect(ui.firstPerson.blockedReason).toBe("parcel");
+  });
+
   it("reports when first-person walking is blocked by water", () => {
     const rt = new ColonyRuntime(4242);
     const me = rt.getUiState().citizens.list[0]!;

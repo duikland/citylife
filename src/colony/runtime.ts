@@ -1496,7 +1496,11 @@ export class ColonyRuntime {
   }
 
   /** A blocked first-person step returns a player-facing reason; null means walkable. */
-  private blockedStepReason(x: number, y: number): string | null {
+  private blockedStepReason(
+    x: number,
+    y: number,
+    from?: { x: number; y: number },
+  ): string | null {
     const t = this.sim.state.terrain;
     const ix = Math.round(x),
       iy = Math.round(y);
@@ -1508,6 +1512,17 @@ export class ColonyRuntime {
       )
     ) {
       return "building";
+    }
+    const fromKey = from ? `${Math.round(from.x)},${Math.round(from.y)}` : null;
+    const key = `${ix},${iy}`;
+    const fromInsideOccupied = fromKey ? this.sim.state.occupied.has(fromKey) : false;
+    if (
+      !fromInsideOccupied &&
+      key !== fromKey &&
+      this.sim.state.occupied.has(key) &&
+      !this.sim.state.roadSet.has(key)
+    ) {
+      return "parcel";
     }
     return null;
   }
@@ -1539,7 +1554,7 @@ export class ColonyRuntime {
       const sp = this.fpWalkSpeed * dt;
       const nx = c.pos.x + Math.cos(c.heading) * sp;
       const ny = c.pos.y + Math.sin(c.heading) * sp;
-      const blocked = this.blockedStepReason(nx, ny);
+      const blocked = this.blockedStepReason(nx, ny, c.pos);
       if (!blocked) {
         c.pos.x = nx;
         c.pos.y = ny;
