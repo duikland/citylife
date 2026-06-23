@@ -75,6 +75,7 @@ export function ColonyApp() {
   const hostRef = useRef<HTMLDivElement>(null);
   const ui: ColonyUiState = runtime.getUiState();
   const [borderOpen, setBorderOpen] = useState(false);
+  const [mouseLookLocked, setMouseLookLocked] = useState(false);
   // Furniture studio (spec 088 Slice D UI) — the design-and-buy controls.
   const [furnKind, setFurnKind] = useState<FurnitureKind>("sofa");
   const [furnName, setFurnName] = useState("");
@@ -129,6 +130,27 @@ export function ColonyApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const onPointerLockChange = () => {
+      setMouseLookLocked(document.pointerLockElement === hostRef.current);
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (document.pointerLockElement !== hostRef.current) return;
+      runtime.applyFirstPersonMouseLook(e.movementX, e.movementY);
+    };
+    document.addEventListener("pointerlockchange", onPointerLockChange);
+    document.addEventListener("mousemove", onMouseMove);
+    return () => {
+      document.removeEventListener("pointerlockchange", onPointerLockChange);
+      document.removeEventListener("mousemove", onMouseMove);
+    };
+  }, [runtime]);
+
+  const requestMouseLook = () => {
+    if (!ui.firstPerson.active) return;
+    hostRef.current?.requestPointerLock?.();
+  };
+
   // Keyboard shortcuts: Space pauses, 1/2/3 switch camera, Z toggles zoning. Ignored while typing.
   // When stepped into a bot (first person), W/A/S/D or the arrow keys WALK it around.
   useEffect(() => {
@@ -179,6 +201,10 @@ export function ColonyApp() {
           return;
         }
         if (e.code === "Escape") {
+          if (document.pointerLockElement === hostRef.current) {
+            document.exitPointerLock?.();
+            return;
+          }
           runtime.exitFirstPerson();
           return;
         }
@@ -255,8 +281,14 @@ export function ColonyApp() {
             &apos;s eyes
           </span>
           <span style={{ color: "#6f86b8", fontSize: 12 }}>
-            <b>W</b>/<b>S</b> walk · <b>A</b>/<b>D</b> turn · <b>Esc</b> exit
+            <b>W</b>/<b>S</b> walk · <b>A</b>/<b>D</b> turn · mouse-look {mouseLookLocked ? "locked" : "ready"} · <b>Esc</b> {mouseLookLocked ? "unlock" : "exit"}
           </span>
+          <button
+            style={{ padding: "3px 12px" }}
+            onClick={requestMouseLook}
+          >
+            {mouseLookLocked ? "Mouse-look on" : "Lock mouse-look"}
+          </button>
           <button
             style={{ padding: "3px 12px" }}
             onClick={() => runtime.exitFirstPerson()}

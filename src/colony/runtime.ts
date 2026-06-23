@@ -518,6 +518,7 @@ export interface ColonyUiState {
     /** Step-in choices allowed for this session. Operators/admins get every citizen; CITYLIFE_PLAYER gets only their own. */
     stepInCitizenIds: string[];
     view: FirstPersonView | null;
+    lookPitch: number;
     blockedReason: string | null;
     narration: string | null;
     narrating: boolean;
@@ -630,6 +631,7 @@ export class ColonyRuntime {
   // First-person locomotion — which movement keys are held while you walk your bot around.
   private fpKeys = new Set<string>();
   private fpWalkSpeed = 0;
+  private fpLookPitch = 0;
   private raceState: RaceState | null = null;
   private raceInput: RaceInput = {};
   private bestRaceMs: number | null = null;
@@ -1282,6 +1284,7 @@ export class ColonyRuntime {
     if (!this.canStepIntoCitizen(citizenId)) return false;
     this.fpCitizenId = citizenId;
     this.fpWalkSpeed = 0;
+    this.fpLookPitch = 0;
     this.fpBlockedReason = null;
     this.renderer?.enterFirstPerson(citizenId);
     this.emit();
@@ -1292,6 +1295,7 @@ export class ColonyRuntime {
     this.fpCitizenId = null;
     this.fpKeys.clear();
     this.fpWalkSpeed = 0;
+    this.fpLookPitch = 0;
     this.fpBlockedReason = null;
     this.fpNarration = null;
     this.fpNarrating = false;
@@ -1322,6 +1326,20 @@ export class ColonyRuntime {
     else this.fpKeys.delete(m);
   }
 
+  /** Pointer-lock mouse-look math: positive dx yaws right; positive dy looks down. */
+  applyFirstPersonMouseLook(dx: number, dy: number): boolean {
+    const c = this.fpCitizenId ? this.citizens.byId(this.fpCitizenId) : null;
+    if (!c) return false;
+    const cfg = COLONY.firstPerson;
+    c.heading += dx * cfg.mouseSensitivity;
+    this.fpLookPitch = Math.max(
+      -cfg.maxLookPitch,
+      Math.min(cfg.maxLookPitch, this.fpLookPitch - dy * cfg.mouseSensitivity),
+    );
+    this.emit();
+    return true;
+  }
+
   /** Deterministic route-dogfood hook: place the active avatar at a controlled edge before stepping. */
   placeFirstPersonDogfood(
     pos: { x: number; y: number },
@@ -1333,6 +1351,7 @@ export class ColonyRuntime {
     c.target = { ...pos };
     c.heading = heading;
     this.fpWalkSpeed = 0;
+    this.fpLookPitch = 0;
     this.fpBlockedReason = null;
     this.emit();
     return true;
@@ -2644,7 +2663,11 @@ export class ColonyRuntime {
       const mine = this.operatorCitizenId();
       return this.citizens
         .avatars()
-        .map((a) => ({ ...a, isOperator: a.id === mine }));
+        .map((a) => ({
+          ...a,
+          isOperator: a.id === mine,
+          lookPitch: a.id === this.fpCitizenId ? this.fpLookPitch : 0,
+        }));
     });
     if (this.fpCitizenId) this.renderer.enterFirstPerson(this.fpCitizenId);
     this.renderer.setNeighborhood(this.neighborhood); // spec 075 — lot pads + voxel homes
@@ -2953,6 +2976,7 @@ export class ColonyRuntime {
           operatorCitizenId: opId,
           stepInCitizenIds: this.stepInCitizenIds(),
           view,
+          lookPitch: this.fpLookPitch,
           blockedReason: this.fpBlockedReason,
           narration: this.fpNarration,
           narrating: this.fpNarrating,

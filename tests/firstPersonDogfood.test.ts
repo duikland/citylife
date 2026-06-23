@@ -10,6 +10,23 @@ function distance(
 }
 
 describe("first-person route dogfood", () => {
+  it("updates first-person yaw and clamps pitch from mouse-look deltas", () => {
+    const rt = new ColonyRuntime(4242);
+    const me = rt.getUiState().citizens.list[0]!;
+    rt.enterFirstPerson(me.id);
+    const before = rt.getUiState().firstPerson.view!.citizen.heading;
+
+    expect(rt.applyFirstPersonMouseLook(20, -1000)).toBe(true);
+
+    const ui = rt.getUiState();
+    expect(ui.firstPerson.view!.citizen.heading).toBeGreaterThan(before);
+    expect(ui.firstPerson.lookPitch).toBeGreaterThan(0);
+    expect(ui.firstPerson.lookPitch).toBeLessThanOrEqual(0.9);
+
+    expect(rt.applyFirstPersonMouseLook(0, 4000)).toBe(true);
+    expect(rt.getUiState().firstPerson.lookPitch).toBeGreaterThanOrEqual(-0.9);
+  });
+
   it("reports when first-person walking is blocked by water", () => {
     const rt = new ColonyRuntime(4242);
     const me = rt.getUiState().citizens.list[0]!;

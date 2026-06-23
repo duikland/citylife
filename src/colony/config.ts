@@ -1067,6 +1067,8 @@ export const COLONY = {
     walkAcceleration: 10, // units/sec²; gives a visible ramp instead of instant full speed
     walkDeceleration: 8, // units/sec²; releases coast briefly, then settle
     turnSpeed: 2.4, // radians/sec for keyboard yaw until mouse-look lands
+    mouseSensitivity: 0.0025, // radians per pointer-lock mouse pixel for FPS look
+    maxLookPitch: 0.9, // radians up/down clamp so mouse-look never flips over
   },
 
   render: {
