@@ -46,6 +46,8 @@ export interface Citizen {
   /** Spec 078 — avatar body kind. Ordinary citizens are 'human'; Joe the founder is a 'crab'. Drives
    *  which instanced mesh the renderer draws them with and the first-person eye height. */
   kind: "human" | "crab";
+  /** Deterministic in-world agent identity for public bot citizens. Public-safe label only; no host/token/profile data. */
+  agentCitizen?: "joe" | "jack";
   /** Spec 077 P4 — the citizen's authored house blueprint (the DSL script accepted in the builder).
    *  Mirrors the parcel's stored script; the backend persistence slice syncs from here. */
   blueprint?: string;
@@ -61,6 +63,7 @@ export interface CitizenPublic {
   hasPod: boolean;
   telegramHandle?: string;
   tokensSpentLifetime: number;
+  agentCitizen?: "joe" | "jack";
 }
 
 function publicView(c: Citizen): CitizenPublic {
@@ -72,6 +75,7 @@ function publicView(c: Citizen): CitizenPublic {
     hasPod: c.hasPod,
     telegramHandle: c.telegramHandle,
     tokensSpentLifetime: c.tokensSpentLifetime,
+    agentCitizen: c.agentCitizen,
   };
 }
 
@@ -86,6 +90,7 @@ function publicStub(c: Citizen): CitizenPublic {
     homeXY: { x: c.homeXY.x, y: c.homeXY.y },
     hasPod: c.hasPod,
     tokensSpentLifetime: 0,
+    agentCitizen: c.agentCitizen,
   };
 }
 
@@ -139,6 +144,7 @@ export class CitizenRoster {
     plotName: string;
     home: { x: number; y: number };
     kind: "human" | "crab";
+    agentCitizen?: "joe" | "jack";
     nowMs: number;
     spd?: number;
   }): Citizen | null {
@@ -161,6 +167,7 @@ export class CitizenRoster {
       heading: 0,
       spd: opts.spd ?? 0.7,
       kind: opts.kind,
+      agentCitizen: opts.agentCitizen,
     };
     this.byHousehold.set(opts.householdId, c);
     return c;
@@ -238,6 +245,7 @@ export class CitizenRoster {
     heading: number;
     hasPod: boolean;
     kind: "human" | "crab";
+    agentCitizen?: "joe" | "jack";
   }[] {
     return Array.from(this.byHousehold.values()).map((c) => ({
       id: c.id,
@@ -247,6 +255,7 @@ export class CitizenRoster {
       heading: c.heading,
       hasPod: c.hasPod,
       kind: c.kind,
+      agentCitizen: c.agentCitizen,
     }));
   }
 

@@ -228,6 +228,7 @@ import {
 // blueprint (a sea-facing patio cottage — his "city desk" by the water), reserved on the shore-most plot.
 const JOE_ID = "citizen_joe";
 const JOE_BORN_MS = 0;
+const JACK_ID = "citizen_jack";
 // KOOKER, the Builder of the Kookerverse (founder two): owner of the build trade. Players see "KOOKER"
 // (the displayName/alias below); the internal id keeps its legacy value "citizen_viw" because the ledger
 // accounts (citizen:citizen_viw) and the kooker-web OTA mission (079) reference the builder by THIS id —
@@ -1114,6 +1115,7 @@ export class ColonyRuntime {
     this.restoreKookerbook();
     this.seedJoe(); // spec 078 — Joe the Crab takes up residence on the shore-most homestead
     this.seedViw(); // spec 083 — Viw the Builder takes the homestead beside him
+    this.seedJack(); // player/UI owner agent citizen, public-safe and deterministic
     this.restoreBlueprints(); // spec 077 P4.5 — stored designs regenerate their houses on reload
     // Spec 077 P4 — listen for blueprint_saved posted back by the House Builder popup. Same-origin
     // only; the script is validated before anything is stored or built. Guarded for node test runs.
@@ -1992,6 +1994,7 @@ export class ColonyRuntime {
       plotName: "Driftwood Cove",
       home,
       kind: "crab",
+      agentCitizen: "joe",
       nowMs: JOE_BORN_MS,
       spd: 0.6,
     });
@@ -2006,6 +2009,44 @@ export class ColonyRuntime {
       plotId: plot.id,
       address: "Driftwood Cove",
       kind: "crab",
+    });
+  }
+
+  /** CityLife Player/UI agent citizen: Jack is a named in-world scout who walks the city beside Joe.
+   *  The record is intentionally public-safe: only a display alias and in-game lot/address are stored,
+   *  never bot infrastructure, hosts, tokens or profile paths. Deterministic and idempotent like the
+   *  founders, so every fresh bounded run renders the same Jack without save migration. */
+  private seedJack(): void {
+    const lots = this.neighborhood.lots;
+    // Keep Jack near Joe's public founder cottage instead of reserving another lot. That makes him
+    // visible as a walking named citizen without changing newcomer/parcel allocation or pathing fixtures.
+    const plot = lots[0];
+    if (!plot) return;
+    const home = {
+      x: Math.round(plot.houseZone.x + (plot.houseZone.w - 1) / 2) + 2,
+      y: Math.round(plot.houseZone.y + (plot.houseZone.d - 1) / 2),
+    };
+    const jack = this.citizens.seedFounder({
+      id: JACK_ID,
+      householdId: "household_jack",
+      displayName: "Jack the Scout",
+      plotId: plot.id,
+      plotName: "Signal House",
+      home,
+      kind: "human",
+      agentCitizen: "jack",
+      nowMs: JOE_BORN_MS,
+      spd: 0.75,
+    });
+    if (jack) this.citizens.setTarget(JACK_ID, { x: plot.doorX, y: plot.doorY });
+    this.seedDeposit(JACK_ID);
+    this.ensureKbProfile({
+      citizenId: JACK_ID,
+      alias: "Jack the Scout",
+      bio: "City scout and street-level tester. Walks the lanes, watches the controls, and reports what players can see.",
+      plotId: plot.id,
+      address: "Signal House",
+      kind: "human",
     });
   }
 

@@ -26,8 +26,22 @@ const JOE = {
   plotName: "Driftwood Cove",
   home: { x: 100, y: 106 },
   kind: "crab" as const,
+  agentCitizen: "joe" as const,
   nowMs: 0,
   spd: 0.6,
+};
+
+const JACK = {
+  id: "citizen_jack",
+  householdId: "household_jack",
+  displayName: "Jack the Scout",
+  plotId: "lot_5",
+  plotName: "Signal House",
+  home: { x: 104, y: 106 },
+  kind: "human" as const,
+  agentCitizen: "jack" as const,
+  nowMs: 0,
+  spd: 0.75,
 };
 
 describe("Spec 078 — Joe the Crab founder plumbing", () => {
@@ -62,6 +76,40 @@ describe("Spec 078 — Joe the Crab founder plumbing", () => {
     expect(human.kind).toBe("human");
     expect(joe.kind).toBe("crab");
     expect(joe.displayName).toBe("Joe the Crab");
+    expect(joe.agentCitizen).toBe("joe");
+  });
+
+  it("seeds deterministic public-safe agent citizens for Joe and Jack", () => {
+    const r = new CitizenRoster();
+    const joe = r.seedFounder(JOE)!;
+    const jack = r.seedFounder(JACK)!;
+
+    expect(joe.agentCitizen).toBe("joe");
+    expect(jack.agentCitizen).toBe("jack");
+    expect(jack.displayName).toBe("Jack the Scout");
+    expect(jack.kind).toBe("human");
+
+    const pub = r.list();
+    expect(pub.map((c) => [c.id, c.agentCitizen])).toEqual([
+      ["citizen_joe", "joe"],
+      ["citizen_jack", "jack"],
+    ]);
+    expect(JSON.stringify(pub)).not.toMatch(
+      /secret|cluster|gateway|private|svc\.cluster|https?:\/\//i,
+    );
+  });
+
+  it("routes Jack through the avatar stream as a named human agent citizen", () => {
+    const r = new CitizenRoster();
+    r.seedFounder(JOE);
+    r.seedFounder(JACK);
+    const jack = r.avatars().find((a) => a.id === "citizen_jack")!;
+    expect(jack).toMatchObject({
+      id: "citizen_jack",
+      displayName: "Jack the Scout",
+      kind: "human",
+      agentCitizen: "jack",
+    });
   });
 
   it("is idempotent on the citizen id — re-seeding keeps the original record unchanged", () => {

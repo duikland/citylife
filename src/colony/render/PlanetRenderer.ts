@@ -61,6 +61,8 @@ export interface AvatarView {
   hasPod: boolean;
   /** Spec 078 — body kind: humans draw as the capsule avatar, Joe the founder draws as the crab mesh. */
   kind: "human" | "crab";
+  /** Deterministic public agent identity for named owner/scout citizens; never carries infra data. */
+  agentCitizen?: "joe" | "jack";
   /** True for the avatar belonging to the logged-in operator (rendered highlighted). */
   isOperator: boolean;
 }

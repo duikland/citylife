@@ -149,4 +149,23 @@ describe("firstPersonView — spec 074", () => {
     rt.setPlayerView(false);
     expect(rt.getUiState().firstPerson.stepInCitizenIds).toEqual(ids);
   });
+
+  it("boots deterministic in-world agent citizens for Joe and Jack", () => {
+    const rt = new ColonyRuntime(4242);
+    const citizens = rt.getUiState().citizens.list;
+    const joe = citizens.find((c) => c.id === "citizen_joe");
+    const jack = citizens.find((c) => c.id === "citizen_jack");
+
+    expect(joe).toMatchObject({
+      displayName: "Joe the Crab",
+      agentCitizen: "joe",
+    });
+    expect(jack).toMatchObject({
+      displayName: "Jack the Scout",
+      agentCitizen: "jack",
+    });
+    expect(JSON.stringify([joe, jack])).not.toMatch(
+      /secret|cluster|gateway|private|svc\.cluster|https?:\/\//i,
+    );
+  });
 });
