@@ -70,12 +70,65 @@ const VIEWS: { id: ViewMode; label: string }[] = [
   { id: "elevation", label: "Elevation" },
 ];
 
+export function FirstPersonMouseLookBar({
+  citizenName,
+  mouseLookLocked,
+  pointerLockError,
+  requestMouseLook,
+  exitFirstPerson,
+}: {
+  citizenName: string | null;
+  mouseLookLocked: boolean;
+  pointerLockError: string | null;
+  requestMouseLook: () => void;
+  exitFirstPerson: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 18,
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 50,
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        background: "rgba(10,14,28,0.78)",
+        border: "1px solid #2a3550",
+        borderRadius: 10,
+        padding: "8px 14px",
+        backdropFilter: "blur(4px)",
+      }}
+    >
+      <span style={{ color: "#a0d4f0", fontSize: 13 }}>
+        👁 Seeing through <b>{citizenName ?? "a citizen"}</b>&apos;s eyes
+      </span>
+      <span style={{ color: "#6f86b8", fontSize: 12 }}>
+        <b>W</b>/<b>S</b> walk · <b>A</b>/<b>D</b> turn · mouse-look {pointerLockError ? "unavailable" : mouseLookLocked ? "locked" : "ready"} · <b>Esc</b> {mouseLookLocked ? "unlock" : "exit"}
+      </span>
+      {pointerLockError && (
+        <span style={{ color: "#e6c84d", fontSize: 12 }} role="status">
+          {pointerLockError}
+        </span>
+      )}
+      <button style={{ padding: "3px 12px" }} onClick={requestMouseLook}>
+        {mouseLookLocked ? "Mouse-look on" : pointerLockError ? "Retry mouse-look" : "Lock mouse-look"}
+      </button>
+      <button style={{ padding: "3px 12px" }} onClick={exitFirstPerson}>
+        Exit first person
+      </button>
+    </div>
+  );
+}
+
 export function ColonyApp() {
   const runtime = useRuntime();
   const hostRef = useRef<HTMLDivElement>(null);
   const ui: ColonyUiState = runtime.getUiState();
   const [borderOpen, setBorderOpen] = useState(false);
   const [mouseLookLocked, setMouseLookLocked] = useState(false);
+  const [pointerLockError, setPointerLockError] = useState<string | null>(null);
   // Furniture studio (spec 088 Slice D UI) — the design-and-buy controls.
   const [furnKind, setFurnKind] = useState<FurnitureKind>("sofa");
   const [furnName, setFurnName] = useState("");
@@ -132,7 +185,9 @@ export function ColonyApp() {
 
   useEffect(() => {
     const onPointerLockChange = () => {
-      setMouseLookLocked(document.pointerLockElement === hostRef.current);
+      const locked = document.pointerLockElement === hostRef.current;
+      setMouseLookLocked(locked);
+      if (locked) setPointerLockError(null);
     };
     const onMouseMove = (e: MouseEvent) => {
       if (document.pointerLockElement !== hostRef.current) return;
@@ -148,7 +203,26 @@ export function ColonyApp() {
 
   const requestMouseLook = () => {
     if (!ui.firstPerson.active) return;
-    hostRef.current?.requestPointerLock?.();
+    const host = hostRef.current;
+    if (!host?.requestPointerLock) {
+      setPointerLockError("Mouse-look unavailable — this browser does not support pointer lock.");
+      return;
+    }
+    setPointerLockError(null);
+    try {
+      const request = host.requestPointerLock();
+      if (request && typeof request.catch === "function") {
+        request.catch(() =>
+          setPointerLockError(
+            "Mouse-look unavailable — click the city view and try again.",
+          ),
+        );
+      }
+    } catch {
+      setPointerLockError(
+        "Mouse-look unavailable — click the city view and try again.",
+      );
+    }
   };
 
   // Keyboard shortcuts: Space pauses, 1/2/3 switch camera, Z toggles zoning. Ignored while typing.
@@ -259,43 +333,13 @@ export function ColonyApp() {
     <div className="colony">
       <div className="canvas-host" ref={hostRef} />
       {ui.firstPerson.active && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 18,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 50,
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            background: "rgba(10,14,28,0.78)",
-            border: "1px solid #2a3550",
-            borderRadius: 10,
-            padding: "8px 14px",
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          <span style={{ color: "#a0d4f0", fontSize: 13 }}>
-            👁 Seeing through <b>{ui.firstPerson.citizenName ?? "a citizen"}</b>
-            &apos;s eyes
-          </span>
-          <span style={{ color: "#6f86b8", fontSize: 12 }}>
-            <b>W</b>/<b>S</b> walk · <b>A</b>/<b>D</b> turn · mouse-look {mouseLookLocked ? "locked" : "ready"} · <b>Esc</b> {mouseLookLocked ? "unlock" : "exit"}
-          </span>
-          <button
-            style={{ padding: "3px 12px" }}
-            onClick={requestMouseLook}
-          >
-            {mouseLookLocked ? "Mouse-look on" : "Lock mouse-look"}
-          </button>
-          <button
-            style={{ padding: "3px 12px" }}
-            onClick={() => runtime.exitFirstPerson()}
-          >
-            Exit first person
-          </button>
-        </div>
+        <FirstPersonMouseLookBar
+          citizenName={ui.firstPerson.citizenName}
+          mouseLookLocked={mouseLookLocked}
+          pointerLockError={pointerLockError}
+          requestMouseLook={requestMouseLook}
+          exitFirstPerson={() => runtime.exitFirstPerson()}
+        />
       )}
       <FirstPersonPanel runtime={runtime} fp={ui.firstPerson} />
       {ui.race.mode !== "idle" && (
