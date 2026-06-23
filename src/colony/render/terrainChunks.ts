@@ -41,11 +41,18 @@ export function buildChunkedTerrain(
   colorFor: (i: number, out: THREE.Color) => void,
   material: THREE.Material,
   grid = 8,
+  // Spec 093 — a RENDER-ONLY height override. The renderer levels the cells under each built house
+  // footprint to that house's seat height, so a house on a slope sits on a flat cut pad instead of
+  // floating over the low corner / having the hill poke through the floor. Returns undefined for cells
+  // it does not touch (the vast majority), which fall through to the real worldY. Sim/pathfinding/water
+  // all keep reading Terrain.worldY — only the visible mesh is cut, so nothing downstream shifts.
+  heightAt?: (x: number, y: number) => number | undefined,
 ): ChunkedTerrain {
   const N = t.size;
+  const Y = (x: number, y: number) => heightAt?.(x, y) ?? t.worldY(x, y);
   // The height at a clamped cell — the central-difference normal needs neighbours at the borders.
   const h = (x: number, y: number) =>
-    t.worldY(Math.max(0, Math.min(N - 1, x)), Math.max(0, Math.min(N - 1, y)));
+    Y(Math.max(0, Math.min(N - 1, x)), Math.max(0, Math.min(N - 1, y)));
   const step = Math.ceil((N - 1) / grid);
   const group = new THREE.Group();
   const chunks: TerrainChunk[] = [];
@@ -67,7 +74,7 @@ export function buildChunkedTerrain(
         for (let x = x0; x <= x1; x++) {
           const v = (y - y0) * w + (x - x0);
           verts[v * 3] = wx(x);
-          verts[v * 3 + 1] = t.worldY(x, y);
+          verts[v * 3 + 1] = Y(x, y);
           verts[v * 3 + 2] = wz(y);
           // Central differences over a 1-cell world spacing — the smooth-shaded look of the old
           // computeVertexNormals at a fraction of the cost, and identical on both sides of a seam.

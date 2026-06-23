@@ -108,6 +108,13 @@ export class PlanetRenderer {
   private picker = new THREE.Raycaster();
   private pickDown: { x: number; y: number; t: number } | null = null;
   private chunkedTerrain!: ChunkedTerrain; // spec 084 S5 — chunk grid, see terrainChunks.ts
+  private terrainMat!: THREE.Material; // kept so the terrain can be rebuilt when footprints level (spec 093)
+  // Spec 093 — RENDER-ONLY leveling. Cell index (y*N+x) → the flat seat height of the house whose
+  // footprint covers it. The terrain mesh reads this so a house on a slope sits on a cut pad instead of
+  // floating / poking through; Terrain.worldY (sim, water, pathfinding) is never touched. terrainLevelSig
+  // is the built-lot fingerprint that drives it, so the terrain only rebuilds when a footprint changes.
+  private terrainLevel = new Map<number, number>();
+  private terrainLevelSig = "";
   private roadSurfaceMesh!: THREE.Mesh;
   private roadShoulderMesh!: THREE.Mesh;
   private roadLineMesh!: THREE.Mesh;
@@ -770,16 +777,24 @@ export class PlanetRenderer {
   private colorFor(mode: ViewMode, i: number, out: THREE.Color): void {
     const t = this.sim.state.terrain;
     if (mode === "biome") {
-      out.setHex(BIOME_COLOR[t.biome[i] as Biome]);
+      // Spec 093 — a cell the renderer levelled/dried for a homestead is DRY GROUND now, even if its real
+      // elevation is a sub-sea-level Shallows/Beach cell. Paint it Plains grass so a raised coastal cell
+      // doesn't show its teal sea / sand colour standing proud above the water (the operator's "blue
+      // patches at Joe's house"). The land enrichment below then applies to it as ordinary ground.
+      const leveled = this.terrainLevel.has(i);
+      out.setHex(leveled ? BIOME_COLOR[Biome.Plains] : BIOME_COLOR[t.biome[i] as Biome]);
       // Spec 092 — richer terrain: break the flat per-biome fill on LAND with deterministic per-cell
       // variation — a small brightness jitter, an elevation lift (higher ground catches more light), and
       // a moisture tint (wetter greener, drier warmer) — so plains/forest read as living ground, not one
-      // flat colour. Water cells (under the ocean disc) stay flat.
-      if (t.elev[i]! >= COLONY.world.seaLevel && !t.water[i]) {
+      // flat colour. Water cells (under the ocean disc) stay flat; levelled cells count as land.
+      if (leveled || (t.elev[i]! >= COLONY.world.seaLevel && !t.water[i])) {
         let h = (i * 2654435761) >>> 0;
         h = (h ^ (h >>> 15)) >>> 0;
         out.multiplyScalar(0.93 + (h / 4294967296) * 0.14); // ±7% brightness
-        const lift = (t.elev[i]! - COLONY.world.seaLevel) * 0.16;
+        // clamp at the waterline so a raised (levelled) sub-sea cell isn't darkened below grass
+        const lift =
+          (Math.max(t.elev[i]!, COLONY.world.seaLevel) - COLONY.world.seaLevel) *
+          0.16;
         out.r += lift;
         out.g += lift;
         out.b += lift;
@@ -804,20 +819,141 @@ export class PlanetRenderer {
   private buildTerrain() {
     // Spec 084 S5 — the terrain is a chunk grid (per-chunk frustum culling + one-time analytic
     // normals + staged recolor); see terrainChunks.ts for why each matters at the 608 world.
-    const mat = new THREE.MeshStandardMaterial({
+    this.terrainMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.95,
       metalness: 0.02,
       flatShading: false,
     });
-    this.chunkedTerrain = buildChunkedTerrain(
+    this.rebuildChunkedTerrain();
+    // Spec 093 — if the parcels are already known (terrain built after setNeighborhood), level + dry them
+    // straight away so the terrain's first visible build already carries the founder pads, never a frame
+    // of un-levelled coastal water. relevelTerrain is idempotent (own fingerprint), so this is safe to
+    // pair with the setNeighborhood call — whichever runs second with both ready wins, and the per-frame
+    // updateNeighborhood remains the path for later builds.
+    if (this.neighborhood) this.relevelTerrain();
+  }
+
+  /** (Re)build the chunk-grid terrain. Re-run when the footprint level map changes (spec 093) so the
+   *  cut pads under sloped houses appear; otherwise the heightAt override stays the same and this is a
+   *  one-time boot build. Disposes + swaps the old group so the scene never holds two terrains. */
+  private rebuildChunkedTerrain() {
+    const N = this.sim.state.terrain.size;
+    const next = buildChunkedTerrain(
       this.sim.state.terrain,
       (x) => this.wx(x),
       (y) => this.wz(y),
       (i, out) => this.colorFor(this.view, i, out),
-      mat,
+      this.terrainMat,
+      8,
+      this.terrainLevel.size
+        ? (x: number, y: number) => this.terrainLevel.get(y * N + x)
+        : undefined,
     );
-    this.scene.add(this.chunkedTerrain.group);
+    if (this.chunkedTerrain) {
+      this.scene.remove(this.chunkedTerrain.group);
+      this.chunkedTerrain.dispose();
+    }
+    this.chunkedTerrain = next;
+    this.scene.add(next.group);
+  }
+
+  /** Spec 093 — recompute the render-only height map from the built lots and, if it changed, rebuild the
+   *  terrain mesh. Two effects per built homestead, both VISUAL-only (sim worldY / isWater untouched, so
+   *  water, pathfinding and the economy never shift):
+   *    1. LEVEL the cells under the house footprint to the house's seat height, so a house on a slope sits
+   *       flush on a flat cut pad (uphill cut down, downhill filled up) instead of floating / poking.
+   *    2. DRY the rest of the homestead: the sea renders as an opaque disc at y≈0.15, so a parcel cell
+   *       whose real worldY is only 0..0.15 is dry land yet is drawn UNDER the sea as a phantom pond (the
+   *       operator's "water through Joe's yard"). Any parcel cell below the dry floor is raised clear of
+   *       the disc, and the seat is clamped to it so a coastal pad can never dip under the water either.
+   *  The pad/garden/driveway/fence DECORATION reads this same map via gy() (see updateNeighborhood), so
+   *  pads, veg-beds and fences ride the cut/filled terrain together — no single-source-of-truth drift. */
+  private relevelTerrain() {
+    if (!this.neighborhood) return;
+    const N = this.sim.state.terrain.size;
+    const t = this.sim.state.terrain;
+    // render-only dry floor. The living sea (buildOcean) sits at y 0.15 and SWELLS by up to ±0.41
+    // (updateOcean), so its surface PEAKS at ~0.56; a translucent sheen rides at ~0.4. A homestead cell
+    // must clear that peak or the sea washes back over it as a teal tint even though the ground is dry
+    // (the operator's "the sea interferes where land is"). 0.65 clears the peak with margin.
+    const DRY = 0.65;
+    const SKIRT = 4; // cells of graded transition from the flat pad out to natural ground
+    const seatOf = (hz: { x: number; y: number; w: number; d: number }) =>
+      Math.max(
+        this.groundY(hz.x + (hz.w - 1) / 2, hz.y + (hz.d - 1) / 2),
+        DRY,
+      );
+    // Cheap fingerprint: only built lots, their footprint rect, and their seat height drive the map.
+    let sig = "";
+    for (const lot of this.neighborhood.parcels) {
+      if (!lot.built) continue;
+      const hz = lot.houseZone;
+      sig += `${lot.id}:${hz.x},${hz.y},${hz.w},${hz.d}@${seatOf(hz).toFixed(3)}|`;
+    }
+    if (sig === this.terrainLevelSig) return;
+    this.terrainLevelSig = sig;
+    const next = new Map<number, number>();
+    const put = (x: number, y: number, v: number) => {
+      if (x >= 0 && y >= 0 && x < N && y < N) next.set(y * N + x, v);
+    };
+    for (const lot of this.neighborhood.parcels) {
+      if (!lot.built) continue;
+      const hz = lot.houseZone;
+      const py = seatOf(hz);
+      // 1) DRY the homestead. Bbox over the fence ring + the driveway run out to the road (so the front
+      //    approach dries too); raise any cell below the floor. The footprint cells are overwritten next.
+      let x0 = hz.x,
+        x1 = hz.x + hz.w,
+        y0 = hz.y,
+        y1 = hz.y + hz.d;
+      const ext = (x: number, y: number) => {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      };
+      for (const f of lot.fence) ext(f.x, f.y);
+      for (const d of lot.driveway) ext(d.x, d.y);
+      if (lot.gate) ext(lot.gate.x, lot.gate.y);
+      for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++)
+          // raise sub-floor cells — but not under a road: the road RIBBON rides raw worldY, so a lifted
+          // cell would poke up through the asphalt on a low coastal frontage. The ribbon bridges it.
+          if (
+            t.worldY(x, y) < DRY &&
+            !this.roadRibbonCells?.has(`${x},${y}`)
+          )
+            put(x, y, DRY);
+      // 2) LEVEL the footprint to the flat seat py, then GRADE a skirt out to natural ground over SKIRT
+      //    cells (smoothstep) so the pad never drops off a 1-cell cliff. Without the skirt the garden /
+      //    driveway pads at the footprint edge sat on a near-vertical 2-3 unit step (float uphill, bury
+      //    downhill); the grade lets them — and the terrain — ramp together. The footprint's BOUNDING
+      //    vertices (dist 0 spans x..x+w, y..y+d) are flat: a w×d cell pad needs its far edge levelled too,
+      //    or the last row ramps under the house wall. The skirt stays ≥ DRY (both ends are), so it never
+      //    re-floods. Distance is Chebyshev to the footprint rect; dist ≥ SKIRT is left natural.
+      const fx1 = hz.x + hz.w,
+        fy1 = hz.y + hz.d;
+      for (let y = hz.y - SKIRT + 1; y < fy1 + SKIRT; y++)
+        for (let x = hz.x - SKIRT + 1; x < fx1 + SKIRT; x++) {
+          const dist = Math.max(
+            0,
+            hz.x - x,
+            x - fx1,
+            hz.y - y,
+            y - fy1,
+          );
+          if (dist === 0) put(x, y, py);
+          else if (dist < SKIRT && x >= 0 && y >= 0 && x < N && y < N) {
+            const nat = Math.max(t.worldY(x, y), DRY);
+            const s = dist / SKIRT;
+            const sm = s * s * (3 - 2 * s); // smoothstep: flat at the pad, flat into natural
+            put(x, y, py + (nat - py) * sm);
+          }
+        }
+    }
+    this.terrainLevel = next;
+    this.rebuildChunkedTerrain();
   }
 
   setView(mode: ViewMode) {
@@ -1799,6 +1935,12 @@ export class PlanetRenderer {
     // ribbon doesn't reach (the per-cell gap-fill fragments are negligible disconnected stubs).
     if (this.roadRibbonCells?.has(`${rx},${ry}`))
       return Math.max(0, this.smoothRoadY(x, y)) + ROAD_RIBBON_LIFT;
+    // Spec 093 — a cell under a house footprint is VISUALLY cut to the house's flat pad, so anything that
+    // stands on the ground there (a citizen home inside the house, a lamp post) must stand on the pad too,
+    // not at the natural worldY it would otherwise float above. Sim worldY is unchanged; this is purely
+    // where the renderer plants things on the visible surface.
+    const lvl = this.terrainLevel.get(ry * this.sim.state.terrain.size + rx);
+    if (lvl !== undefined) return Math.max(0, lvl);
     return Math.max(0, this.sim.state.terrain.worldY(rx, ry));
   }
 
@@ -2358,6 +2500,11 @@ export class PlanetRenderer {
   setNeighborhood(n: Neighborhood): void {
     this.neighborhood = n;
     this.lastNbhdSig = ""; // force a rebuild on the next frame
+    // Spec 093 — level/dry the terrain for the already-built founders NOW, during setup, so the terrain's
+    // ONE boot build already carries their pads. Otherwise buildTerrain draws natural terrain and the
+    // first frame's relevelTerrain rebuilds it, popping the founder pads in a frame late. Guarded on
+    // terrainMat so it is a no-op if the terrain has not been built yet (the frame loop then handles it).
+    if (this.terrainMat) this.relevelTerrain();
     // Re-clear foliage now that the homestead parcels (and the fully-built roadSet) are known, so no trees
     // remain on lots/houses/roads. Called once at setup, so the extra deterministic rebuild is cheap.
     this.buildFoliage();
@@ -3196,13 +3343,22 @@ export class PlanetRenderer {
         .join("|") + `#${n.carriage.length}`;
     if (sig === this.lastNbhdSig) return;
     this.lastNbhdSig = sig;
+    // Spec 093 — a newly built (or re-footprinted) house levels the terrain under it; rebuild the
+    // terrain mesh before the pads/voxels so the cut pad is in place this same frame.
+    this.relevelTerrain();
     const t = this.sim.state.terrain;
     const col = new THREE.Color();
     const BH = 0.56; // block height (the box geometry's y size)
     // SMOOTHED per-cell ground (5-point average): tiles follow the land's grade without per-cell
     // flutter. The old single leveled height per homestead left the downhill half of a sloped parcel
     // floating in the air (operator feedback) — now only the house keeps a leveled foundation.
-    const gy = (x: number, y: number) => this.groundY(x, y);
+    // Spec 093 — a cell the terrain mesh was levelled/dried (relevelTerrain) reads its pad/veg/fence
+    // height from that SAME map, so the decoration rides the cut terrain instead of the raw worldY it
+    // would otherwise float above or sink under (single source of truth with the mesh + avatars).
+    const gy = (x: number, y: number) => {
+      const lvl = this.terrainLevel.get(Math.round(y) * t.size + Math.round(x));
+      return lvl !== undefined ? lvl : this.groundY(x, y);
+    };
     const PAD_DEPTH = 0.6; // must match padGeo's y size
 
     let p = 0; // pad instance index
@@ -3791,6 +3947,10 @@ export class PlanetRenderer {
     this.clouds?.dispose();
     this.ambient?.dispose();
     this.clearRaceLayer();
+    // Spec 093 — the chunk-grid geometries + the shared terrain material are app-side GL objects that
+    // renderer.dispose() does NOT free; release them so a teardown/recreate (HMR, remount) doesn't leak.
+    this.chunkedTerrain?.dispose();
+    this.terrainMat?.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement);
