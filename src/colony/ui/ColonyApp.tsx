@@ -44,6 +44,9 @@ import "./colony.css";
 // commercial district, the border). The old colony-sim survival/economy dashboard (water/food/health/
 // smog/incidents/fever/unrest/seasons/storms/power/etc.) is gated off here. Flip to true to bring it back.
 const OLD_WORLD_STATS = false;
+export function hudClassName(firstPersonActive: boolean): string {
+  return firstPersonActive ? "hud hud--first-person-mobile-drawer" : "hud";
+}
 const pad = (n: number) => String(n).padStart(2, "0");
 const raceTime = (ms: number | null) => {
   if (ms === null) return "--";
@@ -519,7 +522,7 @@ export function ColonyApp() {
         </div>
       </header>
 
-      <aside className="hud">
+      <aside className={hudClassName(ui.firstPerson.active)}>
         <h2>{ui.name}</h2>
         {ui.courier.on && ui.courier.headline && (
           <div

@@ -13,16 +13,16 @@ function distanceLabel(distance: number): string {
   return `${distance} ${distance === 1 ? "unit" : "units"} away`;
 }
 
-const DIR: { label: string; emoji: string; dx: number; dy: number }[] = [
-  { label: "NW", emoji: "↖", dx: -STEP, dy: -STEP },
-  { label: "N", emoji: "↑", dx: 0, dy: -STEP },
-  { label: "NE", emoji: "↗", dx: STEP, dy: -STEP },
-  { label: "W", emoji: "←", dx: -STEP, dy: 0 },
-  { label: "·", emoji: "·", dx: 0, dy: 0 }, // centre — no-op / narrate
-  { label: "E", emoji: "→", dx: STEP, dy: 0 },
-  { label: "SW", emoji: "↙", dx: -STEP, dy: STEP },
-  { label: "S", emoji: "↓", dx: 0, dy: STEP },
-  { label: "SE", emoji: "↘", dx: STEP, dy: STEP },
+const DIR: { label: string; spoken: string; emoji: string; dx: number; dy: number }[] = [
+  { label: "NW", spoken: "north west", emoji: "↖", dx: -STEP, dy: -STEP },
+  { label: "N", spoken: "north", emoji: "↑", dx: 0, dy: -STEP },
+  { label: "NE", spoken: "north east", emoji: "↗", dx: STEP, dy: -STEP },
+  { label: "W", spoken: "west", emoji: "←", dx: -STEP, dy: 0 },
+  { label: "·", spoken: "now", emoji: "·", dx: 0, dy: 0 }, // centre — no-op / narrate
+  { label: "E", spoken: "east", emoji: "→", dx: STEP, dy: 0 },
+  { label: "SW", spoken: "south west", emoji: "↙", dx: -STEP, dy: STEP },
+  { label: "S", spoken: "south", emoji: "↓", dx: 0, dy: STEP },
+  { label: "SE", spoken: "south east", emoji: "↘", dx: STEP, dy: STEP },
 ];
 
 export function FirstPersonPanel({
@@ -38,6 +38,7 @@ export function FirstPersonPanel({
 
   return (
     <div
+      className="first-person-panel"
       style={{
         position: "fixed",
         bottom: 90,
@@ -270,6 +271,7 @@ export function FirstPersonPanel({
 
       {/* Compass rose */}
       <div
+        className="first-person-panel__touch-grid"
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(3, 1fr)",
@@ -278,10 +280,12 @@ export function FirstPersonPanel({
           width: 120,
         }}
       >
-        {DIR.map(({ label, emoji, dx, dy }) => (
+        {DIR.map(({ label, spoken, emoji, dx, dy }) => (
           <button
+            className="first-person-panel__touch-button"
             key={label}
             title={label === "·" ? "Narrate now" : `Walk ${label}`}
+            aria-label={label === "·" ? "Narrate now" : `Walk ${spoken}`}
             disabled={fp.narrating}
             onClick={() => {
               if (dx === 0 && dy === 0) void runtime.narrate();
@@ -309,8 +313,8 @@ export function FirstPersonPanel({
         ))}
       </div>
 
-      <div style={{ fontSize: 10, opacity: 0.4, textAlign: "center" }}>
-        WASD strafe/walk · Shift sprint · arrows turn · click arrows above
+      <div className="first-person-panel__hint" style={{ fontSize: 10, opacity: 0.4, textAlign: "center" }}>
+        WASD strafe/walk · Shift sprint · arrows turn · Tap arrows to roam
       </div>
     </div>
   );

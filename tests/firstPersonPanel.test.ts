@@ -141,4 +141,21 @@ describe("FirstPersonPanel immersive HUD", () => {
     expect(html).not.toContain("Ground");
     expect(html).not.toContain("Neighbours");
   });
+
+  it("renders the first-person HUD as a mobile-friendly control dock", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(FirstPersonPanel, {
+        runtime: makeRuntime(),
+        fp: makeFirstPerson(),
+      }),
+    );
+
+    expect(html).toContain('class="first-person-panel"');
+    expect(html).toContain('class="first-person-panel__touch-grid"');
+    expect(html).toContain('class="first-person-panel__touch-button"');
+    expect(html).toContain('aria-label="Walk north"');
+    expect(html).toContain('aria-label="Walk east"');
+    expect(html).toContain('aria-label="Narrate now"');
+    expect(html).toContain("Tap arrows to roam");
+  });
 });
