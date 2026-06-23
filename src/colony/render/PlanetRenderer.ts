@@ -3508,11 +3508,31 @@ export class PlanetRenderer {
           );
         }
       }
-      // garden veg beds on alternate cells
-      for (let yy = lot.garden.y; yy < lot.garden.y + lot.garden.d; yy++) {
+      // Spec 094 — custom gardens: planted ROWS cycling a per-lot flower palette (so every garden looks
+      // different) instead of one flat green checker. Flowers bloom a touch taller than the veg rows;
+      // alternate columns stay open as little paths between the beds. The corner tree + well stay below.
+      const GARDEN_FLOWERS = [
+        0xd0587a, 0xe8b84a, 0x9a78d8, 0xe87a5a, 0xe0dce8, 0xd85a5a,
+      ];
+      let gs = lot.houseSeed | 0; // mix in the lot id so neighbouring gardens differ even on a shared seed
+      for (let ci = 0; ci < lot.id.length; ci++)
+        gs = (gs * 31 + lot.id.charCodeAt(ci)) | 0;
+      gs = gs >>> 0;
+      const bedPalette = [
+        GARDEN_FLOWERS[gs % GARDEN_FLOWERS.length]!,
+        GARDEN_FLOWERS[((gs >> 4) + 2) % GARDEN_FLOWERS.length]!,
+        BLOCK_COLOR.crop,
+        GARDEN_FLOWERS[((gs >> 8) + 4) % GARDEN_FLOWERS.length]!,
+        BLOCK_COLOR.cropAlt,
+      ];
+      let grow = 0;
+      for (let yy = lot.garden.y; yy < lot.garden.y + lot.garden.d; yy++, grow++) {
+        const bedColor = bedPalette[grow % bedPalette.length]!;
+        const veg =
+          bedColor === BLOCK_COLOR.crop || bedColor === BLOCK_COLOR.cropAlt;
         for (let xx = lot.garden.x; xx < lot.garden.x + lot.garden.w; xx++) {
-          if ((xx + yy) % 2 === 0)
-            block(xx, yy, 0.78, 0.38, 0.78, 0.05, BLOCK_COLOR.crop);
+          if ((xx + grow) % 2 === 0)
+            block(xx, yy, 0.72, veg ? 0.36 : 0.55, 0.72, 0.05, bedColor);
         }
       }
       // a fruit tree at one garden corner + a well at the other
@@ -3585,9 +3605,18 @@ export class PlanetRenderer {
       const a = cAttr.array as Float32Array;
       const k = 0.42;
       for (let i = 0; i < a.length; i += 3) {
-        a[i] = a[i]! * (1 - k) + tint.r * k;
-        a[i + 1] = a[i + 1]! * (1 - k) + tint.g * k;
-        a[i + 2] = a[i + 2]! * (1 - k) + tint.b * k;
+        const r = a[i]!,
+          g = a[i + 1]!,
+          b = a[i + 2]!;
+        // The spec-092 tint is for the MASONRY course only — a mid/light warm reddish-brown (r > g > b,
+        // and not too dark). Leave COOL / amenity colours alone (pool water, glass rails, plants, blue
+        // furniture) so a pool reads as blue water, and leave DARK warm wood alone (the front door, dark
+        // beams) so the door reads as a door against the brick instead of lerping into it. Brick, tile and
+        // trim are mid/light warm, so the banded shell still varies per house.
+        if (!(r > g && g > b) || r < 0.2) continue;
+        a[i] = r * (1 - k) + tint.r * k;
+        a[i + 1] = g * (1 - k) + tint.g * k;
+        a[i + 2] = b * (1 - k) + tint.b * k;
       }
       cAttr.needsUpdate = true;
     }

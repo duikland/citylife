@@ -403,21 +403,24 @@ function placeDoor(
 ): void {
   const half = Math.max(1, Math.floor(n / 3)); // door is ~a third of a cell wide
   const doorH = Math.min(2 * n - 1, n + Math.floor(n / 2)); // a door taller than one course
+  const top = floorSub + doorH - 1; // lintel course
+  const handleZ = floorSub + Math.floor(doorH / 2);
+  // Seat ONE door column: clear the wall, fill a solid wood leaf, cap it with a pale trim lintel, and
+  // (on the latch side) set a trim knob at mid-height. The old door was a single base course under an
+  // open hole — it read as a gap, not a door; a filled, framed leaf reads as a real entrance.
+  const seat = (gx: number, gy: number, latch: boolean): void => {
+    for (let z = floorSub; z <= top; z++) clear(g, gx, gy, z);
+    for (let z = floorSub; z < top; z++)
+      g.set(gx, gy, z, latch && z === handleZ ? "trim" : "door", true);
+    g.set(gx, gy, top, "trim", true);
+  };
   if (dir === "n" || dir === "s") {
     const cy = dir === "n" ? 0 : door.y * n + n - 1;
-    for (let dx = -half; dx <= half; dx++) {
-      const gx = doorGx + dx;
-      for (let z = floorSub; z < floorSub + doorH; z++) clear(g, gx, cy, z);
-      g.set(gx, cy, floorSub, "door", true);
-    }
+    for (let dx = -half; dx <= half; dx++) seat(doorGx + dx, cy, dx === half);
   } else {
     const cx = dir === "w" ? 0 : door.x * n + n - 1;
     const cyc = door.y * n + Math.floor(n / 2);
-    for (let dy = -half; dy <= half; dy++) {
-      const gy = cyc + dy;
-      for (let z = floorSub; z < floorSub + doorH; z++) clear(g, cx, gy, z);
-      g.set(cx, gy, floorSub, "door", true);
-    }
+    for (let dy = -half; dy <= half; dy++) seat(cx, cyc + dy, dy === half);
   }
 }
 
@@ -651,6 +654,34 @@ function buildRoomDetails(
   seed: number,
 ): void {
   const surfaceZ = baseZ - 1 >= 0 ? baseZ - 1 : 0; // the slab a pool/patio sinks its surface into
+  // Spec 094 — a PERGOLA over each open-air room (patio/pool): four corner posts up to the eave band and
+  // a slatted beam canopy across the top, so the cut-out reads as an intentional covered outdoor room and
+  // not a hole where the roof failed (the operator's "roof showing open"). Slats run one way with gaps —
+  // a real pergola lets light + rain through; posts only land on owned cells so a carved edge never floats
+  // a leg. Skipped when the storey has no headroom for a canopy.
+  const pergola = (
+    px0: number,
+    px1: number,
+    py0: number,
+    py1: number,
+    owns: (gx: number, gy: number) => boolean,
+  ) => {
+    if (bandTopZ <= baseZ) return;
+    for (const [cx, cy] of [
+      [px0, py0],
+      [px1, py0],
+      [px0, py1],
+      [px1, py1],
+    ] as const) {
+      if (!owns(cx, cy)) continue;
+      for (let z = baseZ; z <= bandTopZ; z++) g.set(cx, cy, z, "beam", true);
+    }
+    for (let gy = py0; gy <= py1; gy++) {
+      if ((gy - py0) % 3 !== 0) continue; // a slat every 3rd micro-row
+      for (let gx = px0; gx <= px1; gx++)
+        if (owns(gx, gy)) g.set(gx, gy, bandTopZ, "beam", true);
+    }
+  };
   rooms.forEach((r, ri) => {
     const x0 = r.px * n,
       x1 = (r.px + r.pw) * n - 1;
@@ -669,6 +700,8 @@ function buildRoomDetails(
           if (rim) g.set(gx, gy, baseZ, "tile", true);
         }
       }
+      // A pool stays OPEN to the sky (with its blue water + tile rim) — no pergola, so it reads as a pool,
+      // not a caged box, and keeps the spec-077 open-backyard invariant.
     } else if (r.kind === "patio") {
       // Tile floor plus a low glassRail around the open edge.
       for (let gy = y0; gy <= y1; gy++) {
@@ -679,6 +712,7 @@ function buildRoomDetails(
           if (rim) g.set(gx, gy, baseZ, "glassRail", true);
         }
       }
+      pergola(x0, x1, y0, y1, owns);
     } else if (r.kind === "living") {
       // a table near the middle and an exposed ceiling BEAM under the roof line for character
       const tx = Math.floor((x0 + x1) / 2),
