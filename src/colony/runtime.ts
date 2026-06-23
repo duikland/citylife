@@ -1688,6 +1688,7 @@ export class ColonyRuntime {
     const manualControl = moving || k.has("left") || k.has("right");
     if (manualControl && this.fpGuidedTarget) {
       this.fpGuidedTarget = null;
+      this.fpBlockedReason = null;
       this.fpNarrating = false;
       this.fpNarration = "Guided walk canceled — manual control resumed.";
     }
