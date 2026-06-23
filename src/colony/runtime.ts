@@ -1300,12 +1300,16 @@ export class ColonyRuntime {
   setFpKey(key: string, down: boolean): void {
     const map: Record<string, string> = {
       w: "fwd",
+      keyw: "fwd",
       arrowup: "fwd",
       s: "back",
+      keys: "back",
       arrowdown: "back",
       a: "left",
+      keya: "left",
       arrowleft: "left",
       d: "right",
+      keyd: "right",
       arrowright: "right",
     };
     const m = map[key.toLowerCase()];

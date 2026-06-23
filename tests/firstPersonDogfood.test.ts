@@ -10,6 +10,20 @@ function distance(
 }
 
 describe("first-person route dogfood", () => {
+  it("accepts browser KeyboardEvent.code movement names directly", () => {
+    const rt = new ColonyRuntime(4242);
+    const me = rt.getUiState().citizens.list[0]!;
+    rt.enterFirstPerson(me.id);
+    const before = rt.getUiState().firstPerson.view!.citizen.positionXY;
+
+    rt.setFpKey("KeyW", true);
+    rt.stepFirstPersonDogfood(0.25);
+    rt.setFpKey("KeyW", false);
+
+    const after = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    expect(distance(before, after)).toBeGreaterThan(0.1);
+  });
+
   it("ramps movement speed up and coasts down after release", () => {
     const rt = new ColonyRuntime(4242);
     const me = rt.getUiState().citizens.list[0]!;
