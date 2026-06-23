@@ -12,6 +12,7 @@ import { COLONY } from "../config";
 import { BIOME_COLOR, Biome } from "../terrain";
 import type { ColonySim, SeedStructure } from "../sim";
 import type { TarentaalBird } from "../tarentaal";
+import type { ArtifactKind, VisualArtifact } from "../artifacts";
 import type { HouseSpec } from "../house";
 import { gridOrigin } from "../grid";
 import { cellZone, ZONE_COLOR, VIBE_COLOR, type Plot } from "../cityPlan";
@@ -168,6 +169,8 @@ export class PlanetRenderer {
   // Tarentaal flock — real deterministic sim birds (adults + chicks), rendered as low-poly instanced ground animals.
   private tarentaalAdultMesh!: THREE.InstancedMesh;
   private tarentaalChickMesh!: THREE.InstancedMesh;
+  // Furniture / visual artifacts — deterministic sim catalog instances, foundation for clickable Kookerbook objects.
+  private artifactMeshes!: Record<ArtifactKind, THREE.InstancedMesh>;
   // P1 — citizen AVATARS: the real, named Hermes citizens, drawn from the roster (distinct from the ambient
   // ped pool), movable by the bot, and steppable-into for a live first-person view.
   private avatarMesh!: THREE.InstancedMesh;
@@ -1398,6 +1401,65 @@ export class PlanetRenderer {
     this.tarentaalChickMesh.frustumCulled = false;
     this.scene.add(this.tarentaalChickMesh);
 
+    const benchSeat = new THREE.BoxGeometry(1.15, 0.12, 0.38);
+    benchSeat.translate(0, 0.38, 0);
+    const benchBack = new THREE.BoxGeometry(1.15, 0.45, 0.1);
+    benchBack.translate(0, 0.58, -0.22);
+    const benchGeo = mergeGeometries([benchSeat, benchBack])!;
+    const lampPost = new THREE.CylinderGeometry(0.06, 0.07, 1.35, 8);
+    lampPost.translate(0, 0.68, 0);
+    const lampHead = new THREE.SphereGeometry(0.17, 8, 6);
+    lampHead.translate(0, 1.42, 0);
+    const lampGeo = mergeGeometries([lampPost, lampHead])!;
+    const planterBase = new THREE.CylinderGeometry(0.44, 0.5, 0.32, 8);
+    planterBase.translate(0, 0.16, 0);
+    const planterPlant = new THREE.SphereGeometry(0.34, 8, 6);
+    planterPlant.scale(1, 0.72, 1);
+    planterPlant.translate(0, 0.52, 0);
+    const planterGeo = mergeGeometries([planterBase, planterPlant])!;
+    const fountainBase = new THREE.CylinderGeometry(0.72, 0.78, 0.22, 16);
+    fountainBase.translate(0, 0.11, 0);
+    const fountainBowl = new THREE.CylinderGeometry(0.42, 0.5, 0.24, 16);
+    fountainBowl.translate(0, 0.34, 0);
+    const fountainJet = new THREE.CylinderGeometry(0.06, 0.08, 0.52, 8);
+    fountainJet.translate(0, 0.72, 0);
+    const fountainGeo = mergeGeometries([fountainBase, fountainBowl, fountainJet])!;
+    const artifactCap = 8;
+    this.artifactMeshes = {
+      bench: new THREE.InstancedMesh(
+        benchGeo,
+        new THREE.MeshStandardMaterial({ color: 0x8b5a35, roughness: 0.82 }),
+        artifactCap,
+      ),
+      lamppost: new THREE.InstancedMesh(
+        lampGeo,
+        new THREE.MeshStandardMaterial({
+          color: 0x2f3740,
+          emissive: 0xffd67a,
+          emissiveIntensity: 0.3,
+          roughness: 0.45,
+          metalness: 0.25,
+        }),
+        artifactCap,
+      ),
+      planter: new THREE.InstancedMesh(
+        planterGeo,
+        new THREE.MeshStandardMaterial({ color: 0x3d7a45, roughness: 0.9 }),
+        artifactCap,
+      ),
+      fountain: new THREE.InstancedMesh(
+        fountainGeo,
+        new THREE.MeshStandardMaterial({ color: 0x6f8da7, roughness: 0.55 }),
+        artifactCap,
+      ),
+    };
+    for (const mesh of Object.values(this.artifactMeshes)) {
+      mesh.count = 0;
+      mesh.castShadow = true;
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+    }
+
     // P1 — citizen avatars: a touch taller + glowing so the real, named citizens stand out from the ambient crowd.
     const AV_CAP = 64;
     const avGeo = new THREE.CapsuleGeometry(0.16, 0.44, 4, 8);
@@ -2253,6 +2315,7 @@ export class PlanetRenderer {
     this.updateColonyLayer();
     this.updatePedestrians();
     this.updateTarentaal();
+    this.updateArtifacts();
     this.updatePorters(); // spec 073 — goods piled at the sheds + porter carts on the roads
     this.updateAvatars(); // P1 — the named citizen avatars at their live roster positions
     this.updateNeighborhood(); // spec 075 — lot pads + voxel homes
@@ -2561,6 +2624,44 @@ export class PlanetRenderer {
     );
     this.dummy.rotation.set(0, -bird.heading, 0);
     this.dummy.scale.set(stride, 1, stride);
+    this.dummy.updateMatrix();
+    mesh.setMatrixAt(idx, this.dummy.matrix);
+  }
+
+  /** Deterministic furniture / civic-art catalog instances come from ColonySim, not renderer randomness. */
+  private updateArtifacts(): void {
+    const counts: Record<ArtifactKind, number> = {
+      bench: 0,
+      lamppost: 0,
+      planter: 0,
+      fountain: 0,
+    };
+    for (const item of this.sim.state.artifacts) {
+      const mesh = this.artifactMeshes[item.kind];
+      const idx = counts[item.kind]++;
+      this.placeArtifact(mesh, idx, item);
+    }
+    for (const [kind, mesh] of Object.entries(this.artifactMeshes) as [
+      ArtifactKind,
+      THREE.InstancedMesh,
+    ][]) {
+      mesh.count = counts[kind];
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  private placeArtifact(
+    mesh: THREE.InstancedMesh,
+    idx: number,
+    item: VisualArtifact,
+  ): void {
+    this.dummy.position.set(
+      this.wx(item.x),
+      this.surfaceY(item.x, item.y) + 0.015,
+      this.wz(item.y),
+    );
+    this.dummy.rotation.set(0, -item.rot, 0);
+    this.dummy.scale.set(item.footprint.w, 1, item.footprint.h);
     this.dummy.updateMatrix();
     mesh.setMatrixAt(idx, this.dummy.matrix);
   }
