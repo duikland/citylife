@@ -1617,6 +1617,25 @@ export class ColonyRuntime {
     return null;
   }
 
+  private blockedSegmentReason(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ): string | null {
+    const d = Math.hypot(to.x - from.x, to.y - from.y);
+    const steps = Math.max(1, Math.ceil(d / COLONY.firstPerson.guidedCollisionSampleStep));
+    let previous = from;
+    for (let i = 1; i <= steps; i++) {
+      const sample = {
+        x: from.x + ((to.x - from.x) * i) / steps,
+        y: from.y + ((to.y - from.y) * i) / steps,
+      };
+      const blocked = this.blockedStepReason(sample.x, sample.y, previous);
+      if (blocked) return blocked;
+      previous = sample;
+    }
+    return null;
+  }
+
   private updateFirstPersonGuidedArrival(): void {
     if (!this.fpGuidedTarget || !this.fpCitizenId) return;
     const c = this.citizens.byId(this.fpCitizenId);
@@ -1647,7 +1666,7 @@ export class ColonyRuntime {
     const move = Math.min(d, c.spd * dt);
     const nx = c.pos.x + (dx / d) * move;
     const ny = c.pos.y + (dy / d) * move;
-    const blocked = this.blockedStepReason(nx, ny, c.pos);
+    const blocked = this.blockedSegmentReason(c.pos, { x: nx, y: ny });
     if (blocked) {
       this.fpBlockedReason = blocked;
       this.fpNarrating = false;
