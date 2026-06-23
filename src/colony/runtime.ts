@@ -1502,6 +1502,13 @@ export class ColonyRuntime {
       iy = Math.round(y);
     if (ix < 0 || iy < 0 || ix >= t.size || iy >= t.size) return "edge of map";
     if (t.isWater(ix, iy)) return "water";
+    if (
+      this.sim.state.buildings.some(
+        (b) => Math.round(b.x) === ix && Math.round(b.y) === iy,
+      )
+    ) {
+      return "building";
+    }
     return null;
   }
 
