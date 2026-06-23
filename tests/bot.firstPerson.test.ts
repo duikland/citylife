@@ -67,7 +67,11 @@ describe("firstPersonView — spec 074", () => {
     const plots = sim.state.cityPlan!.plots;
     expect(plots.length).toBeGreaterThanOrEqual(2);
     const me = roster.register(generateHousehold(7), plots[0]!, fixedNow)!;
-    const neighbour = roster.register(generateHousehold(11), plots[1]!, fixedNow)!;
+    const neighbour = roster.register(
+      generateHousehold(11),
+      plots[1]!,
+      fixedNow,
+    )!;
     me.pos = { x: 20, y: 20 };
     neighbour.pos = { x: 21.2, y: 20 };
     sim.state.buildings.push({

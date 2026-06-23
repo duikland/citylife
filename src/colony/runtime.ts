@@ -1472,7 +1472,8 @@ export class ColonyRuntime {
     const prompt = view?.interactionPrompt;
     if (!prompt) {
       this.fpNarrating = false;
-      this.fpNarration = "No nearby action yet — move closer to someone or something useful.";
+      this.fpNarration =
+        "No nearby action yet — move closer to someone or something useful.";
       this.emit();
       return false;
     }
@@ -1482,14 +1483,19 @@ export class ColonyRuntime {
       building: `You inspect ${prompt.targetName}.`,
       road: `You follow ${prompt.targetName}.`,
     };
-    if (prompt.kind === "road" || prompt.kind === "civic" || prompt.kind === "building") {
+    if (
+      prompt.kind === "road" ||
+      prompt.kind === "civic" ||
+      prompt.kind === "building"
+    ) {
       const rawTarget = {
         x: Math.round(prompt.targetXY.x),
         y: Math.round(prompt.targetXY.y),
       };
       const target =
-        prompt.kind === "building" && this.blockedStepReason(rawTarget.x, rawTarget.y) !== null
-          ? this.firstPersonApproachTarget(c.pos, rawTarget) ?? rawTarget
+        prompt.kind === "building" &&
+        this.blockedStepReason(rawTarget.x, rawTarget.y) !== null
+          ? (this.firstPersonApproachTarget(c.pos, rawTarget) ?? rawTarget)
           : rawTarget;
       this.citizens.setTarget(id, target);
       this.fpWalkSpeed = 0;
@@ -1634,7 +1640,9 @@ export class ColonyRuntime {
     }
     const fromKey = from ? `${Math.round(from.x)},${Math.round(from.y)}` : null;
     const key = `${ix},${iy}`;
-    const fromInsideOccupied = fromKey ? this.sim.state.occupied.has(fromKey) : false;
+    const fromInsideOccupied = fromKey
+      ? this.sim.state.occupied.has(fromKey)
+      : false;
     if (
       !fromInsideOccupied &&
       key !== fromKey &&
@@ -1651,7 +1659,10 @@ export class ColonyRuntime {
     to: { x: number; y: number },
   ): string | null {
     const d = Math.hypot(to.x - from.x, to.y - from.y);
-    const steps = Math.max(1, Math.ceil(d / COLONY.firstPerson.guidedCollisionSampleStep));
+    const steps = Math.max(
+      1,
+      Math.ceil(d / COLONY.firstPerson.guidedCollisionSampleStep),
+    );
     let previous = from;
     for (let i = 1; i <= steps; i++) {
       const sample = {
@@ -1669,7 +1680,10 @@ export class ColonyRuntime {
     if (!this.fpGuidedTarget || !this.fpCitizenId) return;
     const c = this.citizens.byId(this.fpCitizenId);
     if (!c) return;
-    const d = Math.hypot(c.pos.x - this.fpGuidedTarget.x, c.pos.y - this.fpGuidedTarget.y);
+    const d = Math.hypot(
+      c.pos.x - this.fpGuidedTarget.x,
+      c.pos.y - this.fpGuidedTarget.y,
+    );
     if (d > COLONY.firstPerson.guidedArrivalDistance) return;
     const label = this.fpGuidedTarget.label;
     this.fpGuidedTarget = null;
@@ -1683,10 +1697,14 @@ export class ColonyRuntime {
     directTarget: { x: number; y: number },
   ): { x: number; y: number } | null {
     const start = { x: Math.round(from.x), y: Math.round(from.y) };
-    const goal = { x: Math.round(directTarget.x), y: Math.round(directTarget.y) };
+    const goal = {
+      x: Math.round(directTarget.x),
+      y: Math.round(directTarget.y),
+    };
     const path = leastCostPath(this.sim.state.terrain, start, goal, {
       blocked: (x, y) => {
-        if ((x === start.x && y === start.y) || (x === goal.x && y === goal.y)) return false;
+        if ((x === start.x && y === start.y) || (x === goal.x && y === goal.y))
+          return false;
         return this.blockedStepReason(x, y) !== null;
       },
     });
@@ -1699,7 +1717,10 @@ export class ColonyRuntime {
     blockedTarget: { x: number; y: number },
   ): { x: number; y: number } | null {
     const start = { x: Math.round(from.x), y: Math.round(from.y) };
-    const goal = { x: Math.round(blockedTarget.x), y: Math.round(blockedTarget.y) };
+    const goal = {
+      x: Math.round(blockedTarget.x),
+      y: Math.round(blockedTarget.y),
+    };
     const candidates = [
       { x: goal.x - 1, y: goal.y },
       { x: goal.x + 1, y: goal.y },
@@ -1716,7 +1737,8 @@ export class ColonyRuntime {
         },
       });
       if (!path) continue;
-      const cost = path.length + Math.hypot(target.x - from.x, target.y - from.y) * 0.01;
+      const cost =
+        path.length + Math.hypot(target.x - from.x, target.y - from.y) * 0.01;
       if (!best || cost < best.cost) best = { target, cost };
     }
     return best?.target ?? null;
@@ -1735,7 +1757,10 @@ export class ColonyRuntime {
     let remaining = dt;
     let guard = 0;
     while (this.fpGuidedTarget && remaining > 0.0001 && guard++ < 32) {
-      const finalTarget = { x: this.fpGuidedTarget.x, y: this.fpGuidedTarget.y };
+      const finalTarget = {
+        x: this.fpGuidedTarget.x,
+        y: this.fpGuidedTarget.y,
+      };
       const directDx = finalTarget.x - c.pos.x;
       const directDy = finalTarget.y - c.pos.y;
       const directDistance = Math.hypot(directDx, directDy);
@@ -1810,7 +1835,8 @@ export class ColonyRuntime {
         this.fpWalkSpeed + cfg.walkAcceleration * dt,
       );
     } else if (this.fpWalkSpeed > targetSpeed) {
-      const rate = targetSpeed === 0 ? cfg.walkDeceleration : cfg.walkAcceleration;
+      const rate =
+        targetSpeed === 0 ? cfg.walkDeceleration : cfg.walkAcceleration;
       this.fpWalkSpeed = Math.max(targetSpeed, this.fpWalkSpeed - rate * dt);
     }
     const sprintHeld = k.has("sprint");
@@ -1839,10 +1865,12 @@ export class ColonyRuntime {
       const sp = this.fpWalkSpeed * surfaceMultiplier * sprintMultiplier * dt;
       const nx =
         c.pos.x +
-        (Math.cos(c.heading) * dirForward - Math.sin(c.heading) * dirStrafe) * sp;
+        (Math.cos(c.heading) * dirForward - Math.sin(c.heading) * dirStrafe) *
+          sp;
       const ny =
         c.pos.y +
-        (Math.sin(c.heading) * dirForward + Math.cos(c.heading) * dirStrafe) * sp;
+        (Math.sin(c.heading) * dirForward + Math.cos(c.heading) * dirStrafe) *
+          sp;
       const blocked = this.blockedStepReason(nx, ny, c.pos);
       if (!blocked) {
         c.pos.x = nx;
@@ -3144,13 +3172,11 @@ export class ColonyRuntime {
     // P1 — feed the renderer the live citizen avatars each frame, marking the operator's own.
     this.renderer.setAvatarSource((): AvatarView[] => {
       const mine = this.operatorCitizenId();
-      return this.citizens
-        .avatars()
-        .map((a) => ({
-          ...a,
-          isOperator: a.id === mine,
-          lookPitch: a.id === this.fpCitizenId ? this.fpLookPitch : 0,
-        }));
+      return this.citizens.avatars().map((a) => ({
+        ...a,
+        isOperator: a.id === mine,
+        lookPitch: a.id === this.fpCitizenId ? this.fpLookPitch : 0,
+      }));
     });
     if (this.fpCitizenId) this.renderer.enterFirstPerson(this.fpCitizenId);
     this.renderer.setNeighborhood(this.neighborhood); // spec 075 — lot pads + voxel homes
@@ -3470,7 +3496,10 @@ export class ColonyRuntime {
                     x: this.fpGuidedTarget.x,
                     y: this.fpGuidedTarget.y,
                   };
-                  const nextWaypoint = this.blockedSegmentReason(c.pos, finalTarget)
+                  const nextWaypoint = this.blockedSegmentReason(
+                    c.pos,
+                    finalTarget,
+                  )
                     ? this.firstPersonGuidedWaypoint(c.pos, finalTarget)
                     : null;
                   return {

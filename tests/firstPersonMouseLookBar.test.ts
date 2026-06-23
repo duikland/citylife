@@ -9,7 +9,8 @@ describe("FirstPersonMouseLookBar", () => {
       React.createElement(FirstPersonMouseLookBar, {
         citizenName: "Joe",
         mouseLookLocked: false,
-        pointerLockError: "Mouse-look unavailable — click the city view and try again.",
+        pointerLockError:
+          "Mouse-look unavailable — click the city view and try again.",
         requestMouseLook() {},
         levelFirstPersonLook() {},
         setMouseSensitivity() {},
@@ -21,7 +22,9 @@ describe("FirstPersonMouseLookBar", () => {
     expect(html).toContain("Seeing through");
     expect(html).toContain("Joe");
     expect(html).toContain("mouse-look unavailable");
-    expect(html).toContain("Mouse-look unavailable — click the city view and try again.");
+    expect(html).toContain(
+      "Mouse-look unavailable — click the city view and try again.",
+    );
     expect(html).toContain("Retry mouse-look");
     expect(html).toContain("Level view");
     expect(html).toContain("Look sensitivity");

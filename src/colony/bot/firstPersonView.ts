@@ -22,15 +22,13 @@ export interface FirstPersonView {
     heading: number;
   };
   /** The nearest useful thing the player can interact with from this live position. */
-  interactionPrompt:
-    | {
-        kind: "citizen" | "civic" | "building" | "road";
-        label: string;
-        targetName: string;
-        targetXY: { x: number; y: number };
-        distance: number;
-      }
-    | null;
+  interactionPrompt: {
+    kind: "citizen" | "civic" | "building" | "road";
+    label: string;
+    targetName: string;
+    targetXY: { x: number; y: number };
+    distance: number;
+  } | null;
   /** The patch of land the citizen's house sits on. */
   ground: {
     biome: string;
