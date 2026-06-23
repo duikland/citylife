@@ -9,6 +9,10 @@ import type { ColonyUiState } from "../runtime";
 const STEP = 6; // cells per directional tap
 const LOW_SPRINT_CHARGE_PERCENT = 20;
 
+function distanceLabel(distance: number): string {
+  return `${distance} ${distance === 1 ? "unit" : "units"} away`;
+}
+
 const DIR: { label: string; emoji: string; dx: number; dy: number }[] = [
   { label: "NW", emoji: "↖", dx: -STEP, dy: -STEP },
   { label: "N", emoji: "↑", dx: 0, dy: -STEP },
@@ -125,7 +129,8 @@ export function FirstPersonPanel({
           {fp.guidedTarget && (
             <div style={{ color: "#9fd4a6" }}>
               <span style={{ color: "#6ea8d0" }}>Guided walk</span>{" "}
-              {fp.guidedTarget.label} ({Math.round(fp.guidedTarget.x)}, {Math.round(fp.guidedTarget.y)})
+              {fp.guidedTarget.label} ({Math.round(fp.guidedTarget.x)}, {Math.round(fp.guidedTarget.y)}) ·{" "}
+              {distanceLabel(fp.guidedTarget.remainingDistance)}
             </div>
           )}
           {(v.mood.hungry || v.mood.brownout || v.mood.fever > 0.4) && (

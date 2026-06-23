@@ -281,11 +281,15 @@ describe("first-person route dogfood", () => {
     expect(rt.activateFirstPersonInteraction()).toBe(true);
 
     const ui = rt.getUiState().firstPerson;
-    expect(ui.guidedTarget).toEqual({
+    expect(ui.guidedTarget).toMatchObject({
       label: "road",
       x: Math.round(prompt!.targetXY.x),
       y: Math.round(prompt!.targetXY.y),
     });
+    expect(ui.guidedTarget!.remainingDistance).toBeCloseTo(
+      distance(start, prompt!.targetXY),
+      1,
+    );
     expect(ui.narration).toBe("Guiding you to road.");
     expect(JSON.stringify({ prompt, guidedTarget: ui.guidedTarget })).not.toMatch(
       /wallet|token|secret|operator/i,
@@ -297,27 +301,44 @@ describe("first-person route dogfood", () => {
     rt.sim.state.buildings = [];
     const me = rt.getUiState().citizens.list[0]!;
     const publicCitizens = rt.getUiState().citizens.list;
-    const road = rt.sim.state.roads.find((r) =>
-      publicCitizens.every((c) => distance(c.homeXY, r) > 30),
-    );
-    if (!road) throw new Error("test terrain needs a road away from citizens");
+    let start: { x: number; y: number } | null = null;
+    let promptTarget: { x: number; y: number } | null = null;
 
     rt.enterFirstPerson(me.id);
-    expect(rt.placeFirstPersonDogfood({ x: road.x + 1, y: road.y }, Math.PI)).toBe(true);
-    const prompt = rt.getUiState().firstPerson.view!.interactionPrompt;
-    expect(prompt?.kind).toBe("road");
+    for (const candidateRoad of rt.sim.state.roads) {
+      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30)) continue;
+      for (const offset of [
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 },
+      ]) {
+        const candidate = { x: candidateRoad.x + offset.x, y: candidateRoad.y + offset.y };
+        expect(rt.placeFirstPersonDogfood(candidate, Math.PI)).toBe(true);
+        const candidatePrompt = rt.getUiState().firstPerson.view!.interactionPrompt;
+        if (candidatePrompt?.kind === "road" && distance(candidate, candidatePrompt.targetXY) > 0.5) {
+          start = candidate;
+          promptTarget = candidatePrompt.targetXY;
+          break;
+        }
+      }
+      if (start) break;
+    }
+    if (!start || !promptTarget) throw new Error("test terrain needs a visible nearby road offset");
     expect(rt.activateFirstPersonInteraction()).toBe(true);
 
     const capture = rt.captureFirstPersonDemo();
 
     expect(capture).toBeTruthy();
+    const expectedDistance = Number(distance(start, promptTarget).toFixed(1));
     expect(capture!.evidence.guidedTarget).toEqual({
       label: "road",
-      x: Math.round(prompt!.targetXY.x),
-      y: Math.round(prompt!.targetXY.y),
+      x: Math.round(promptTarget.x),
+      y: Math.round(promptTarget.y),
+      remainingDistance: expectedDistance,
     });
     expect(capture!.evidence.hudLines).toContain(
-      `Guided walk road (${Math.round(prompt!.targetXY.x)}, ${Math.round(prompt!.targetXY.y)})`,
+      `Guided walk road (${Math.round(promptTarget.x)}, ${Math.round(promptTarget.y)}) · ${expectedDistance} ${expectedDistance === 1 ? "unit" : "units"} away`,
     );
     expect(JSON.stringify(capture!.evidence)).not.toMatch(/wallet|token|secret|operator/i);
   });
@@ -380,18 +401,26 @@ describe("first-person route dogfood", () => {
 
     expect(rt.activateFirstPersonInteraction()).toBe(true);
     const target = rt.getUiState().firstPerson.guidedTarget!;
-    expect(target).toEqual({
+    expect(target).toMatchObject({
       label: "road",
       x: Math.round(promptTarget.x),
       y: Math.round(promptTarget.y),
     });
+    expect(target.remainingDistance).toBeGreaterThan(0);
 
     rt.stepFirstPersonDogfood(0.5);
     const movingUi = rt.getUiState().firstPerson;
     expect(distance(movingUi.view!.citizen.positionXY, target)).toBeLessThan(
       distance(start, target),
     );
-    expect(movingUi.guidedTarget).toEqual(target);
+    expect(movingUi.guidedTarget).toMatchObject({
+      label: target.label,
+      x: target.x,
+      y: target.y,
+    });
+    expect(movingUi.guidedTarget!.remainingDistance).toBeLessThan(
+      target.remainingDistance,
+    );
 
     rt.stepFirstPersonDogfood(2);
     const arrivedUi = rt.getUiState().firstPerson;
@@ -427,11 +456,15 @@ describe("first-person route dogfood", () => {
       expect(rt.activateFirstPersonInteraction()).toBe(true);
 
       const ui = rt.getUiState().firstPerson;
-      expect(ui.guidedTarget).toEqual({
+      expect(ui.guidedTarget).toMatchObject({
         label: prompt!.targetName,
         x: Math.round(prompt!.targetXY.x),
         y: Math.round(prompt!.targetXY.y),
       });
+      expect(ui.guidedTarget!.remainingDistance).toBeCloseTo(
+        distance({ x: 127, y: 128 }, prompt!.targetXY),
+        1,
+      );
       expect(ui.narration).toBe(`Guiding you to ${prompt!.targetName}.`);
       expect(JSON.stringify({ prompt, guidedTarget: ui.guidedTarget })).not.toMatch(
         /wallet|token|secret|operator/i,

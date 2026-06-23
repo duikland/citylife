@@ -298,7 +298,7 @@ export interface FirstPersonDemoEvidence {
   heading: number;
   lookPitch: number;
   action: string | null;
-  guidedTarget: { label: string; x: number; y: number } | null;
+  guidedTarget: { label: string; x: number; y: number; remainingDistance: number } | null;
   blockedReason: string | null;
   clockLabel: string;
   hudLines: string[];
@@ -311,6 +311,14 @@ export interface FirstPersonDemoCapture {
 }
 
 export type FirstPersonMouseSensitivity = "low" | "normal" | "high";
+
+function roundTo(n: number, places = 2): number {
+  return Number(n.toFixed(places));
+}
+
+function formatDistanceLabel(distance: number): string {
+  return `${distance} ${distance === 1 ? "unit" : "units"} away`;
+}
 
 export interface ColonyUiState {
   running: boolean;
@@ -542,7 +550,7 @@ export interface ColonyUiState {
     lookPitch: number;
     mouseSensitivity: FirstPersonMouseSensitivity;
     sprintCharge: number;
-    guidedTarget: { label: string; x: number; y: number } | null;
+    guidedTarget: { label: string; x: number; y: number; remainingDistance: number } | null;
     blockedReason: string | null;
     narration: string | null;
     narrating: boolean;
@@ -1253,17 +1261,11 @@ export class ColonyRuntime {
     const round = (n: number, places = 2) => Number(n.toFixed(places));
     const action = view.interactionPrompt?.label ?? null;
     const clockLabel = `Day ${view.clock.day} ${String(view.clock.hour).padStart(2, "0")}:${String(view.clock.minute).padStart(2, "0")}`;
-    const guidedTarget = ui.guidedTarget
-      ? {
-          label: ui.guidedTarget.label,
-          x: Math.round(ui.guidedTarget.x),
-          y: Math.round(ui.guidedTarget.y),
-        }
-      : null;
+    const guidedTarget = ui.guidedTarget;
     const hudLines = [
       action ?? "No nearby action",
       guidedTarget
-        ? `Guided walk ${guidedTarget.label} (${guidedTarget.x}, ${guidedTarget.y})`
+        ? `Guided walk ${guidedTarget.label} (${guidedTarget.x}, ${guidedTarget.y}) · ${formatDistanceLabel(guidedTarget.remainingDistance)}`
         : null,
       ui.blockedReason ? `Blocked ${ui.blockedReason}` : null,
       view.mood.hungry ? "colony hungry" : null,
@@ -3200,7 +3202,21 @@ export class ColonyRuntime {
           lookPitch: this.fpLookPitch,
           mouseSensitivity: this.fpMouseSensitivity,
           sprintCharge: Math.round(this.fpSprintCharge * 100),
-          guidedTarget: this.fpGuidedTarget,
+          guidedTarget:
+            this.fpGuidedTarget && c
+              ? {
+                  label: this.fpGuidedTarget.label,
+                  x: Math.round(this.fpGuidedTarget.x),
+                  y: Math.round(this.fpGuidedTarget.y),
+                  remainingDistance: roundTo(
+                    Math.hypot(
+                      c.pos.x - this.fpGuidedTarget.x,
+                      c.pos.y - this.fpGuidedTarget.y,
+                    ),
+                    1,
+                  ),
+                }
+              : null,
           blockedReason: this.fpBlockedReason,
           narration: this.fpNarration,
           narrating: this.fpNarrating,

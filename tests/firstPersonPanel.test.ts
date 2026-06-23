@@ -124,7 +124,7 @@ describe("FirstPersonPanel immersive HUD", () => {
 
   it("shows guided walk target feedback in the player overlay", () => {
     const fp = makeFirstPerson();
-    fp.guidedTarget = { label: "road", x: 301, y: 306 };
+    fp.guidedTarget = { label: "road", x: 301, y: 306, remainingDistance: 1.4 };
 
     const html = renderToStaticMarkup(
       React.createElement(FirstPersonPanel, {
@@ -137,6 +137,7 @@ describe("FirstPersonPanel immersive HUD", () => {
     expect(html).toContain("road");
     expect(html).toContain("301");
     expect(html).toContain("306");
+    expect(html).toContain("1.4 units away");
     expect(html).not.toContain("Ground");
     expect(html).not.toContain("Neighbours");
   });
