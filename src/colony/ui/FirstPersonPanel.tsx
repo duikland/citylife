@@ -13,7 +13,13 @@ function distanceLabel(distance: number): string {
   return `${distance} ${distance === 1 ? "unit" : "units"} away`;
 }
 
-const DIR: { label: string; spoken: string; emoji: string; dx: number; dy: number }[] = [
+const DIR: {
+  label: string;
+  spoken: string;
+  emoji: string;
+  dx: number;
+  dy: number;
+}[] = [
   { label: "NW", spoken: "north west", emoji: "↖", dx: -STEP, dy: -STEP },
   { label: "N", spoken: "north", emoji: "↑", dx: 0, dy: -STEP },
   { label: "NE", spoken: "north east", emoji: "↗", dx: STEP, dy: -STEP },
@@ -130,11 +136,14 @@ export function FirstPersonPanel({
           {fp.guidedTarget && (
             <div style={{ color: "#9fd4a6" }}>
               <span style={{ color: "#6ea8d0" }}>Guided walk</span>{" "}
-              {fp.guidedTarget.label} ({Math.round(fp.guidedTarget.x)}, {Math.round(fp.guidedTarget.y)}) ·{" "}
+              {fp.guidedTarget.label} ({Math.round(fp.guidedTarget.x)},{" "}
+              {Math.round(fp.guidedTarget.y)}) ·{" "}
               {distanceLabel(fp.guidedTarget.remainingDistance)}
               {fp.guidedTarget.nextWaypoint && (
                 <div>
-                  <span style={{ color: "#6ea8d0" }}>Next leg</span> ({Math.round(fp.guidedTarget.nextWaypoint.x)}, {Math.round(fp.guidedTarget.nextWaypoint.y)})
+                  <span style={{ color: "#6ea8d0" }}>Next leg</span> (
+                  {Math.round(fp.guidedTarget.nextWaypoint.x)},{" "}
+                  {Math.round(fp.guidedTarget.nextWaypoint.y)})
                 </div>
               )}
             </div>
@@ -318,7 +327,10 @@ export function FirstPersonPanel({
         ))}
       </div>
 
-      <div className="first-person-panel__hint" style={{ fontSize: 10, opacity: 0.4, textAlign: "center" }}>
+      <div
+        className="first-person-panel__hint"
+        style={{ fontSize: 10, opacity: 0.4, textAlign: "center" }}
+      >
         WASD strafe/walk · Shift sprint · arrows turn · Tap arrows to roam
       </div>
     </div>

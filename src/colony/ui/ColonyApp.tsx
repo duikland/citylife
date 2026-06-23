@@ -4,7 +4,11 @@ import {
   RACE_KEY_CODES,
   normalizeFirstPersonKeyCode,
 } from "./firstPersonKeys";
-import { ColonyRuntime, type ColonyUiState, type FirstPersonMouseSensitivity } from "../runtime";
+import {
+  ColonyRuntime,
+  type ColonyUiState,
+  type FirstPersonMouseSensitivity,
+} from "../runtime";
 import type { CameraPreset, ViewMode } from "../render/PlanetRenderer";
 import type { HouseholdOverrides } from "../newcomers";
 import { AuthClient } from "../authClient";
@@ -127,7 +131,14 @@ export function FirstPersonMouseLookBar({
         👁 Seeing through <b>{citizenName ?? "a citizen"}</b>&apos;s eyes
       </span>
       <span style={{ color: "#6f86b8", fontSize: 12 }}>
-        <b>W</b>/<b>S</b> walk · <b>A</b>/<b>D</b> strafe · arrows turn · mouse-look {pointerLockError ? "unavailable" : mouseLookLocked ? "locked" : "ready"} · <b>Esc</b> {mouseLookLocked ? "unlock" : "exit"}
+        <b>W</b>/<b>S</b> walk · <b>A</b>/<b>D</b> strafe · arrows turn ·
+        mouse-look{" "}
+        {pointerLockError
+          ? "unavailable"
+          : mouseLookLocked
+            ? "locked"
+            : "ready"}{" "}
+        · <b>Esc</b> {mouseLookLocked ? "unlock" : "exit"}
       </span>
       {pointerLockError && (
         <span style={{ color: "#e6c84d", fontSize: 12 }} role="status">
@@ -135,7 +146,11 @@ export function FirstPersonMouseLookBar({
         </span>
       )}
       <button style={{ padding: "3px 12px" }} onClick={requestMouseLook}>
-        {mouseLookLocked ? "Mouse-look on" : pointerLockError ? "Retry mouse-look" : "Lock mouse-look"}
+        {mouseLookLocked
+          ? "Mouse-look on"
+          : pointerLockError
+            ? "Retry mouse-look"
+            : "Lock mouse-look"}
       </button>
       <button style={{ padding: "3px 12px" }} onClick={levelFirstPersonLook}>
         Level view
@@ -244,7 +259,9 @@ export function ColonyApp() {
     if (!ui.firstPerson.active) return;
     const host = hostRef.current;
     if (!host?.requestPointerLock) {
-      setPointerLockError("Mouse-look unavailable — this browser does not support pointer lock.");
+      setPointerLockError(
+        "Mouse-look unavailable — this browser does not support pointer lock.",
+      );
       return;
     }
     setPointerLockError(null);
@@ -373,7 +390,9 @@ export function ColonyApp() {
           requestMouseLook={requestMouseLook}
           levelFirstPersonLook={() => runtime.levelFirstPersonLook()}
           mouseSensitivity={ui.firstPerson.mouseSensitivity}
-          setMouseSensitivity={(level) => runtime.setFirstPersonMouseSensitivity(level)}
+          setMouseSensitivity={(level) =>
+            runtime.setFirstPersonMouseSensitivity(level)
+          }
           exitFirstPerson={() => runtime.exitFirstPerson()}
         />
       )}

@@ -102,7 +102,8 @@ describe("first-person route dogfood", () => {
     let cell: { x: number; y: number } | null = null;
     for (let y = 1; y < terrain.size - 1 && !cell; y++) {
       for (let x = 1; x < terrain.size - 2 && !cell; x++) {
-        if (!terrain.isWater(x, y) && !terrain.isWater(x + 1, y)) cell = { x, y };
+        if (!terrain.isWater(x, y) && !terrain.isWater(x + 1, y))
+          cell = { x, y };
       }
     }
     if (!cell) throw new Error("test terrain needs adjacent land cells");
@@ -141,7 +142,8 @@ describe("first-person route dogfood", () => {
         }
       }
     }
-    if (!cell) throw new Error("test terrain needs adjacent non-road land cells");
+    if (!cell)
+      throw new Error("test terrain needs adjacent non-road land cells");
     rt.sim.state.occupied.add(`${cell.x + 1},${cell.y}`);
     rt.enterFirstPerson(me.id);
     const start = { x: cell.x + 0.45, y: cell.y };
@@ -200,7 +202,8 @@ describe("first-person route dogfood", () => {
         }
       }
     }
-    if (!roadStart || !offRoadStart) throw new Error("test terrain needs road and off-road lanes");
+    if (!roadStart || !offRoadStart)
+      throw new Error("test terrain needs road and off-road lanes");
 
     rt.enterFirstPerson(me.id);
     expect(rt.placeFirstPersonDogfood(roadStart, 0)).toBe(true);
@@ -225,7 +228,10 @@ describe("first-person route dogfood", () => {
     const rt = new ColonyRuntime(4242);
     const me = rt.getUiState().citizens.list[0]!;
     const terrain = rt.sim.state.terrain;
-    let edge: { land: { x: number; y: number }; water: { x: number; y: number } } | null = null;
+    let edge: {
+      land: { x: number; y: number };
+      water: { x: number; y: number };
+    } | null = null;
     for (let y = 1; y < terrain.size - 1 && !edge; y++) {
       for (let x = 1; x < terrain.size - 1 && !edge; x++) {
         if (terrain.isWater(x, y)) continue;
@@ -268,7 +274,12 @@ describe("first-person route dogfood", () => {
     const other = rt.getUiState().citizens.list.find((c) => c.id !== me.id);
     rt.enterFirstPerson(me.id);
     if (other) {
-      expect(rt.placeFirstPersonDogfood({ x: other.homeXY.x + 1, y: other.homeXY.y }, 0)).toBe(true);
+      expect(
+        rt.placeFirstPersonDogfood(
+          { x: other.homeXY.x + 1, y: other.homeXY.y },
+          0,
+        ),
+      ).toBe(true);
     }
     const prompt = rt.getUiState().firstPerson.view!.interactionPrompt;
     expect(prompt).toBeTruthy();
@@ -314,9 +325,9 @@ describe("first-person route dogfood", () => {
       1,
     );
     expect(ui.narration).toBe("Guiding you to road.");
-    expect(JSON.stringify({ prompt, guidedTarget: ui.guidedTarget })).not.toMatch(
-      /wallet|token|secret|operator/i,
-    );
+    expect(
+      JSON.stringify({ prompt, guidedTarget: ui.guidedTarget }),
+    ).not.toMatch(/wallet|token|secret|operator/i);
   });
 
   it("includes active guided walks in deterministic first-person demo capture evidence", () => {
@@ -329,17 +340,25 @@ describe("first-person route dogfood", () => {
 
     rt.enterFirstPerson(me.id);
     for (const candidateRoad of rt.sim.state.roads) {
-      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30)) continue;
+      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30))
+        continue;
       for (const offset of [
         { x: 1, y: 0 },
         { x: -1, y: 0 },
         { x: 0, y: 1 },
         { x: 0, y: -1 },
       ]) {
-        const candidate = { x: candidateRoad.x + offset.x, y: candidateRoad.y + offset.y };
+        const candidate = {
+          x: candidateRoad.x + offset.x,
+          y: candidateRoad.y + offset.y,
+        };
         expect(rt.placeFirstPersonDogfood(candidate, Math.PI)).toBe(true);
-        const candidatePrompt = rt.getUiState().firstPerson.view!.interactionPrompt;
-        if (candidatePrompt?.kind === "road" && distance(candidate, candidatePrompt.targetXY) > 0.5) {
+        const candidatePrompt =
+          rt.getUiState().firstPerson.view!.interactionPrompt;
+        if (
+          candidatePrompt?.kind === "road" &&
+          distance(candidate, candidatePrompt.targetXY) > 0.5
+        ) {
           start = candidate;
           promptTarget = candidatePrompt.targetXY;
           break;
@@ -347,7 +366,8 @@ describe("first-person route dogfood", () => {
       }
       if (start) break;
     }
-    if (!start || !promptTarget) throw new Error("test terrain needs a visible nearby road offset");
+    if (!start || !promptTarget)
+      throw new Error("test terrain needs a visible nearby road offset");
     expect(rt.activateFirstPersonInteraction()).toBe(true);
 
     const capture = rt.captureFirstPersonDemo();
@@ -363,7 +383,9 @@ describe("first-person route dogfood", () => {
     expect(capture!.evidence.hudLines).toContain(
       `Guided walk road (${Math.round(promptTarget.x)}, ${Math.round(promptTarget.y)}) · ${expectedDistance} ${expectedDistance === 1 ? "unit" : "units"} away`,
     );
-    expect(JSON.stringify(capture!.evidence)).not.toMatch(/wallet|token|secret|operator/i);
+    expect(JSON.stringify(capture!.evidence)).not.toMatch(
+      /wallet|token|secret|operator/i,
+    );
   });
 
   it("clears a guided walk when the player manually takes over movement", () => {
@@ -377,7 +399,9 @@ describe("first-person route dogfood", () => {
     if (!road) throw new Error("test terrain needs a road away from citizens");
 
     rt.enterFirstPerson(me.id);
-    expect(rt.placeFirstPersonDogfood({ x: road.x + 1, y: road.y }, Math.PI)).toBe(true);
+    expect(
+      rt.placeFirstPersonDogfood({ x: road.x + 1, y: road.y }, Math.PI),
+    ).toBe(true);
     expect(rt.activateFirstPersonInteraction()).toBe(true);
     expect(rt.getUiState().firstPerson.guidedTarget).toBeTruthy();
 
@@ -401,7 +425,8 @@ describe("first-person route dogfood", () => {
 
     rt.enterFirstPerson(me.id);
     for (const candidateRoad of rt.sim.state.roads) {
-      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30)) continue;
+      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30))
+        continue;
       const x = Math.round(candidateRoad.x);
       const y = Math.round(candidateRoad.y);
       for (const dir of [
@@ -428,7 +453,9 @@ describe("first-person route dogfood", () => {
           continue;
         }
         rt.sim.state.occupied.add(blockerKey);
-        expect(rt.placeFirstPersonDogfood(candidateStart, dir.heading)).toBe(true);
+        expect(rt.placeFirstPersonDogfood(candidateStart, dir.heading)).toBe(
+          true,
+        );
         const prompt = rt.getUiState().firstPerson.view!.interactionPrompt;
         if (
           prompt?.kind === "road" &&
@@ -444,7 +471,9 @@ describe("first-person route dogfood", () => {
       if (start && blocker) break;
     }
     if (!start || !blocker) {
-      throw new Error("test terrain needs a nearby road with a blockable parcel cell before it");
+      throw new Error(
+        "test terrain needs a nearby road with a blockable parcel cell before it",
+      );
     }
 
     expect(rt.activateFirstPersonInteraction()).toBe(true);
@@ -453,7 +482,11 @@ describe("first-person route dogfood", () => {
     rt.stepFirstPersonDogfood(3);
 
     const ui = rt.getUiState().firstPerson;
-    expect(ui.guidedTarget).toMatchObject({ label: target.label, x: target.x, y: target.y });
+    expect(ui.guidedTarget).toMatchObject({
+      label: target.label,
+      x: target.x,
+      y: target.y,
+    });
     expect(ui.blockedReason).toBe("parcel");
     expect(ui.narration).toBe("Guided walk blocked by parcel.");
     expect(distance(ui.view!.citizen.positionXY, blocker)).toBeGreaterThan(0.4);
@@ -474,7 +507,8 @@ describe("first-person route dogfood", () => {
 
     rt.enterFirstPerson(me.id);
     for (const candidateRoad of rt.sim.state.roads) {
-      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30)) continue;
+      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30))
+        continue;
       const x = Math.round(candidateRoad.x);
       const y = Math.round(candidateRoad.y);
       for (const dir of [
@@ -486,11 +520,22 @@ describe("first-person route dogfood", () => {
         const candidateBlocker = { x: x + dir.x, y: y + dir.y };
         const candidateStart = { x: x + dir.x * 2, y: y + dir.y * 2 };
         const candidateDetour = [
-          { x: candidateStart.x + dir.side.x, y: candidateStart.y + dir.side.y },
-          { x: candidateBlocker.x + dir.side.x, y: candidateBlocker.y + dir.side.y },
+          {
+            x: candidateStart.x + dir.side.x,
+            y: candidateStart.y + dir.side.y,
+          },
+          {
+            x: candidateBlocker.x + dir.side.x,
+            y: candidateBlocker.y + dir.side.y,
+          },
           { x: x + dir.side.x, y: y + dir.side.y },
         ];
-        const allCells = [candidateStart, candidateBlocker, { x, y }, ...candidateDetour];
+        const allCells = [
+          candidateStart,
+          candidateBlocker,
+          { x, y },
+          ...candidateDetour,
+        ];
         if (
           allCells.some(
             (p) =>
@@ -508,7 +553,9 @@ describe("first-person route dogfood", () => {
         }
         const blockerKey = `${candidateBlocker.x},${candidateBlocker.y}`;
         rt.sim.state.occupied.add(blockerKey);
-        expect(rt.placeFirstPersonDogfood(candidateStart, dir.heading)).toBe(true);
+        expect(rt.placeFirstPersonDogfood(candidateStart, dir.heading)).toBe(
+          true,
+        );
         const prompt = rt.getUiState().firstPerson.view!.interactionPrompt;
         if (
           prompt?.kind === "road" &&
@@ -525,13 +572,16 @@ describe("first-person route dogfood", () => {
       if (start && blocker) break;
     }
     if (!start || !blocker) {
-      throw new Error("test terrain needs a nearby road with a one-cell parcel blocker and clear detour");
+      throw new Error(
+        "test terrain needs a nearby road with a one-cell parcel blocker and clear detour",
+      );
     }
 
     expect(rt.activateFirstPersonInteraction()).toBe(true);
     const target = rt.getUiState().firstPerson.guidedTarget!;
-    const nextWaypoint = (target as unknown as { nextWaypoint?: { x: number; y: number } })
-      .nextWaypoint;
+    const nextWaypoint = (
+      target as unknown as { nextWaypoint?: { x: number; y: number } }
+    ).nextWaypoint;
     expect(nextWaypoint).toBeTruthy();
     expect(detour).toContainEqual(nextWaypoint);
     const capture = rt.captureFirstPersonDemo();
@@ -562,7 +612,9 @@ describe("first-person route dogfood", () => {
     );
     expect(distance(ui.view!.citizen.positionXY, blocker)).toBeGreaterThan(0.4);
     expect(
-      detour.some((p) => distance(ui.view!.citizen.positionXY, p) < distance(start, p)),
+      detour.some(
+        (p) => distance(ui.view!.citizen.positionXY, p) < distance(start, p),
+      ),
     ).toBe(true);
   });
 
@@ -577,7 +629,8 @@ describe("first-person route dogfood", () => {
 
     rt.enterFirstPerson(me.id);
     for (const candidateRoad of rt.sim.state.roads) {
-      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30)) continue;
+      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30))
+        continue;
       const x = Math.round(candidateRoad.x);
       const y = Math.round(candidateRoad.y);
       for (const dir of [
@@ -604,7 +657,9 @@ describe("first-person route dogfood", () => {
           continue;
         }
         rt.sim.state.occupied.add(blockerKey);
-        expect(rt.placeFirstPersonDogfood(candidateStart, dir.heading)).toBe(true);
+        expect(rt.placeFirstPersonDogfood(candidateStart, dir.heading)).toBe(
+          true,
+        );
         const prompt = rt.getUiState().firstPerson.view!.interactionPrompt;
         if (
           prompt?.kind === "road" &&
@@ -620,7 +675,9 @@ describe("first-person route dogfood", () => {
       if (start && blocker) break;
     }
     if (!start || !blocker) {
-      throw new Error("test terrain needs a nearby road with a blockable parcel cell before it");
+      throw new Error(
+        "test terrain needs a nearby road with a blockable parcel cell before it",
+      );
     }
 
     expect(rt.activateFirstPersonInteraction()).toBe(true);
@@ -629,7 +686,11 @@ describe("first-person route dogfood", () => {
     rt.stepFirstPersonDogfood(2);
 
     const ui = rt.getUiState().firstPerson;
-    expect(ui.guidedTarget).toMatchObject({ label: target.label, x: target.x, y: target.y });
+    expect(ui.guidedTarget).toMatchObject({
+      label: target.label,
+      x: target.x,
+      y: target.y,
+    });
     expect(ui.blockedReason).toBe("parcel");
     expect(ui.narration).toBe("Guided walk blocked by parcel.");
     expect(distance(ui.view!.citizen.positionXY, blocker)).toBeGreaterThan(0.4);
@@ -649,7 +710,8 @@ describe("first-person route dogfood", () => {
 
     rt.enterFirstPerson(me.id);
     for (const candidateRoad of rt.sim.state.roads) {
-      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30)) continue;
+      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30))
+        continue;
       const x = Math.round(candidateRoad.x);
       const y = Math.round(candidateRoad.y);
       for (const dir of [
@@ -676,7 +738,9 @@ describe("first-person route dogfood", () => {
           continue;
         }
         rt.sim.state.occupied.add(blockerKey);
-        expect(rt.placeFirstPersonDogfood(candidateStart, dir.heading)).toBe(true);
+        expect(rt.placeFirstPersonDogfood(candidateStart, dir.heading)).toBe(
+          true,
+        );
         const prompt = rt.getUiState().firstPerson.view!.interactionPrompt;
         if (
           prompt?.kind === "road" &&
@@ -692,7 +756,9 @@ describe("first-person route dogfood", () => {
       if (start && blocker) break;
     }
     if (!start || !blocker) {
-      throw new Error("test terrain needs a nearby road with a blockable parcel cell before it");
+      throw new Error(
+        "test terrain needs a nearby road with a blockable parcel cell before it",
+      );
     }
 
     expect(rt.activateFirstPersonInteraction()).toBe(true);
@@ -720,17 +786,24 @@ describe("first-person route dogfood", () => {
 
     rt.enterFirstPerson(me.id);
     for (const candidateRoad of rt.sim.state.roads) {
-      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30)) continue;
+      if (!publicCitizens.every((c) => distance(c.homeXY, candidateRoad) > 30))
+        continue;
       for (const offset of [
         { x: 1, y: 0 },
         { x: -1, y: 0 },
         { x: 0, y: 1 },
         { x: 0, y: -1 },
       ]) {
-        const candidate = { x: candidateRoad.x + offset.x, y: candidateRoad.y + offset.y };
+        const candidate = {
+          x: candidateRoad.x + offset.x,
+          y: candidateRoad.y + offset.y,
+        };
         expect(rt.placeFirstPersonDogfood(candidate, Math.PI)).toBe(true);
         const prompt = rt.getUiState().firstPerson.view!.interactionPrompt;
-        if (prompt?.kind === "road" && distance(candidate, prompt.targetXY) > 0.5) {
+        if (
+          prompt?.kind === "road" &&
+          distance(candidate, prompt.targetXY) > 0.5
+        ) {
           start = candidate;
           promptTarget = prompt.targetXY;
           break;
@@ -739,7 +812,9 @@ describe("first-person route dogfood", () => {
       if (start) break;
     }
     if (!start || !promptTarget) {
-      throw new Error("test terrain needs a nearby road target away from the start cell");
+      throw new Error(
+        "test terrain needs a nearby road target away from the start cell",
+      );
     }
 
     expect(rt.activateFirstPersonInteraction()).toBe(true);
@@ -809,16 +884,20 @@ describe("first-person route dogfood", () => {
         1,
       );
       expect(ui.narration).toBe(`Guiding you to ${prompt!.targetName}.`);
-      expect(JSON.stringify({ prompt, guidedTarget: ui.guidedTarget })).not.toMatch(
-        /wallet|token|secret|operator/i,
-      );
+      expect(
+        JSON.stringify({ prompt, guidedTarget: ui.guidedTarget }),
+      ).not.toMatch(/wallet|token|secret|operator/i);
     },
   );
 
   it("guides building prompts to a reachable approach cell instead of the blocked footprint", () => {
     const rt = new ColonyRuntime(4242);
     const terrain = rt.sim.state.terrain;
-    let fixture: { building: { x: number; y: number }; approach: { x: number; y: number }; start: { x: number; y: number } } | null = null;
+    let fixture: {
+      building: { x: number; y: number };
+      approach: { x: number; y: number };
+      start: { x: number; y: number };
+    } | null = null;
     for (let y = 2; y < terrain.size - 2 && !fixture; y++) {
       for (let x = 3; x < terrain.size - 2 && !fixture; x++) {
         const start = { x: x - 2, y };
@@ -833,7 +912,10 @@ describe("first-person route dogfood", () => {
         fixture = { building: { x, y }, approach, start };
       }
     }
-    if (!fixture) throw new Error("test terrain needs a building cell with two adjacent land cells");
+    if (!fixture)
+      throw new Error(
+        "test terrain needs a building cell with two adjacent land cells",
+      );
     rt.sim.state.buildings = [
       {
         id: 9902,
@@ -853,7 +935,10 @@ describe("first-person route dogfood", () => {
     expect(rt.activateFirstPersonInteraction()).toBe(true);
 
     const target = rt.getUiState().firstPerson.guidedTarget!;
-    expect(target).toMatchObject({ label: prompt!.targetName, ...fixture.approach });
+    expect(target).toMatchObject({
+      label: prompt!.targetName,
+      ...fixture.approach,
+    });
     expect(target).not.toMatchObject(fixture.building);
     rt.stepFirstPersonDogfood(2);
 
@@ -861,7 +946,9 @@ describe("first-person route dogfood", () => {
     expect(ui.blockedReason).toBeNull();
     expect(ui.guidedTarget).toBeNull();
     expect(ui.narration).toBe(`Arrived at ${prompt!.targetName}.`);
-    expect(distance(ui.view!.citizen.positionXY, fixture.building)).toBeGreaterThan(0.4);
+    expect(
+      distance(ui.view!.citizen.positionXY, fixture.building),
+    ).toBeGreaterThan(0.4);
     expect(distance(ui.view!.citizen.positionXY, target)).toBeLessThan(
       COLONY.firstPerson.guidedArrivalDistance,
     );
@@ -889,7 +976,9 @@ describe("first-person route dogfood", () => {
     expect(capture!.evidence.hudLines).toContain(
       capture!.evidence.action ?? "No nearby action",
     );
-    expect(JSON.stringify(capture!.evidence)).not.toMatch(/wallet|token|secret|operator/i);
+    expect(JSON.stringify(capture!.evidence)).not.toMatch(
+      /wallet|token|secret|operator/i,
+    );
   });
 
   it("accepts browser KeyboardEvent.code movement names directly", () => {
@@ -1008,7 +1097,8 @@ describe("first-person route dogfood", () => {
     rt.setFpKey("KeyW", true);
     rt.stepFirstPersonDogfood(0.35);
     rt.setFpKey("KeyW", false);
-    const walkAfterSprintRelease = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    const walkAfterSprintRelease =
+      rt.getUiState().firstPerson.view!.citizen.positionXY;
     const releasedDistance = distance(start, walkAfterSprintRelease);
 
     expect(sprintDistance).toBeGreaterThan(walkDistance * 1.2);
@@ -1080,7 +1170,9 @@ describe("first-person route dogfood", () => {
     rt.stepFirstPersonDogfood(3);
     expect(rt.getUiState().firstPerson.sprintCharge).toBeGreaterThan(50);
 
-    expect(recoveredSprintDistance).toBeGreaterThan(exhaustedStepDistance * 1.15);
+    expect(recoveredSprintDistance).toBeGreaterThan(
+      exhaustedStepDistance * 1.15,
+    );
   });
 
   it("does not carry held movement keys across first-person citizen switches", () => {
@@ -1094,9 +1186,11 @@ describe("first-person route dogfood", () => {
     const firstAfterMove = rt.getUiState().firstPerson.view!.citizen.positionXY;
 
     expect(rt.enterFirstPerson(second.id)).toBe(true);
-    const secondBeforeStep = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    const secondBeforeStep =
+      rt.getUiState().firstPerson.view!.citizen.positionXY;
     rt.stepFirstPersonDogfood(0.3);
-    const secondAfterStep = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    const secondAfterStep =
+      rt.getUiState().firstPerson.view!.citizen.positionXY;
 
     expect(distance(firstAfterMove, secondBeforeStep)).toBeGreaterThan(1);
     expect(secondAfterStep).toEqual(secondBeforeStep);
@@ -1119,7 +1213,12 @@ describe("first-person route dogfood", () => {
     let start: { x: number; y: number } | null = null;
     for (let y = 1; y < terrain.size - 2 && !start; y++) {
       for (let x = 1; x < terrain.size - 2 && !start; x++) {
-        if (!blocked(x, y) && !blocked(x + 1, y) && !blocked(x, y + 1) && !blocked(x + 1, y + 1)) {
+        if (
+          !blocked(x, y) &&
+          !blocked(x + 1, y) &&
+          !blocked(x, y + 1) &&
+          !blocked(x + 1, y + 1)
+        ) {
           start = { x, y };
         }
       }
@@ -1164,13 +1263,25 @@ describe("first-person route dogfood", () => {
     expect(run.citizenId).toBe(me.id);
     expect(run.samples).toHaveLength(3);
     expect(run.samples[0]!.label).toBe("walk forward");
-    expect(distance(run.samples[0]!.before.position, run.samples[0]!.after.position)).toBeGreaterThan(0.5);
-    expect(run.samples[1]!.after.heading).toBeGreaterThan(run.samples[1]!.before.heading);
-    expect(distance(run.samples[2]!.before.position, run.samples[2]!.after.position)).toBeGreaterThan(0.2);
+    expect(
+      distance(run.samples[0]!.before.position, run.samples[0]!.after.position),
+    ).toBeGreaterThan(0.5);
+    expect(run.samples[1]!.after.heading).toBeGreaterThan(
+      run.samples[1]!.before.heading,
+    );
+    expect(
+      distance(run.samples[2]!.before.position, run.samples[2]!.after.position),
+    ).toBeGreaterThan(0.2);
 
     for (const sample of run.samples) {
-      expect(sample.after.viewPosition.x).toBeCloseTo(sample.after.position.x, 5);
-      expect(sample.after.viewPosition.y).toBeCloseTo(sample.after.position.y, 5);
+      expect(sample.after.viewPosition.x).toBeCloseTo(
+        sample.after.position.x,
+        5,
+      );
+      expect(sample.after.viewPosition.y).toBeCloseTo(
+        sample.after.position.y,
+        5,
+      );
       expect(sample.after.viewHeading).toBeCloseTo(sample.after.heading, 5);
     }
   });

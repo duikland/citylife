@@ -39,12 +39,19 @@ function makeFirstPerson(): ColonyUiState["firstPerson"] {
         heading: 0,
         plotName: "Lot 1",
       },
-      ground: { biome: "grass", elevation: 0.123, isWater: false, distToWater: 8 },
+      ground: {
+        biome: "grass",
+        elevation: 0.123,
+        isWater: false,
+        distToWater: 8,
+      },
       nearestRoad: { x: 13, y: 18, distance: 1 },
       nearestBuildings: [{ kind: "house", distance: 7 }],
       clock: { day: 3, hour: 9, minute: 5, isDay: true },
       nearestCivic: [{ kind: "market", distance: 6 }],
-      neighbours: [{ displayName: "Orin Reed", plotName: "Lot 2", distance: 4 }],
+      neighbours: [
+        { displayName: "Orin Reed", plotName: "Lot 2", distance: 4 },
+      ],
       mood: {
         liveability: 0.5,
         hungry: false,
@@ -81,7 +88,7 @@ describe("FirstPersonPanel immersive HUD", () => {
     expect(html).toContain('role="progressbar"');
     expect(html).toContain('aria-label="Sprint charge 42%"');
     expect(html).toContain('aria-valuenow="42"');
-    expect(html).toContain('width:42%');
+    expect(html).toContain("width:42%");
     expect(html).toContain("Blocked");
     expect(html).toContain("Show debug");
     expect(html).not.toContain("Ground");
@@ -102,7 +109,7 @@ describe("FirstPersonPanel immersive HUD", () => {
 
     expect(html).toContain("Sprint depleted — walk to recover");
     expect(html).toContain('aria-valuenow="0"');
-    expect(html).toContain('width:0%');
+    expect(html).toContain("width:0%");
     expect(html).not.toContain("Ground");
     expect(html).not.toContain("Neighbours");
   });
