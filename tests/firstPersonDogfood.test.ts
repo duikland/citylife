@@ -890,6 +890,58 @@ describe("first-person route dogfood", () => {
     },
   );
 
+  it("guides civic prompts to a reachable approach cell instead of the blocked footprint", () => {
+    const rt = new ColonyRuntime(4242);
+    const terrain = rt.sim.state.terrain;
+    let fixture: { civic: { x: number; y: number }; approach: { x: number; y: number }; start: { x: number; y: number } } | null = null;
+    for (let y = 2; y < terrain.size - 2 && !fixture; y++) {
+      for (let x = 3; x < terrain.size - 2 && !fixture; x++) {
+        const start = { x: x - 2, y };
+        const approach = { x: x - 1, y };
+        if (
+          terrain.isWater(x, y) ||
+          terrain.isWater(approach.x, approach.y) ||
+          terrain.isWater(start.x, start.y)
+        ) {
+          continue;
+        }
+        fixture = { civic: { x, y }, approach, start };
+      }
+    }
+    if (!fixture) throw new Error("test terrain needs a civic cell with two adjacent land cells");
+    rt.sim.state.buildings = [
+      {
+        id: 9903,
+        x: fixture.civic.x,
+        y: fixture.civic.y,
+        artifact: { kind: "market" },
+      } as never,
+    ];
+    const me = rt.getUiState().citizens.list[0]!;
+
+    rt.enterFirstPerson(me.id);
+    expect(rt.placeFirstPersonDogfood(fixture.start, 0)).toBe(true);
+    const prompt = rt.getUiState().firstPerson.view!.interactionPrompt;
+    expect(prompt?.kind).toBe("civic");
+    expect(prompt!.targetXY).toMatchObject(fixture.civic);
+
+    expect(rt.activateFirstPersonInteraction()).toBe(true);
+
+    const target = rt.getUiState().firstPerson.guidedTarget!;
+    expect(target).toMatchObject({ label: prompt!.targetName, ...fixture.approach });
+    expect(target).not.toMatchObject(fixture.civic);
+    rt.stepFirstPersonDogfood(2);
+
+    const ui = rt.getUiState().firstPerson;
+    expect(ui.blockedReason).toBeNull();
+    expect(ui.guidedTarget).toBeNull();
+    expect(ui.narration).toBe(`Arrived at ${prompt!.targetName}.`);
+    expect(distance(ui.view!.citizen.positionXY, fixture.civic)).toBeGreaterThan(0.4);
+    expect(distance(ui.view!.citizen.positionXY, target)).toBeLessThan(
+      COLONY.firstPerson.guidedArrivalDistance,
+    );
+  });
+
   it("guides building prompts to a reachable approach cell instead of the blocked footprint", () => {
     const rt = new ColonyRuntime(4242);
     const terrain = rt.sim.state.terrain;
@@ -1248,6 +1300,38 @@ describe("first-person route dogfood", () => {
     expect(diagonalDistance).toBeCloseTo(forwardDistance, 5);
     expect(diagonalUi.view!.citizen.heading).toBeCloseTo(0, 5);
     expect(diagonalUi.blockedReason).toBeNull();
+  });
+
+  it("moves the active first-person avatar from the touch compass walk controls", () => {
+    const rt = new ColonyRuntime(4242);
+    const me = rt.getUiState().citizens.list[0]!;
+    const terrain = rt.sim.state.terrain;
+    const blocked = (x: number, y: number) => {
+      const key = `${x},${y}`;
+      return (
+        terrain.isWater(x, y) ||
+        rt.sim.state.buildings.some(
+          (b) => Math.round(b.x) === x && Math.round(b.y) === y,
+        ) ||
+        (rt.sim.state.occupied.has(key) && !rt.sim.state.roadSet.has(key))
+      );
+    };
+    let start: { x: number; y: number } | null = null;
+    for (let y = 1; y < terrain.size - 2 && !start; y++) {
+      for (let x = 1; x < terrain.size - 2 && !start; x++) {
+        if (!blocked(x, y) && !blocked(x, y + 1)) start = { x, y };
+      }
+    }
+    if (!start) throw new Error("test terrain needs a north walk lane");
+
+    rt.enterFirstPerson(me.id);
+    expect(rt.placeFirstPersonDogfood(start, 0)).toBe(true);
+
+    rt.walkStep(0, 1);
+
+    const ui = rt.getUiState().firstPerson;
+    expect(ui.view!.citizen.positionXY).toEqual({ x: start.x, y: start.y + 1 });
+    expect(ui.blockedReason).toBeNull();
   });
 
   it("walks a deterministic route and samples live view position plus heading", () => {
