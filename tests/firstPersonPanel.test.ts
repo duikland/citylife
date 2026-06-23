@@ -73,6 +73,7 @@ describe("FirstPersonPanel immersive HUD", () => {
     expect(html).toContain("Action");
     expect(html).toContain("Talk to Orin Reed");
     expect(html).toContain("Use E");
+    expect(html).toContain("Shift sprint");
     expect(html).toContain("Blocked");
     expect(html).toContain("Show debug");
     expect(html).not.toContain("Ground");

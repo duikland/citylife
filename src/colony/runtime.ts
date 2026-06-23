@@ -1377,6 +1377,8 @@ export class ColonyRuntime {
       d: "strafeRight",
       keyd: "strafeRight",
       arrowright: "right",
+      shiftleft: "sprint",
+      shiftright: "sprint",
     };
     const m = map[key.toLowerCase()];
     if (!m) return;
@@ -1615,7 +1617,10 @@ export class ColonyRuntime {
       const surfaceMultiplier = this.sim.state.roadSet.has(cellKey)
         ? cfg.roadWalkSpeedMultiplier
         : cfg.offRoadWalkSpeedMultiplier;
-      const sp = this.fpWalkSpeed * surfaceMultiplier * dt;
+      const sprintMultiplier = k.has("sprint")
+        ? cfg.sprintWalkSpeedMultiplier
+        : 1;
+      const sp = this.fpWalkSpeed * surfaceMultiplier * sprintMultiplier * dt;
       const nx =
         c.pos.x +
         (Math.cos(c.heading) * dirForward - Math.sin(c.heading) * dirStrafe) * sp;

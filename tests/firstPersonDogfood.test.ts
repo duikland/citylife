@@ -342,6 +342,69 @@ describe("first-person route dogfood", () => {
     expect(conflictDistance).toBeLessThan(poweredDistance * 0.1);
   });
 
+  it("walks farther while Shift sprint is held and returns to normal after release", () => {
+    const rt = new ColonyRuntime(4242);
+    const me = rt.getUiState().citizens.list[0]!;
+    const terrain = rt.sim.state.terrain;
+    const blocked = (x: number, y: number) => {
+      const key = `${x},${y}`;
+      return (
+        terrain.isWater(x, y) ||
+        rt.sim.state.buildings.some(
+          (b) => Math.round(b.x) === x && Math.round(b.y) === y,
+        ) ||
+        (rt.sim.state.occupied.has(key) && !rt.sim.state.roadSet.has(key))
+      );
+    };
+    let start: { x: number; y: number } | null = null;
+    for (const road of rt.sim.state.roads) {
+      const x = Math.round(road.x);
+      const y = Math.round(road.y);
+      if (
+        x > 1 &&
+        x < terrain.size - 8 &&
+        y > 1 &&
+        y < terrain.size - 1 &&
+        !blocked(x, y) &&
+        !blocked(x + 1, y) &&
+        !blocked(x + 2, y) &&
+        !blocked(x + 3, y) &&
+        !blocked(x + 4, y)
+      ) {
+        start = { x, y };
+        break;
+      }
+    }
+    if (!start) throw new Error("test terrain needs a clear sprint lane");
+
+    rt.enterFirstPerson(me.id);
+    expect(rt.placeFirstPersonDogfood(start, 0)).toBe(true);
+    rt.setFpKey("KeyW", true);
+    rt.stepFirstPersonDogfood(0.35);
+    rt.setFpKey("KeyW", false);
+    const walkAfter = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    const walkDistance = distance(start, walkAfter);
+
+    expect(rt.placeFirstPersonDogfood(start, 0)).toBe(true);
+    rt.setFpKey("ShiftLeft", true);
+    rt.setFpKey("KeyW", true);
+    rt.stepFirstPersonDogfood(0.35);
+    rt.setFpKey("KeyW", false);
+    rt.setFpKey("ShiftLeft", false);
+    const sprintAfter = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    const sprintDistance = distance(start, sprintAfter);
+
+    expect(rt.placeFirstPersonDogfood(start, 0)).toBe(true);
+    rt.setFpKey("KeyW", true);
+    rt.stepFirstPersonDogfood(0.35);
+    rt.setFpKey("KeyW", false);
+    const walkAfterSprintRelease = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    const releasedDistance = distance(start, walkAfterSprintRelease);
+
+    expect(sprintDistance).toBeGreaterThan(walkDistance * 1.2);
+    expect(releasedDistance).toBeCloseTo(walkDistance, 5);
+  });
+
   it("does not carry held movement keys across first-person citizen switches", () => {
     const rt = new ColonyRuntime(4242);
     const [first, second] = rt.getUiState().citizens.list;
