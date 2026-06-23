@@ -323,6 +323,25 @@ describe("first-person route dogfood", () => {
     expect(conflictDistance).toBeLessThan(poweredDistance * 0.1);
   });
 
+  it("does not carry held movement keys across first-person citizen switches", () => {
+    const rt = new ColonyRuntime(4242);
+    const [first, second] = rt.getUiState().citizens.list;
+    if (!first || !second) throw new Error("test colony needs two citizens");
+
+    expect(rt.enterFirstPerson(first.id)).toBe(true);
+    rt.setFpKey("KeyW", true);
+    rt.stepFirstPersonDogfood(0.3);
+    const firstAfterMove = rt.getUiState().firstPerson.view!.citizen.positionXY;
+
+    expect(rt.enterFirstPerson(second.id)).toBe(true);
+    const secondBeforeStep = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    rt.stepFirstPersonDogfood(0.3);
+    const secondAfterStep = rt.getUiState().firstPerson.view!.citizen.positionXY;
+
+    expect(distance(firstAfterMove, secondBeforeStep)).toBeGreaterThan(1);
+    expect(secondAfterStep).toEqual(secondBeforeStep);
+  });
+
   it("normalizes diagonal WASD strafing without yawing the camera", () => {
     const rt = new ColonyRuntime(4242);
     const me = rt.getUiState().citizens.list[0]!;

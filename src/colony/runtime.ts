@@ -1340,6 +1340,7 @@ export class ColonyRuntime {
     if (!this.citizens.byId(citizenId)) return false;
     if (!this.canStepIntoCitizen(citizenId)) return false;
     this.fpCitizenId = citizenId;
+    this.fpKeys.clear();
     this.fpWalkSpeed = 0;
     this.fpLookPitch = 0;
     this.fpBlockedReason = null;
