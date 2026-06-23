@@ -116,6 +116,10 @@ export class PlanetRenderer {
   // floating / poking through; Terrain.worldY (sim, water, pathfinding) is never touched. terrainLevelSig
   // is the built-lot fingerprint that drives it, so the terrain only rebuilds when a footprint changes.
   private terrainLevel = new Map<number, number>();
+  // Spec 095 — cells whose RENDER height we lifted to the road ribbon (the carriageway + a shoulder
+  // skirt). Tracked apart from the house-pad levels so colorFor keeps their NATURAL biome colour (no
+  // grass repaint) where a road crosses forest / beach / mountain.
+  private roadGradedCells = new Set<number>();
   private terrainLevelSig = "";
   private roadSurfaceMesh!: THREE.Mesh;
   private roadShoulderMesh!: THREE.Mesh;
@@ -786,7 +790,7 @@ export class PlanetRenderer {
       // elevation is a sub-sea-level Shallows/Beach cell. Paint it Plains grass so a raised coastal cell
       // doesn't show its teal sea / sand colour standing proud above the water (the operator's "blue
       // patches at Joe's house"). The land enrichment below then applies to it as ordinary ground.
-      const leveled = this.terrainLevel.has(i);
+      const leveled = this.terrainLevel.has(i) && !this.roadGradedCells.has(i);
       out.setHex(
         leveled ? BIOME_COLOR[Biome.Plains] : BIOME_COLOR[t.biome[i] as Biome],
       );
@@ -878,7 +882,6 @@ export class PlanetRenderer {
    *  The pad/garden/driveway/fence DECORATION reads this same map via gy() (see updateNeighborhood), so
    *  pads, veg-beds and fences ride the cut/filled terrain together — no single-source-of-truth drift. */
   private relevelTerrain() {
-    if (!this.neighborhood) return;
     const N = this.sim.state.terrain.size;
     const t = this.sim.state.terrain;
     // render-only dry floor. The living sea (buildOcean) sits at y 0.15 and SWELLS by up to ±0.41
@@ -890,8 +893,8 @@ export class PlanetRenderer {
     const seatOf = (hz: { x: number; y: number; w: number; d: number }) =>
       Math.max(this.groundY(hz.x + (hz.w - 1) / 2, hz.y + (hz.d - 1) / 2), DRY);
     // Cheap fingerprint: only built lots, their footprint rect, and their seat height drive the map.
-    let sig = "";
-    for (const lot of this.neighborhood.parcels) {
+    let sig = `r${this.sim.state.roadsVersion}c${this.roadRibbonCells?.size ?? 0}|`;
+    for (const lot of this.neighborhood?.parcels ?? []) {
       if (!lot.built) continue;
       const hz = lot.houseZone;
       sig += `${lot.id}:${hz.x},${hz.y},${hz.w},${hz.d}@${seatOf(hz).toFixed(3)}|`;
@@ -902,7 +905,7 @@ export class PlanetRenderer {
     const put = (x: number, y: number, v: number) => {
       if (x >= 0 && y >= 0 && x < N && y < N) next.set(y * N + x, v);
     };
-    for (const lot of this.neighborhood.parcels) {
+    for (const lot of this.neighborhood?.parcels ?? []) {
       if (!lot.built) continue;
       const hz = lot.houseZone;
       const py = seatOf(hz);
@@ -948,8 +951,66 @@ export class PlanetRenderer {
           }
         }
     }
+    // Spec 095 — grade the visible ground UP to the road ribbon (render-only; worldY untouched), so a
+    // car riding the ribbon top is never swallowed by a hillside and the world never shows below the road.
+    this.gradeRoadsInto(next, N);
     this.terrainLevel = next;
     this.rebuildChunkedTerrain();
+  }
+
+  /** Spec 095 — lift each road-ribbon cell's RENDER height to the road surface (smoothRoadY) and ramp a
+   *  short shoulder skirt out to natural terrain. The car rides smoothRoadY + 0.12; before this the mesh
+   *  under the ribbon was raw worldY, so on a slope the ground sat below the asphalt (the car looked sunk,
+   *  the world showed under the road) and the uphill bank poked above it and hid the car. Render-only — sim
+   *  worldY, water and pathfinding all keep reading Terrain.worldY, so nothing downstream shifts. */
+  private gradeRoadsInto(next: Map<number, number>, N: number) {
+    this.roadGradedCells.clear();
+    const cells = this.roadRibbonCells;
+    if (!cells || cells.size === 0) return;
+    const t = this.sim.state.terrain;
+    const SKIRT = 3;
+    const roadH = new Map<number, number>();
+    for (const key of cells) {
+      const c = key.indexOf(",");
+      const x = +key.slice(0, c);
+      const y = +key.slice(c + 1);
+      if (x < 0 || y < 0 || x >= N || y >= N) continue;
+      roadH.set(y * N + x, Math.max(0, this.smoothRoadY(x, y)));
+    }
+    // The carriageway itself meets graded earth at the ribbon base (so it never pokes through the asphalt).
+    for (const [i, h] of roadH) {
+      next.set(i, h);
+      this.roadGradedCells.add(i);
+    }
+    // Shoulder: each non-road cell within SKIRT takes the nearest road height, ramped to natural ground by
+    // a smoothstep (cut on the uphill bank, fill on the downhill side) so the road edge is never a cliff.
+    const skirt = new Map<number, { h: number; d: number }>();
+    for (const [i, h] of roadH) {
+      const cx = i % N;
+      const cy = (i / N) | 0;
+      for (let dy = -SKIRT; dy <= SKIRT; dy++)
+        for (let dx = -SKIRT; dx <= SKIRT; dx++) {
+          const d = Math.abs(dx) > Math.abs(dy) ? Math.abs(dx) : Math.abs(dy);
+          if (d === 0) continue;
+          const x = cx + dx;
+          const y = cy + dy;
+          if (x < 0 || y < 0 || x >= N || y >= N) continue;
+          const j = y * N + x;
+          if (roadH.has(j)) continue;
+          const cur = skirt.get(j);
+          if (!cur || d < cur.d) skirt.set(j, { h, d });
+        }
+    }
+    for (const [j, info] of skirt) {
+      if (next.has(j)) continue; // a house pad already owns this cell — leave its grade alone
+      const x = j % N;
+      const y = (j / N) | 0;
+      const nat = Math.max(0, t.worldY(x, y));
+      const s = info.d / (SKIRT + 1);
+      const sm = s * s * (3 - 2 * s);
+      next.set(j, info.h + (nat - info.h) * sm);
+      this.roadGradedCells.add(j);
+    }
   }
 
   setView(mode: ViewMode) {
@@ -2609,7 +2670,10 @@ export class PlanetRenderer {
       this.roadRibbonGroup = null;
     }
     this.roadRibbonCells = null;
-    if (!ways || ways.length === 0) return;
+    if (!ways || ways.length === 0) {
+      if (this.terrainMat) this.relevelTerrain();
+      return;
+    }
     const built = buildRoadRibbons(ways, {
       terrain: this.sim.state.terrain,
       wx: (x) => this.wx(x),
@@ -2619,6 +2683,8 @@ export class PlanetRenderer {
     this.roadRibbonGroup = built.group;
     this.roadRibbonCells = built.cells;
     this.scene.add(this.roadRibbonGroup);
+    // Spec 095 — the ribbon cells just changed; regrade the ground up to the new road (render-only).
+    if (this.terrainMat) this.relevelTerrain();
   }
 
   /** Spec 088 — hand the renderer the bus route; it raises the stop markers and a coach that drives the
