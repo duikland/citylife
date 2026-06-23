@@ -86,4 +86,37 @@ describe("FirstPersonPanel immersive HUD", () => {
     expect(html).not.toContain("Neighbours");
     expect(html).not.toContain("grass");
   });
+
+  it("shows concise recovery guidance when sprint charge is depleted", () => {
+    const fp = makeFirstPerson();
+    fp.sprintCharge = 0;
+
+    const html = renderToStaticMarkup(
+      React.createElement(FirstPersonPanel, {
+        runtime: makeRuntime(),
+        fp,
+      }),
+    );
+
+    expect(html).toContain("Sprint depleted — walk to recover");
+    expect(html).toContain('aria-valuenow="0"');
+    expect(html).toContain('width:0%');
+    expect(html).not.toContain("Ground");
+    expect(html).not.toContain("Neighbours");
+  });
+
+  it("shows a low sprint hint before the charge is empty", () => {
+    const fp = makeFirstPerson();
+    fp.sprintCharge = 12;
+
+    const html = renderToStaticMarkup(
+      React.createElement(FirstPersonPanel, {
+        runtime: makeRuntime(),
+        fp,
+      }),
+    );
+
+    expect(html).toContain("Sprint low — ease off to recover");
+    expect(html).not.toContain("Sprint depleted — walk to recover");
+  });
 });

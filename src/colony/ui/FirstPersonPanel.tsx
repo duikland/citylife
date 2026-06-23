@@ -7,6 +7,7 @@ import type { ColonyRuntime } from "../runtime";
 import type { ColonyUiState } from "../runtime";
 
 const STEP = 6; // cells per directional tap
+const LOW_SPRINT_CHARGE_PERCENT = 20;
 
 const DIR: { label: string; emoji: string; dx: number; dy: number }[] = [
   { label: "NW", emoji: "↖", dx: -STEP, dy: -STEP },
@@ -130,6 +131,15 @@ export function FirstPersonPanel({
           )}
           <div style={{ color: "#7ab0d0", marginTop: 2 }}>
             Sprint {Math.round(fp.sprintCharge)}%
+            {fp.sprintCharge <= 0 ? (
+              <div style={{ color: "#e0a14d" }}>
+                Sprint depleted — walk to recover
+              </div>
+            ) : fp.sprintCharge <= LOW_SPRINT_CHARGE_PERCENT ? (
+              <div style={{ color: "#e0a14d" }}>
+                Sprint low — ease off to recover
+              </div>
+            ) : null}
             <div
               role="progressbar"
               aria-label={`Sprint charge ${Math.round(fp.sprintCharge)}%`}
