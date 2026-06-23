@@ -279,13 +279,62 @@ describe("first-person route dogfood", () => {
     expect(conflictDistance).toBeLessThan(poweredDistance * 0.1);
   });
 
+  it("normalizes diagonal WASD strafing without yawing the camera", () => {
+    const rt = new ColonyRuntime(4242);
+    const me = rt.getUiState().citizens.list[0]!;
+    const terrain = rt.sim.state.terrain;
+    const blocked = (x: number, y: number) => {
+      const key = `${x},${y}`;
+      return (
+        terrain.isWater(x, y) ||
+        rt.sim.state.buildings.some(
+          (b) => Math.round(b.x) === x && Math.round(b.y) === y,
+        ) ||
+        (rt.sim.state.occupied.has(key) && !rt.sim.state.roadSet.has(key))
+      );
+    };
+    let start: { x: number; y: number } | null = null;
+    for (let y = 1; y < terrain.size - 2 && !start; y++) {
+      for (let x = 1; x < terrain.size - 2 && !start; x++) {
+        if (!blocked(x, y) && !blocked(x + 1, y) && !blocked(x, y + 1) && !blocked(x + 1, y + 1)) {
+          start = { x, y };
+        }
+      }
+    }
+    if (!start) throw new Error("test terrain needs an open 2x2 walking patch");
+
+    rt.enterFirstPerson(me.id);
+    expect(rt.placeFirstPersonDogfood(start, 0)).toBe(true);
+    rt.setFpKey("KeyW", true);
+    rt.stepFirstPersonDogfood(0.3);
+    rt.setFpKey("KeyW", false);
+    const forwardAfter = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    const forwardDistance = distance(start, forwardAfter);
+
+    expect(rt.placeFirstPersonDogfood(start, 0)).toBe(true);
+    rt.setFpKey("KeyW", true);
+    rt.setFpKey("KeyD", true);
+    rt.stepFirstPersonDogfood(0.3);
+    rt.setFpKey("KeyW", false);
+    rt.setFpKey("KeyD", false);
+    const diagonalUi = rt.getUiState().firstPerson;
+    const diagonalAfter = diagonalUi.view!.citizen.positionXY;
+    const diagonalDistance = distance(start, diagonalAfter);
+
+    expect(diagonalAfter.x).toBeGreaterThan(start.x);
+    expect(diagonalAfter.y).toBeGreaterThan(start.y);
+    expect(diagonalDistance).toBeCloseTo(forwardDistance, 5);
+    expect(diagonalUi.view!.citizen.heading).toBeCloseTo(0, 5);
+    expect(diagonalUi.blockedReason).toBeNull();
+  });
+
   it("walks a deterministic route and samples live view position plus heading", () => {
     const rt = new ColonyRuntime(4242);
     const me = rt.getUiState().citizens.list[0]!;
 
     const run = driveFirstPersonRouteDogfood(rt, me.id, [
       { label: "walk forward", keys: ["w"], seconds: 0.5 },
-      { label: "turn right", keys: ["d"], seconds: 0.5 },
+      { label: "turn right", keys: ["ArrowRight"], seconds: 0.5 },
       { label: "back up", keys: ["s"], seconds: 0.25 },
     ]);
 

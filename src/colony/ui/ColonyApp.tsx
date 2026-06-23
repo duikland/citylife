@@ -105,7 +105,7 @@ export function FirstPersonMouseLookBar({
         👁 Seeing through <b>{citizenName ?? "a citizen"}</b>&apos;s eyes
       </span>
       <span style={{ color: "#6f86b8", fontSize: 12 }}>
-        <b>W</b>/<b>S</b> walk · <b>A</b>/<b>D</b> turn · mouse-look {pointerLockError ? "unavailable" : mouseLookLocked ? "locked" : "ready"} · <b>Esc</b> {mouseLookLocked ? "unlock" : "exit"}
+        <b>W</b>/<b>S</b> walk · <b>A</b>/<b>D</b> strafe · arrows turn · mouse-look {pointerLockError ? "unavailable" : mouseLookLocked ? "locked" : "ready"} · <b>Esc</b> {mouseLookLocked ? "unlock" : "exit"}
       </span>
       {pointerLockError && (
         <span style={{ color: "#e6c84d", fontSize: 12 }} role="status">
@@ -239,7 +239,7 @@ export function ColonyApp() {
       "ArrowRight",
     ]);
     const RACE_MOVE = new Set([...MOVE, "ShiftLeft", "ShiftRight"]);
-    // 'KeyW' -> 'w', 'ArrowUp' -> 'arrowup' (runtime.setFpKey lowercases + maps these to fwd/back/left/right)
+    // 'KeyW' -> 'w', 'ArrowUp' -> 'arrowup' (runtime.setFpKey lowercases + maps WASD to movement, arrows to walk/turn)
     const norm = (code: string) =>
       code.startsWith("Arrow") ? code.toLowerCase() : code.slice(3);
     const onKey = (e: KeyboardEvent) => {

@@ -242,7 +242,7 @@ export function FirstPersonPanel({
       </div>
 
       <div style={{ fontSize: 10, opacity: 0.4, textAlign: "center" }}>
-        WASD · arrow keys · click arrows above
+        WASD strafe/walk · arrows turn · click arrows above
       </div>
     </div>
   );

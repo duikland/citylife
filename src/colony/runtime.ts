@@ -1356,8 +1356,8 @@ export class ColonyRuntime {
     this.emit();
   }
 
-  /** First-person locomotion — hold W/S (or up/down) to walk, A/D (or left/right) to turn. The HUD
-   *  keydown/keyup feed this; movement is applied per-frame in the loop so it is smooth. */
+  /** First-person locomotion — hold W/S (or up/down) to walk, A/D to strafe, and left/right arrows to turn.
+   *  The HUD keydown/keyup feed this; movement is applied per-frame in the loop so it is smooth. */
   setFpKey(key: string, down: boolean): void {
     const map: Record<string, string> = {
       w: "fwd",
@@ -1366,11 +1366,11 @@ export class ColonyRuntime {
       s: "back",
       keys: "back",
       arrowdown: "back",
-      a: "left",
-      keya: "left",
+      a: "strafeLeft",
+      keya: "strafeLeft",
       arrowleft: "left",
-      d: "right",
-      keyd: "right",
+      d: "strafeRight",
+      keyd: "strafeRight",
       arrowright: "right",
     };
     const m = map[key.toLowerCase()];
@@ -1539,12 +1539,19 @@ export class ColonyRuntime {
     if (k.has("right")) c.heading += turn;
     const forwardHeld = k.has("fwd");
     const backHeld = k.has("back");
+    const strafeLeftHeld = k.has("strafeLeft");
+    const strafeRightHeld = k.has("strafeRight");
     const opposingWalkInput = forwardHeld && backHeld;
-    let mv = 0;
-    if (!opposingWalkInput && forwardHeld) mv += 1;
-    if (!opposingWalkInput && backHeld) mv -= 1;
-    if (opposingWalkInput) this.fpWalkSpeed = 0;
-    const targetSpeed = mv * cfg.maxWalkSpeed;
+    const opposingStrafeInput = strafeLeftHeld && strafeRightHeld;
+    let forward = 0;
+    let strafe = 0;
+    if (!opposingWalkInput && forwardHeld) forward += 1;
+    if (!opposingWalkInput && backHeld) forward -= 1;
+    if (!opposingStrafeInput && strafeRightHeld) strafe += 1;
+    if (!opposingStrafeInput && strafeLeftHeld) strafe -= 1;
+    const moving = forward !== 0 || strafe !== 0;
+    if (opposingWalkInput || opposingStrafeInput) this.fpWalkSpeed = 0;
+    const targetSpeed = moving ? cfg.maxWalkSpeed : 0;
     if (this.fpWalkSpeed < targetSpeed) {
       this.fpWalkSpeed = Math.min(
         targetSpeed,
@@ -1555,13 +1562,20 @@ export class ColonyRuntime {
       this.fpWalkSpeed = Math.max(targetSpeed, this.fpWalkSpeed - rate * dt);
     }
     if (Math.abs(this.fpWalkSpeed) > 0.001) {
+      const inputLength = Math.hypot(forward, strafe);
+      const dirForward = inputLength > 0 ? forward / inputLength : 1;
+      const dirStrafe = inputLength > 0 ? strafe / inputLength : 0;
       const cellKey = `${Math.round(c.pos.x)},${Math.round(c.pos.y)}`;
       const surfaceMultiplier = this.sim.state.roadSet.has(cellKey)
         ? cfg.roadWalkSpeedMultiplier
         : cfg.offRoadWalkSpeedMultiplier;
       const sp = this.fpWalkSpeed * surfaceMultiplier * dt;
-      const nx = c.pos.x + Math.cos(c.heading) * sp;
-      const ny = c.pos.y + Math.sin(c.heading) * sp;
+      const nx =
+        c.pos.x +
+        (Math.cos(c.heading) * dirForward - Math.sin(c.heading) * dirStrafe) * sp;
+      const ny =
+        c.pos.y +
+        (Math.sin(c.heading) * dirForward + Math.cos(c.heading) * dirStrafe) * sp;
       const blocked = this.blockedStepReason(nx, ny, c.pos);
       if (!blocked) {
         c.pos.x = nx;
