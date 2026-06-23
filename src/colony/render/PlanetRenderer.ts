@@ -12,7 +12,12 @@ import { COLONY } from "../config";
 import { BIOME_COLOR, Biome } from "../terrain";
 import type { ColonySim, SeedStructure } from "../sim";
 import type { TarentaalBird } from "../tarentaal";
-import type { ArtifactKind, VisualArtifact } from "../artifacts";
+import {
+  ARTIFACT_CATALOG_SIZE,
+  summarizeRenderableArtifacts,
+  type ArtifactKind,
+  type VisualArtifact,
+} from "../artifacts";
 import type { HouseSpec } from "../house";
 import { gridOrigin } from "../grid";
 import { cellZone, ZONE_COLOR, VIBE_COLOR, type Plot } from "../cityPlan";
@@ -175,6 +180,7 @@ export class PlanetRenderer {
   private tarentaalChickMesh!: THREE.InstancedMesh;
   // Furniture / visual artifacts — deterministic sim catalog instances, foundation for clickable Kookerbook objects.
   private artifactMeshes!: Record<ArtifactKind, THREE.InstancedMesh>;
+  private artifactCap = 0;
   // P1 — citizen AVATARS: the real, named Hermes citizens, drawn from the roster (distinct from the ambient
   // ped pool), movable by the bot, and steppable-into for a live first-person view.
   private avatarMesh!: THREE.InstancedMesh;
@@ -1554,12 +1560,12 @@ export class PlanetRenderer {
       fountainBowl,
       fountainJet,
     ])!;
-    const artifactCap = 8;
+    this.artifactCap = Math.max(1, ARTIFACT_CATALOG_SIZE);
     this.artifactMeshes = {
       bench: new THREE.InstancedMesh(
         benchGeo,
         new THREE.MeshStandardMaterial({ color: 0x8b5a35, roughness: 0.82 }),
-        artifactCap,
+        this.artifactCap,
       ),
       lamppost: new THREE.InstancedMesh(
         lampGeo,
@@ -1570,17 +1576,17 @@ export class PlanetRenderer {
           roughness: 0.45,
           metalness: 0.25,
         }),
-        artifactCap,
+        this.artifactCap,
       ),
       planter: new THREE.InstancedMesh(
         planterGeo,
         new THREE.MeshStandardMaterial({ color: 0x3d7a45, roughness: 0.9 }),
-        artifactCap,
+        this.artifactCap,
       ),
       fountain: new THREE.InstancedMesh(
         fountainGeo,
         new THREE.MeshStandardMaterial({ color: 0x6f8da7, roughness: 0.55 }),
-        artifactCap,
+        this.artifactCap,
       ),
     };
     for (const mesh of Object.values(this.artifactMeshes)) {
@@ -2760,16 +2766,26 @@ export class PlanetRenderer {
 
   /** Deterministic furniture / civic-art catalog instances come from ColonySim, not renderer randomness. */
   private updateArtifacts(): void {
-    const counts: Record<ArtifactKind, number> = {
+    const { counts, renderable, unknown, overflow } = summarizeRenderableArtifacts(
+      this.sim.state.artifacts,
+      this.artifactCap,
+    );
+
+    const placed: Record<ArtifactKind, number> = {
       bench: 0,
       lamppost: 0,
       planter: 0,
       fountain: 0,
     };
-    for (const item of this.sim.state.artifacts) {
+    for (const item of renderable) {
       const mesh = this.artifactMeshes[item.kind];
-      const idx = counts[item.kind]++;
+      const idx = placed[item.kind]++;
       this.placeArtifact(mesh, idx, item);
+    }
+    if ((unknown > 0 || overflow > 0) && import.meta.env.DEV) {
+      console.warn(
+        `[citylife] artifact render drop: ${unknown} unknown kinds + ${overflow} over cap DROPPED — renderer only draws the seeded prop catalog for now`,
+      );
     }
     for (const [kind, mesh] of Object.entries(this.artifactMeshes) as [
       ArtifactKind,

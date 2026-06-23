@@ -1,6 +1,12 @@
 import type { Terrain } from "./terrain";
 
-export type ArtifactKind = "bench" | "lamppost" | "planter" | "fountain";
+export const ARTIFACT_KINDS = [
+  "bench",
+  "lamppost",
+  "planter",
+  "fountain",
+] as const;
+export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 export type ArtifactCategory =
   | "furniture"
   | "lighting"
@@ -22,12 +28,15 @@ export interface VisualArtifact {
   category: ArtifactCategory;
 }
 
-interface CatalogSeed {
+export interface ArtifactCatalogEntry {
   kind: ArtifactKind;
   category: ArtifactCategory;
+  footprint: ArtifactFootprint;
+}
+
+interface CatalogSeed extends ArtifactCatalogEntry {
   offset: { x: number; y: number };
   rot: number;
-  footprint: ArtifactFootprint;
 }
 
 const CATALOG: CatalogSeed[] = [
@@ -60,6 +69,65 @@ const CATALOG: CatalogSeed[] = [
     footprint: { w: 1.6, h: 1.6 },
   },
 ];
+
+export const ARTIFACT_CATALOG_SIZE = CATALOG.length;
+
+export function artifactCatalogEntries(): ArtifactCatalogEntry[] {
+  return CATALOG.map(({ kind, category, footprint }) => ({
+    kind,
+    category,
+    footprint: { ...footprint },
+  }));
+}
+
+const ARTIFACT_KIND_SET = new Set<string>(ARTIFACT_KINDS);
+
+export function isArtifactKind(kind: string): kind is ArtifactKind {
+  return ARTIFACT_KIND_SET.has(kind);
+}
+
+export type ArtifactCounts = Record<ArtifactKind, number>;
+
+export interface RenderableArtifactSummary<T extends { kind: string }> {
+  counts: ArtifactCounts;
+  renderable: (T & { kind: ArtifactKind })[];
+  unknown: number;
+  overflow: number;
+}
+
+export function emptyArtifactCounts(): ArtifactCounts {
+  return {
+    bench: 0,
+    lamppost: 0,
+    planter: 0,
+    fountain: 0,
+  };
+}
+
+export function summarizeRenderableArtifacts<T extends { kind: string }>(
+  items: readonly T[],
+  capPerKind: number,
+): RenderableArtifactSummary<T> {
+  const counts = emptyArtifactCounts();
+  const renderable: (T & { kind: ArtifactKind })[] = [];
+  let unknown = 0;
+  let overflow = 0;
+
+  for (const item of items) {
+    if (!isArtifactKind(item.kind)) {
+      unknown++;
+      continue;
+    }
+    if (counts[item.kind] >= capPerKind) {
+      overflow++;
+      continue;
+    }
+    counts[item.kind]++;
+    renderable.push(item as T & { kind: ArtifactKind });
+  }
+
+  return { counts, renderable, unknown, overflow };
+}
 
 function dry(terrain: Terrain, x: number, y: number): boolean {
   return terrain.inBounds(x, y) && !terrain.isWater(x, y);
