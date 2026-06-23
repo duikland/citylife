@@ -8,9 +8,18 @@ describe("Colony tarentaal flock", () => {
 
     expect(a.state.tarentaal).toHaveLength(10);
     expect(a.state.tarentaal).toEqual(b.state.tarentaal);
-    expect(a.state.tarentaal.filter((bird) => bird.age === "adult")).toHaveLength(4);
-    expect(a.state.tarentaal.filter((bird) => bird.age === "chick")).toHaveLength(6);
-    expect(a.state.tarentaal.every((bird) => !a.state.terrain.isWater(Math.round(bird.x), Math.round(bird.y)))).toBe(true);
+    expect(
+      a.state.tarentaal.filter((bird) => bird.age === "adult"),
+    ).toHaveLength(4);
+    expect(
+      a.state.tarentaal.filter((bird) => bird.age === "chick"),
+    ).toHaveLength(6);
+    expect(
+      a.state.tarentaal.every(
+        (bird) =>
+          !a.state.terrain.isWater(Math.round(bird.x), Math.round(bird.y)),
+      ),
+    ).toBe(true);
   });
 
   it("keeps chicks following adults and produces deterministic chase bursts", () => {
@@ -31,11 +40,19 @@ describe("Colony tarentaal flock", () => {
         return Math.hypot(bird.x - start.x, bird.y - start.y) > 0.2;
       });
     expect(movedAdults).toBe(true);
-    expect(sim.state.tarentaal.some((bird) => bird.behavior === "chase")).toBe(true);
+    expect(sim.state.tarentaal.some((bird) => bird.behavior === "chase")).toBe(
+      true,
+    );
 
-    for (const chick of sim.state.tarentaal.filter((bird) => bird.age === "chick")) {
-      const adult = sim.state.tarentaal.find((bird) => bird.id === chick.followId)!;
-      expect(Math.hypot(chick.x - adult.x, chick.y - adult.y)).toBeLessThanOrEqual(4.5);
+    for (const chick of sim.state.tarentaal.filter(
+      (bird) => bird.age === "chick",
+    )) {
+      const adult = sim.state.tarentaal.find(
+        (bird) => bird.id === chick.followId,
+      )!;
+      expect(
+        Math.hypot(chick.x - adult.x, chick.y - adult.y),
+      ).toBeLessThanOrEqual(4.5);
       expect(chick.behavior).toBe("follow");
     }
   });

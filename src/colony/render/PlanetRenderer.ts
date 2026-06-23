@@ -2534,7 +2534,10 @@ export class PlanetRenderer {
     let adultCount = 0;
     let chickCount = 0;
     for (const bird of birds) {
-      const mesh = bird.age === "adult" ? this.tarentaalAdultMesh : this.tarentaalChickMesh;
+      const mesh =
+        bird.age === "adult"
+          ? this.tarentaalAdultMesh
+          : this.tarentaalChickMesh;
       const idx = bird.age === "adult" ? adultCount++ : chickCount++;
       this.placeTarentaal(mesh, idx, bird);
     }

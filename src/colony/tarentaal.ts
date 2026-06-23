@@ -63,7 +63,10 @@ function moveToward(
   bird.y = safe.y;
 }
 
-export function createTarentaalFlock(terrain: Terrain, rng: RNG): TarentaalBird[] {
+export function createTarentaalFlock(
+  terrain: Terrain,
+  rng: RNG,
+): TarentaalBird[] {
   const anchor = nearestLand(
     terrain,
     {
@@ -78,7 +81,10 @@ export function createTarentaalFlock(terrain: Terrain, rng: RNG): TarentaalBird[
     const radius = 1.2 + rng.next() * 1.8;
     const p = nearestLand(
       terrain,
-      { x: anchor.x + Math.cos(angle) * radius, y: anchor.y + Math.sin(angle) * radius },
+      {
+        x: anchor.x + Math.cos(angle) * radius,
+        y: anchor.y + Math.sin(angle) * radius,
+      },
       anchor,
     );
     birds.push({
@@ -93,7 +99,8 @@ export function createTarentaalFlock(terrain: Terrain, rng: RNG): TarentaalBird[
   }
   for (let i = 0; i < COLONY.tarentaal.chicks; i++) {
     const adult = birds[i % COLONY.tarentaal.adults]!;
-    const angle = adult.heading + Math.PI + (i - COLONY.tarentaal.chicks / 2) * 0.18;
+    const angle =
+      adult.heading + Math.PI + (i - COLONY.tarentaal.chicks / 2) * 0.18;
     const p = nearestLand(
       terrain,
       {
@@ -124,7 +131,10 @@ export function stepTarentaalFlock(
   if (birds.length === 0) return;
   const adults = birds.filter((bird) => bird.age === "adult");
   const center = adults.reduce(
-    (acc, bird) => ({ x: acc.x + bird.x / adults.length, y: acc.y + bird.y / adults.length }),
+    (acc, bird) => ({
+      x: acc.x + bird.x / adults.length,
+      y: acc.y + bird.y / adults.length,
+    }),
     { x: 0, y: 0 },
   );
   const tick = Math.floor(totalMinutes / COLONY.tarentaal.chasePeriodMinutes);
@@ -153,10 +163,13 @@ export function stepTarentaalFlock(
   }
 
   for (const chick of birds.filter((bird) => bird.age === "chick")) {
-    const adult = birds.find((bird) => bird.id === chick.followId) ?? adults[0]!;
+    const adult =
+      birds.find((bird) => bird.id === chick.followId) ?? adults[0]!;
     const trail = {
-      x: adult.x - Math.cos(adult.heading) * COLONY.tarentaal.chickTrailDistance,
-      y: adult.y - Math.sin(adult.heading) * COLONY.tarentaal.chickTrailDistance,
+      x:
+        adult.x - Math.cos(adult.heading) * COLONY.tarentaal.chickTrailDistance,
+      y:
+        adult.y - Math.sin(adult.heading) * COLONY.tarentaal.chickTrailDistance,
     };
     chick.behavior = "follow";
     moveToward(chick, trail, COLONY.tarentaal.chickSpeed, dt, terrain);
