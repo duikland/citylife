@@ -238,6 +238,25 @@ describe("first-person route dogfood", () => {
     expect(ui.firstPerson.blockedReason).toBe("water");
   });
 
+  it("activates the current first-person action prompt with immediate HUD feedback", () => {
+    const rt = new ColonyRuntime(4242);
+    const me = rt.getUiState().citizens.list[0]!;
+    rt.enterFirstPerson(me.id);
+    const prompt = rt.getUiState().firstPerson.view!.interactionPrompt;
+    expect(prompt).toBeTruthy();
+    expect(rt.getUiState().firstPerson.narration).toBeNull();
+
+    expect(rt.activateFirstPersonInteraction()).toBe(true);
+
+    const ui = rt.getUiState().firstPerson;
+    expect(ui.narrating).toBe(false);
+    expect(ui.narration).toContain(prompt!.targetName);
+    expect(ui.narration).toMatch(/talk|visit|inspect|follow/i);
+    expect(JSON.stringify({ prompt, narration: ui.narration })).not.toMatch(
+      /wallet|token|secret|operator/i,
+    );
+  });
+
   it("captures deterministic first-person demo evidence for screenshot automation", () => {
     const rt = new ColonyRuntime(4242);
     const me = rt.getUiState().citizens.list[0]!;

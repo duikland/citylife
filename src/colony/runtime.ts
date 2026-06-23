@@ -1415,6 +1415,30 @@ export class ColonyRuntime {
     return true;
   }
 
+  /** Execute the current first-person Action prompt with deterministic player-facing feedback. */
+  activateFirstPersonInteraction(): boolean {
+    const id = this.fpCitizenId;
+    if (!id) return false;
+    const view = firstPersonView(this.sim.state, id, this.citizens);
+    const prompt = view?.interactionPrompt;
+    if (!prompt) {
+      this.fpNarrating = false;
+      this.fpNarration = "No nearby action yet — move closer to someone or something useful.";
+      this.emit();
+      return false;
+    }
+    const actionLine: Record<typeof prompt.kind, string> = {
+      citizen: `You talk to ${prompt.targetName}.`,
+      civic: `You visit ${prompt.targetName}.`,
+      building: `You inspect ${prompt.targetName}.`,
+      road: `You follow ${prompt.targetName}.`,
+    };
+    this.fpNarrating = false;
+    this.fpNarration = actionLine[prompt.kind];
+    this.emit();
+    return true;
+  }
+
   /** Deterministic route-dogfood hook: place the active avatar at a controlled edge before stepping. */
   placeFirstPersonDogfood(
     pos: { x: number; y: number },

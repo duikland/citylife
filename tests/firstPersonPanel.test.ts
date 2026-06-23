@@ -9,6 +9,9 @@ function makeRuntime(): ColonyRuntime {
     exitFirstPerson() {},
     narrate() {},
     walkStep() {},
+    activateFirstPersonInteraction() {
+      return true;
+    },
   } as unknown as ColonyRuntime;
 }
 
@@ -69,6 +72,7 @@ describe("FirstPersonPanel immersive HUD", () => {
 
     expect(html).toContain("Action");
     expect(html).toContain("Talk to Orin Reed");
+    expect(html).toContain("Use E");
     expect(html).toContain("Blocked");
     expect(html).toContain("Show debug");
     expect(html).not.toContain("Ground");

@@ -299,7 +299,12 @@ export function ColonyApp() {
           runtime.setFpKey(norm(e.code), true);
           return;
         }
-        // Additive first-person actions: N narrates what the citizen sees, Esc steps back out.
+        // Additive first-person actions: E uses the current Action prompt, N narrates what the citizen sees, Esc steps back out.
+        if (e.code === "KeyE") {
+          e.preventDefault();
+          runtime.activateFirstPersonInteraction();
+          return;
+        }
         if (e.code === "KeyN") {
           e.preventDefault();
           void runtime.narrate();

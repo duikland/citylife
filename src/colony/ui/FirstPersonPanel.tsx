@@ -91,9 +91,26 @@ export function FirstPersonPanel({
         >
           {v.interactionPrompt ? (
             <div>
-              <span style={{ color: "#6ea8d0" }}>Action</span>{" "}
-              <b>{v.interactionPrompt.label}</b> ·{" "}
-              {Math.round(v.interactionPrompt.distance)} away
+              <div>
+                <span style={{ color: "#6ea8d0" }}>Action</span>{" "}
+                <b>{v.interactionPrompt.label}</b> ·{" "}
+                {Math.round(v.interactionPrompt.distance)} away
+              </div>
+              <button
+                style={{
+                  marginTop: 4,
+                  padding: "2px 8px",
+                  fontSize: 11,
+                  background: "rgba(160,212,240,0.12)",
+                  border: "1px solid #2a4a6a",
+                  borderRadius: 5,
+                  color: "#a0d4f0",
+                  cursor: "pointer",
+                }}
+                onClick={() => runtime.activateFirstPersonInteraction()}
+              >
+                Use E
+              </button>
             </div>
           ) : (
             <div style={{ color: "#7ab0d0" }}>No nearby action</div>
