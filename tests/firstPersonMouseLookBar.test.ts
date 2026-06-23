@@ -11,6 +11,7 @@ describe("FirstPersonMouseLookBar", () => {
         mouseLookLocked: false,
         pointerLockError: "Mouse-look unavailable — click the city view and try again.",
         requestMouseLook() {},
+        levelFirstPersonLook() {},
         exitFirstPerson() {},
       }),
     );
@@ -20,5 +21,6 @@ describe("FirstPersonMouseLookBar", () => {
     expect(html).toContain("mouse-look unavailable");
     expect(html).toContain("Mouse-look unavailable — click the city view and try again.");
     expect(html).toContain("Retry mouse-look");
+    expect(html).toContain("Level view");
   });
 });

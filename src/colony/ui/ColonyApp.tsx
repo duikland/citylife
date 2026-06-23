@@ -75,12 +75,14 @@ export function FirstPersonMouseLookBar({
   mouseLookLocked,
   pointerLockError,
   requestMouseLook,
+  levelFirstPersonLook,
   exitFirstPerson,
 }: {
   citizenName: string | null;
   mouseLookLocked: boolean;
   pointerLockError: string | null;
   requestMouseLook: () => void;
+  levelFirstPersonLook: () => void;
   exitFirstPerson: () => void;
 }) {
   return (
@@ -114,6 +116,9 @@ export function FirstPersonMouseLookBar({
       )}
       <button style={{ padding: "3px 12px" }} onClick={requestMouseLook}>
         {mouseLookLocked ? "Mouse-look on" : pointerLockError ? "Retry mouse-look" : "Lock mouse-look"}
+      </button>
+      <button style={{ padding: "3px 12px" }} onClick={levelFirstPersonLook}>
+        Level view
       </button>
       <button style={{ padding: "3px 12px" }} onClick={exitFirstPerson}>
         Exit first person
@@ -338,6 +343,7 @@ export function ColonyApp() {
           mouseLookLocked={mouseLookLocked}
           pointerLockError={pointerLockError}
           requestMouseLook={requestMouseLook}
+          levelFirstPersonLook={() => runtime.levelFirstPersonLook()}
           exitFirstPerson={() => runtime.exitFirstPerson()}
         />
       )}

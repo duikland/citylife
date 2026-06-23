@@ -1393,6 +1393,14 @@ export class ColonyRuntime {
     return true;
   }
 
+  /** Mouse-look comfort affordance: re-level vertical look without snapping yaw/heading. */
+  levelFirstPersonLook(): boolean {
+    if (!this.fpCitizenId) return false;
+    this.fpLookPitch = 0;
+    this.emit();
+    return true;
+  }
+
   /** Deterministic route-dogfood hook: place the active avatar at a controlled edge before stepping. */
   placeFirstPersonDogfood(
     pos: { x: number; y: number },

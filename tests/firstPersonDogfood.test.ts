@@ -27,6 +27,21 @@ describe("first-person route dogfood", () => {
     expect(rt.getUiState().firstPerson.lookPitch).toBeGreaterThanOrEqual(-0.9);
   });
 
+  it("levels first-person mouse-look pitch without changing yaw", () => {
+    const rt = new ColonyRuntime(4242);
+    const me = rt.getUiState().citizens.list[0]!;
+    rt.enterFirstPerson(me.id);
+    rt.applyFirstPersonMouseLook(80, -120);
+    const yawAfterLook = rt.getUiState().firstPerson.view!.citizen.heading;
+    expect(rt.getUiState().firstPerson.lookPitch).toBeGreaterThan(0);
+
+    expect(rt.levelFirstPersonLook()).toBe(true);
+
+    const ui = rt.getUiState();
+    expect(ui.firstPerson.lookPitch).toBe(0);
+    expect(ui.firstPerson.view!.citizen.heading).toBeCloseTo(yawAfterLook, 5);
+  });
+
   it("reports when first-person walking is blocked by a completed building", () => {
     const rt = new ColonyRuntime(4242);
     const me = rt.getUiState().citizens.list[0]!;
