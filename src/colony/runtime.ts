@@ -540,6 +540,7 @@ export interface ColonyUiState {
     view: FirstPersonView | null;
     lookPitch: number;
     mouseSensitivity: FirstPersonMouseSensitivity;
+    sprintCharge: number;
     blockedReason: string | null;
     narration: string | null;
     narrating: boolean;
@@ -654,6 +655,7 @@ export class ColonyRuntime {
   private fpWalkSpeed = 0;
   private fpLookPitch = 0;
   private fpMouseSensitivity: FirstPersonMouseSensitivity = "normal";
+  private fpSprintCharge = 1;
   private raceState: RaceState | null = null;
   private raceInput: RaceInput = {};
   private bestRaceMs: number | null = null;
@@ -1343,6 +1345,7 @@ export class ColonyRuntime {
     this.fpKeys.clear();
     this.fpWalkSpeed = 0;
     this.fpLookPitch = 0;
+    this.fpSprintCharge = 1;
     this.fpBlockedReason = null;
     this.renderer?.enterFirstPerson(citizenId);
     this.emit();
@@ -1354,6 +1357,7 @@ export class ColonyRuntime {
     this.fpKeys.clear();
     this.fpWalkSpeed = 0;
     this.fpLookPitch = 0;
+    this.fpSprintCharge = 1;
     this.fpBlockedReason = null;
     this.fpNarration = null;
     this.fpNarrating = false;
@@ -1453,6 +1457,7 @@ export class ColonyRuntime {
     c.heading = heading;
     this.fpWalkSpeed = 0;
     this.fpLookPitch = 0;
+    this.fpSprintCharge = 1;
     this.fpBlockedReason = null;
     this.emit();
     return true;
@@ -1609,6 +1614,13 @@ export class ColonyRuntime {
       const rate = targetSpeed === 0 ? cfg.walkDeceleration : cfg.walkAcceleration;
       this.fpWalkSpeed = Math.max(targetSpeed, this.fpWalkSpeed - rate * dt);
     }
+    const sprintHeld = k.has("sprint");
+    if (!sprintHeld) {
+      this.fpSprintCharge = Math.min(
+        1,
+        this.fpSprintCharge + dt / cfg.sprintRecoverySeconds,
+      );
+    }
     if (Math.abs(this.fpWalkSpeed) > 0.001) {
       const inputLength = Math.hypot(forward, strafe);
       const dirForward = inputLength > 0 ? forward / inputLength : 1;
@@ -1617,9 +1629,14 @@ export class ColonyRuntime {
       const surfaceMultiplier = this.sim.state.roadSet.has(cellKey)
         ? cfg.roadWalkSpeedMultiplier
         : cfg.offRoadWalkSpeedMultiplier;
-      const sprintMultiplier = k.has("sprint")
-        ? cfg.sprintWalkSpeedMultiplier
-        : 1;
+      const sprinting = moving && sprintHeld && this.fpSprintCharge > 0;
+      if (sprinting) {
+        this.fpSprintCharge = Math.max(
+          0,
+          this.fpSprintCharge - dt / cfg.sprintChargeSeconds,
+        );
+      }
+      const sprintMultiplier = sprinting ? cfg.sprintWalkSpeedMultiplier : 1;
       const sp = this.fpWalkSpeed * surfaceMultiplier * sprintMultiplier * dt;
       const nx =
         c.pos.x +
@@ -3126,6 +3143,7 @@ export class ColonyRuntime {
           view,
           lookPitch: this.fpLookPitch,
           mouseSensitivity: this.fpMouseSensitivity,
+          sprintCharge: Math.round(this.fpSprintCharge * 100),
           blockedReason: this.fpBlockedReason,
           narration: this.fpNarration,
           narrating: this.fpNarrating,

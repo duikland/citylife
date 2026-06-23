@@ -128,6 +128,9 @@ export function FirstPersonPanel({
               {v.mood.fever > 0.4 ? "⚠ illness spreading" : ""}
             </div>
           )}
+          <div style={{ color: "#7ab0d0", marginTop: 2 }}>
+            Sprint {Math.round(fp.sprintCharge)}%
+          </div>
         </div>
       )}
 

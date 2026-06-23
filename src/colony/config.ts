@@ -1069,6 +1069,8 @@ export const COLONY = {
     roadWalkSpeedMultiplier: 1.25, // paved/path cells feel easier to roam than grass
     offRoadWalkSpeedMultiplier: 1, // baseline terrain walking multiplier
     sprintWalkSpeedMultiplier: 1.45, // hold Shift to cover long streets faster without changing normal walk
+    sprintChargeSeconds: 3, // sustained sprint comfort budget before falling back to normal walk
+    sprintRecoverySeconds: 4, // time off Shift to recover a fully exhausted sprint budget
     turnSpeed: 2.4, // radians/sec for keyboard yaw until mouse-look lands
     mouseSensitivity: 0.0025, // radians per pointer-lock mouse pixel for FPS look
     mouseSensitivityScale: { low: 0.6, normal: 1, high: 1.6 }, // player-facing look sensitivity presets

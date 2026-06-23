@@ -24,6 +24,7 @@ function makeFirstPerson(): ColonyUiState["firstPerson"] {
     stepInCitizenIds: ["citizen-1"],
     lookPitch: 0,
     mouseSensitivity: "normal",
+    sprintCharge: 42,
     narration: "The plaza is calm.",
     narrating: false,
     blockedReason: "water",
@@ -74,6 +75,7 @@ describe("FirstPersonPanel immersive HUD", () => {
     expect(html).toContain("Talk to Orin Reed");
     expect(html).toContain("Use E");
     expect(html).toContain("Shift sprint");
+    expect(html).toContain("Sprint 42%");
     expect(html).toContain("Blocked");
     expect(html).toContain("Show debug");
     expect(html).not.toContain("Ground");

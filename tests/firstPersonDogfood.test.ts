@@ -405,6 +405,74 @@ describe("first-person route dogfood", () => {
     expect(releasedDistance).toBeCloseTo(walkDistance, 5);
   });
 
+  it("limits sustained sprint with a recoverable comfort charge", () => {
+    const rt = new ColonyRuntime(4242);
+    const me = rt.getUiState().citizens.list[0]!;
+    const terrain = rt.sim.state.terrain;
+    const blocked = (x: number, y: number) => {
+      const key = `${x},${y}`;
+      return (
+        terrain.isWater(x, y) ||
+        rt.sim.state.buildings.some(
+          (b) => Math.round(b.x) === x && Math.round(b.y) === y,
+        ) ||
+        (rt.sim.state.occupied.has(key) && !rt.sim.state.roadSet.has(key))
+      );
+    };
+    let start: { x: number; y: number } | null = null;
+    for (const road of rt.sim.state.roads) {
+      const x = Math.round(road.x);
+      const y = Math.round(road.y);
+      if (
+        x > 1 &&
+        x < terrain.size - 16 &&
+        y > 1 &&
+        y < terrain.size - 1 &&
+        Array.from({ length: 14 }, (_, i) => i).every((i) => !blocked(x + i, y))
+      ) {
+        start = { x, y };
+        break;
+      }
+    }
+    if (!start) throw new Error("test terrain needs a long clear sprint lane");
+
+    rt.enterFirstPerson(me.id);
+    expect(rt.placeFirstPersonDogfood(start, 0)).toBe(true);
+    expect(rt.getUiState().firstPerson.sprintCharge).toBe(100);
+
+    rt.setFpKey("ShiftLeft", true);
+    rt.setFpKey("KeyW", true);
+    rt.stepFirstPersonDogfood(3.25);
+    const exhaustedUi = rt.getUiState().firstPerson;
+    const exhaustedPos = exhaustedUi.view!.citizen.positionXY;
+    expect(exhaustedUi.sprintCharge).toBe(0);
+
+    rt.stepFirstPersonDogfood(0.35);
+    const exhaustedStepDistance = distance(
+      exhaustedPos,
+      rt.getUiState().firstPerson.view!.citizen.positionXY,
+    );
+
+    rt.setFpKey("ShiftLeft", false);
+    rt.stepFirstPersonDogfood(1);
+    const recoveredUi = rt.getUiState().firstPerson;
+    expect(recoveredUi.sprintCharge).toBeGreaterThan(0);
+
+    rt.setFpKey("ShiftLeft", true);
+    rt.stepFirstPersonDogfood(0.35);
+    const recoveredSprintDistance = distance(
+      recoveredUi.view!.citizen.positionXY,
+      rt.getUiState().firstPerson.view!.citizen.positionXY,
+    );
+
+    rt.setFpKey("KeyW", false);
+    rt.setFpKey("ShiftLeft", false);
+    rt.stepFirstPersonDogfood(3);
+    expect(rt.getUiState().firstPerson.sprintCharge).toBeGreaterThan(50);
+
+    expect(recoveredSprintDistance).toBeGreaterThan(exhaustedStepDistance * 1.15);
+  });
+
   it("does not carry held movement keys across first-person citizen switches", () => {
     const rt = new ColonyRuntime(4242);
     const [first, second] = rt.getUiState().citizens.list;
