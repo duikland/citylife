@@ -12,7 +12,8 @@ import { COLONY } from "../config";
 import { BIOME_COLOR, Biome } from "../terrain";
 import type { ColonySim, SeedStructure } from "../sim";
 import type { TarentaalBird } from "../tarentaal";
-import type { ArtifactKind, VisualArtifact } from "../artifacts";
+import type { ArtifactVariant, VisualArtifact } from "../artifactSchema";
+import { artifactVariant } from "../artifactSchema";
 import type { HouseSpec } from "../house";
 import { gridOrigin } from "../grid";
 import { cellZone, ZONE_COLOR, VIBE_COLOR, type Plot } from "../cityPlan";
@@ -174,7 +175,7 @@ export class PlanetRenderer {
   private tarentaalAdultMesh!: THREE.InstancedMesh;
   private tarentaalChickMesh!: THREE.InstancedMesh;
   // Furniture / visual artifacts — deterministic sim catalog instances, foundation for clickable Kookerbook objects.
-  private artifactMeshes!: Record<ArtifactKind, THREE.InstancedMesh>;
+  private artifactMeshes!: Record<ArtifactVariant, THREE.InstancedMesh>;
   // P1 — citizen AVATARS: the real, named Hermes citizens, drawn from the roster (distinct from the ambient
   // ped pool), movable by the bot, and steppable-into for a live first-person view.
   private avatarMesh!: THREE.InstancedMesh;
@@ -2760,22 +2761,23 @@ export class PlanetRenderer {
 
   /** Deterministic furniture / civic-art catalog instances come from ColonySim, not renderer randomness. */
   private updateArtifacts(): void {
-    const counts: Record<ArtifactKind, number> = {
+    const counts: Record<ArtifactVariant, number> = {
       bench: 0,
       lamppost: 0,
       planter: 0,
       fountain: 0,
     };
     for (const item of this.sim.state.artifacts) {
-      const mesh = this.artifactMeshes[item.kind];
-      const idx = counts[item.kind]++;
+      const variant = artifactVariant(item);
+      const mesh = this.artifactMeshes[variant];
+      const idx = counts[variant]++;
       this.placeArtifact(mesh, idx, item);
     }
-    for (const [kind, mesh] of Object.entries(this.artifactMeshes) as [
-      ArtifactKind,
+    for (const [variant, mesh] of Object.entries(this.artifactMeshes) as [
+      ArtifactVariant,
       THREE.InstancedMesh,
     ][]) {
-      mesh.count = counts[kind];
+      mesh.count = counts[variant];
       mesh.instanceMatrix.needsUpdate = true;
     }
   }

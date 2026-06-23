@@ -1,28 +1,17 @@
 import type { Terrain } from "./terrain";
+import {
+  SCHEMA_VERSION,
+  type ArtifactCategory,
+  type ArtifactFootprint,
+  type ArtifactKind,
+  type ArtifactVariant,
+  type VisualArtifact,
+} from "./artifactSchema";
 
-export type ArtifactKind = "bench" | "lamppost" | "planter" | "fountain";
-export type ArtifactCategory =
-  | "furniture"
-  | "lighting"
-  | "greenery"
-  | "civic-art";
-
-export interface ArtifactFootprint {
-  w: number;
-  h: number;
-}
-
-export interface VisualArtifact {
-  id: string;
-  kind: ArtifactKind;
-  x: number;
-  y: number;
-  rot: number;
-  footprint: ArtifactFootprint;
-  category: ArtifactCategory;
-}
+export type { ArtifactCategory, ArtifactFootprint, ArtifactKind, VisualArtifact };
 
 interface CatalogSeed {
+  variant: ArtifactVariant;
   kind: ArtifactKind;
   category: ArtifactCategory;
   offset: { x: number; y: number };
@@ -32,28 +21,32 @@ interface CatalogSeed {
 
 const CATALOG: CatalogSeed[] = [
   {
-    kind: "bench",
+    variant: "bench",
+    kind: "furniture",
     category: "furniture",
     offset: { x: -2, y: 4 },
     rot: Math.PI * 0.5,
     footprint: { w: 1.4, h: 0.55 },
   },
   {
-    kind: "lamppost",
+    variant: "lamppost",
+    kind: "prop",
     category: "lighting",
     offset: { x: 3, y: 4 },
     rot: 0,
     footprint: { w: 0.35, h: 0.35 },
   },
   {
-    kind: "planter",
+    variant: "planter",
+    kind: "landscaping",
     category: "greenery",
     offset: { x: -4, y: -2 },
     rot: Math.PI * 0.25,
     footprint: { w: 1.0, h: 1.0 },
   },
   {
-    kind: "fountain",
+    variant: "fountain",
+    kind: "prop",
     category: "civic-art",
     offset: { x: 4, y: -2 },
     rot: Math.PI * 0.75,
@@ -93,14 +86,18 @@ export function createVisualArtifacts(terrain: Terrain): VisualArtifact[] {
     const targetY = Math.round(terrain.landing.y + seed.offset.y);
     const pos = nearestDryCell(terrain, targetX, targetY, used);
     used.add(`${pos.x},${pos.y}`);
+    const transform = { x: pos.x, y: pos.y, rot: seed.rot };
     return {
-      id: `artifact-${index}-${seed.kind}`,
+      schemaVersion: SCHEMA_VERSION,
+      id: `artifact-${index}-${seed.variant}`,
       kind: seed.kind,
-      x: pos.x,
-      y: pos.y,
-      rot: seed.rot,
+      transform,
+      x: transform.x,
+      y: transform.y,
+      rot: transform.rot,
       footprint: { ...seed.footprint },
       category: seed.category,
+      data: { variant: seed.variant },
     };
   });
 }

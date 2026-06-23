@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ColonySim } from "../src/colony/sim";
 
-const EXPECTED_KINDS = ["bench", "lamppost", "planter", "fountain"];
+const EXPECTED_VARIANTS = ["bench", "lamppost", "planter", "fountain"];
+const EXPECTED_KINDS = ["furniture", "prop", "landscaping", "prop"];
 
 describe("Colony visual artifacts", () => {
   it("seeds a deterministic furniture/artifact catalog on dry land", () => {
@@ -10,6 +11,9 @@ describe("Colony visual artifacts", () => {
 
     expect(a.state.artifacts).toEqual(b.state.artifacts);
     expect(a.state.artifacts.map((item) => item.kind)).toEqual(EXPECTED_KINDS);
+    expect(a.state.artifacts.map((item) => item.data.variant)).toEqual(
+      EXPECTED_VARIANTS,
+    );
     expect(a.state.artifacts.map((item) => item.category)).toEqual([
       "furniture",
       "lighting",
