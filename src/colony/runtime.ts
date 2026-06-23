@@ -1537,9 +1537,13 @@ export class ColonyRuntime {
     const turn = cfg.turnSpeed * dt;
     if (k.has("left")) c.heading -= turn;
     if (k.has("right")) c.heading += turn;
+    const forwardHeld = k.has("fwd");
+    const backHeld = k.has("back");
+    const opposingWalkInput = forwardHeld && backHeld;
     let mv = 0;
-    if (k.has("fwd")) mv += 1;
-    if (k.has("back")) mv -= 1;
+    if (!opposingWalkInput && forwardHeld) mv += 1;
+    if (!opposingWalkInput && backHeld) mv -= 1;
+    if (opposingWalkInput) this.fpWalkSpeed = 0;
     const targetSpeed = mv * cfg.maxWalkSpeed;
     if (this.fpWalkSpeed < targetSpeed) {
       this.fpWalkSpeed = Math.min(

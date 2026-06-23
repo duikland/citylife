@@ -257,6 +257,28 @@ describe("first-person route dogfood", () => {
     expect(coastDistance).toBeLessThan(startDistance);
   });
 
+  it("brakes quickly when forward and back are held together", () => {
+    const rt = new ColonyRuntime(4242);
+    const me = rt.getUiState().citizens.list[0]!;
+    rt.enterFirstPerson(me.id);
+    const start = rt.getUiState().firstPerson.view!.citizen.positionXY;
+
+    rt.setFpKey("KeyW", true);
+    rt.stepFirstPersonDogfood(0.3);
+    const afterForward = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    const poweredDistance = distance(start, afterForward);
+
+    rt.setFpKey("KeyS", true);
+    rt.stepFirstPersonDogfood(0.2);
+    rt.setFpKey("KeyW", false);
+    rt.setFpKey("KeyS", false);
+    const afterConflict = rt.getUiState().firstPerson.view!.citizen.positionXY;
+    const conflictDistance = distance(afterForward, afterConflict);
+
+    expect(poweredDistance).toBeGreaterThan(0.5);
+    expect(conflictDistance).toBeLessThan(poweredDistance * 0.1);
+  });
+
   it("walks a deterministic route and samples live view position plus heading", () => {
     const rt = new ColonyRuntime(4242);
     const me = rt.getUiState().citizens.list[0]!;
