@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { ColonyRuntime, type ColonyUiState } from "../runtime";
+import { ColonyRuntime, type ColonyUiState, type FirstPersonMouseSensitivity } from "../runtime";
 import type { CameraPreset, ViewMode } from "../render/PlanetRenderer";
 import type { HouseholdOverrides } from "../newcomers";
 import { AuthClient } from "../authClient";
@@ -69,6 +69,14 @@ const VIEWS: { id: ViewMode; label: string }[] = [
   { id: "buildable", label: "Buildable" },
   { id: "elevation", label: "Elevation" },
 ];
+const MOUSE_SENSITIVITY_PRESETS: {
+  id: FirstPersonMouseSensitivity;
+  label: string;
+}[] = [
+  { id: "low", label: "Low" },
+  { id: "normal", label: "Normal" },
+  { id: "high", label: "High" },
+];
 
 export function FirstPersonMouseLookBar({
   citizenName,
@@ -76,6 +84,8 @@ export function FirstPersonMouseLookBar({
   pointerLockError,
   requestMouseLook,
   levelFirstPersonLook,
+  mouseSensitivity,
+  setMouseSensitivity,
   exitFirstPerson,
 }: {
   citizenName: string | null;
@@ -83,6 +93,8 @@ export function FirstPersonMouseLookBar({
   pointerLockError: string | null;
   requestMouseLook: () => void;
   levelFirstPersonLook: () => void;
+  mouseSensitivity: FirstPersonMouseSensitivity;
+  setMouseSensitivity: (level: FirstPersonMouseSensitivity) => void;
   exitFirstPerson: () => void;
 }) {
   return (
@@ -120,6 +132,20 @@ export function FirstPersonMouseLookBar({
       <button style={{ padding: "3px 12px" }} onClick={levelFirstPersonLook}>
         Level view
       </button>
+      <span style={{ color: "#6f86b8", fontSize: 12 }}>Look sensitivity</span>
+      {MOUSE_SENSITIVITY_PRESETS.map((preset) => (
+        <button
+          key={preset.id}
+          aria-pressed={mouseSensitivity === preset.id}
+          style={{
+            padding: "3px 10px",
+            borderColor: mouseSensitivity === preset.id ? "#8be9fd" : undefined,
+          }}
+          onClick={() => setMouseSensitivity(preset.id)}
+        >
+          {preset.label}
+        </button>
+      ))}
       <button style={{ padding: "3px 12px" }} onClick={exitFirstPerson}>
         Exit first person
       </button>
@@ -344,6 +370,8 @@ export function ColonyApp() {
           pointerLockError={pointerLockError}
           requestMouseLook={requestMouseLook}
           levelFirstPersonLook={() => runtime.levelFirstPersonLook()}
+          mouseSensitivity={ui.firstPerson.mouseSensitivity}
+          setMouseSensitivity={(level) => runtime.setFirstPersonMouseSensitivity(level)}
           exitFirstPerson={() => runtime.exitFirstPerson()}
         />
       )}

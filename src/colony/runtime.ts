@@ -309,6 +309,8 @@ export interface FirstPersonDemoCapture {
   pngDataUrl: string | null;
 }
 
+export type FirstPersonMouseSensitivity = "low" | "normal" | "high";
+
 export interface ColonyUiState {
   running: boolean;
   paused: boolean;
@@ -537,6 +539,7 @@ export interface ColonyUiState {
     stepInCitizenIds: string[];
     view: FirstPersonView | null;
     lookPitch: number;
+    mouseSensitivity: FirstPersonMouseSensitivity;
     blockedReason: string | null;
     narration: string | null;
     narrating: boolean;
@@ -650,6 +653,7 @@ export class ColonyRuntime {
   private fpKeys = new Set<string>();
   private fpWalkSpeed = 0;
   private fpLookPitch = 0;
+  private fpMouseSensitivity: FirstPersonMouseSensitivity = "normal";
   private raceState: RaceState | null = null;
   private raceInput: RaceInput = {};
   private bestRaceMs: number | null = null;
@@ -1384,11 +1388,20 @@ export class ColonyRuntime {
     const c = this.fpCitizenId ? this.citizens.byId(this.fpCitizenId) : null;
     if (!c) return false;
     const cfg = COLONY.firstPerson;
-    c.heading += dx * cfg.mouseSensitivity;
+    const sensitivity =
+      cfg.mouseSensitivity * cfg.mouseSensitivityScale[this.fpMouseSensitivity];
+    c.heading += dx * sensitivity;
     this.fpLookPitch = Math.max(
       -cfg.maxLookPitch,
-      Math.min(cfg.maxLookPitch, this.fpLookPitch - dy * cfg.mouseSensitivity),
+      Math.min(cfg.maxLookPitch, this.fpLookPitch - dy * sensitivity),
     );
+    this.emit();
+    return true;
+  }
+
+  setFirstPersonMouseSensitivity(level: FirstPersonMouseSensitivity): boolean {
+    if (!(level in COLONY.firstPerson.mouseSensitivityScale)) return false;
+    this.fpMouseSensitivity = level;
     this.emit();
     return true;
   }
@@ -3082,6 +3095,7 @@ export class ColonyRuntime {
           stepInCitizenIds: this.stepInCitizenIds(),
           view,
           lookPitch: this.fpLookPitch,
+          mouseSensitivity: this.fpMouseSensitivity,
           blockedReason: this.fpBlockedReason,
           narration: this.fpNarration,
           narrating: this.fpNarrating,

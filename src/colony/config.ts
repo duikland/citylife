@@ -1070,6 +1070,7 @@ export const COLONY = {
     offRoadWalkSpeedMultiplier: 1, // baseline terrain walking multiplier
     turnSpeed: 2.4, // radians/sec for keyboard yaw until mouse-look lands
     mouseSensitivity: 0.0025, // radians per pointer-lock mouse pixel for FPS look
+    mouseSensitivityScale: { low: 0.6, normal: 1, high: 1.6 }, // player-facing look sensitivity presets
     maxLookPitch: 0.9, // radians up/down clamp so mouse-look never flips over
   },
 

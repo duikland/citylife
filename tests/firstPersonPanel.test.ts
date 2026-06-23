@@ -20,6 +20,7 @@ function makeFirstPerson(): ColonyUiState["firstPerson"] {
     operatorCitizenId: null,
     stepInCitizenIds: ["citizen-1"],
     lookPitch: 0,
+    mouseSensitivity: "normal",
     narration: "The plaza is calm.",
     narrating: false,
     blockedReason: "water",

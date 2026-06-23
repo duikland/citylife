@@ -42,6 +42,35 @@ describe("first-person route dogfood", () => {
     expect(ui.firstPerson.view!.citizen.heading).toBeCloseTo(yawAfterLook, 5);
   });
 
+  it("applies the selected first-person mouse sensitivity to yaw and pitch", () => {
+    function mouseLookDelta(level: "low" | "normal" | "high") {
+      const rt = new ColonyRuntime(4242);
+      const me = rt.getUiState().citizens.list[0]!;
+      rt.enterFirstPerson(me.id);
+      expect(rt.setFirstPersonMouseSensitivity(level)).toBe(true);
+      expect(rt.getUiState().firstPerson.mouseSensitivity).toBe(level);
+      const before = rt.getUiState().firstPerson.view!.citizen.heading;
+
+      expect(rt.applyFirstPersonMouseLook(40, -40)).toBe(true);
+
+      const ui = rt.getUiState();
+      return {
+        yawDelta: ui.firstPerson.view!.citizen.heading - before,
+        pitch: ui.firstPerson.lookPitch,
+      };
+    }
+
+    const low = mouseLookDelta("low");
+    const normal = mouseLookDelta("normal");
+    const high = mouseLookDelta("high");
+
+    expect(low.yawDelta).toBeGreaterThan(0);
+    expect(low.yawDelta).toBeLessThan(normal.yawDelta);
+    expect(normal.yawDelta).toBeLessThan(high.yawDelta);
+    expect(low.pitch).toBeLessThan(normal.pitch);
+    expect(normal.pitch).toBeLessThan(high.pitch);
+  });
+
   it("reports when first-person walking is blocked by a completed building", () => {
     const rt = new ColonyRuntime(4242);
     const me = rt.getUiState().citizens.list[0]!;
