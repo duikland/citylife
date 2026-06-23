@@ -651,6 +651,34 @@ function buildRoomDetails(
   seed: number,
 ): void {
   const surfaceZ = baseZ - 1 >= 0 ? baseZ - 1 : 0; // the slab a pool/patio sinks its surface into
+  // Spec 094 — a PERGOLA over each open-air room (patio/pool): four corner posts up to the eave band and
+  // a slatted beam canopy across the top, so the cut-out reads as an intentional covered outdoor room and
+  // not a hole where the roof failed (the operator's "roof showing open"). Slats run one way with gaps —
+  // a real pergola lets light + rain through; posts only land on owned cells so a carved edge never floats
+  // a leg. Skipped when the storey has no headroom for a canopy.
+  const pergola = (
+    px0: number,
+    px1: number,
+    py0: number,
+    py1: number,
+    owns: (gx: number, gy: number) => boolean,
+  ) => {
+    if (bandTopZ <= baseZ) return;
+    for (const [cx, cy] of [
+      [px0, py0],
+      [px1, py0],
+      [px0, py1],
+      [px1, py1],
+    ] as const) {
+      if (!owns(cx, cy)) continue;
+      for (let z = baseZ; z <= bandTopZ; z++) g.set(cx, cy, z, "beam", true);
+    }
+    for (let gy = py0; gy <= py1; gy++) {
+      if ((gy - py0) % 3 !== 0) continue; // a slat every 3rd micro-row
+      for (let gx = px0; gx <= px1; gx++)
+        if (owns(gx, gy)) g.set(gx, gy, bandTopZ, "beam", true);
+    }
+  };
   rooms.forEach((r, ri) => {
     const x0 = r.px * n,
       x1 = (r.px + r.pw) * n - 1;
@@ -669,6 +697,8 @@ function buildRoomDetails(
           if (rim) g.set(gx, gy, baseZ, "tile", true);
         }
       }
+      // A pool stays OPEN to the sky (with its blue water + tile rim) — no pergola, so it reads as a pool,
+      // not a caged box, and keeps the spec-077 open-backyard invariant.
     } else if (r.kind === "patio") {
       // Tile floor plus a low glassRail around the open edge.
       for (let gy = y0; gy <= y1; gy++) {
@@ -679,6 +709,7 @@ function buildRoomDetails(
           if (rim) g.set(gx, gy, baseZ, "glassRail", true);
         }
       }
+      pergola(x0, x1, y0, y1, owns);
     } else if (r.kind === "living") {
       // a table near the middle and an exposed ceiling BEAM under the roof line for character
       const tx = Math.floor((x0 + x1) / 2),
