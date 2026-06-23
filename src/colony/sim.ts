@@ -18,6 +18,7 @@ import {
   stepTarentaalFlock,
   type TarentaalBird,
 } from "./tarentaal";
+import { createVisualArtifacts, type VisualArtifact } from "./artifacts";
 import { createLedger, type Ledger } from "./ledger";
 import type { CityPlan } from "./cityPlan";
 
@@ -247,6 +248,7 @@ export interface ColonyState {
   cars: Car[];
   settlers: Settler[];
   tarentaal: TarentaalBird[];
+  artifacts: VisualArtifact[];
   ledger: Ledger;
   cityPlan: CityPlan | null; // attached by the runtime after construction so the renderer can paint zones
 }
@@ -369,6 +371,7 @@ export class ColonySim {
       cars: [],
       settlers: [],
       tarentaal: createTarentaalFlock(terrain, this.rng),
+      artifacts: createVisualArtifacts(terrain),
       ledger: createLedger(),
       cityPlan: null,
     };
