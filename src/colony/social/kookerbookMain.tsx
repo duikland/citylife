@@ -23,6 +23,7 @@ import {
   kookerbookInitialSelection,
   kookerbookProfileUrl,
 } from "./kookerbookNav";
+import { kookerbookLayoutForViewport } from "./kookerbookLayout";
 
 function houseScriptFor(citizenId: string): string | null {
   const map = loadBlueprintsLocal();
@@ -123,8 +124,19 @@ const KIND_LABEL: Record<KbPost["kind"], string> = {
   authored: "✍️",
 };
 
+function viewportWidth(): number {
+  return typeof window === "undefined" ? 1024 : window.innerWidth;
+}
+
 function App() {
   const [map, setMap] = useState<KbMap>(() => loadKookerbookLocal());
+  const [layoutWidth, setLayoutWidth] = useState(() => viewportWidth());
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setLayoutWidth(viewportWidth());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   // Spec 090 — deep link: /kookerbook.html?citizen=<id> opens straight to that citizen (set when you
   // click their plot in the world). Falls back to the first profile if the id is not (yet) loaded.
   const [sel, setSel] = useState<string | null>(() =>
@@ -168,7 +180,20 @@ function App() {
     border: "1px solid #232c3f",
     borderRadius: 10,
     padding: 14,
+    boxSizing: "border-box",
   };
+  const layout = kookerbookLayoutForViewport(layoutWidth);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const previousMargin = document.body.style.margin;
+    const previousOverflowX = document.body.style.overflowX;
+    document.body.style.margin = String(layout.body.margin ?? "");
+    document.body.style.overflowX = String(layout.body.overflowX ?? "");
+    return () => {
+      document.body.style.margin = previousMargin;
+      document.body.style.overflowX = previousOverflowX;
+    };
+  }, [layout.body.margin, layout.body.overflowX]);
   return (
     <div
       style={{
@@ -181,10 +206,11 @@ function App() {
         color: "#dfe7f2",
         fontFamily: "system-ui, sans-serif",
         fontSize: 14,
+        ...layout.shell,
       }}
     >
       {/* directory */}
-      <div style={{ ...panel, width: 320, flexShrink: 0 }}>
+      <div style={{ ...panel, ...layout.directory }}>
         <h2 style={{ margin: "2px 0 4px" }}>📘 Kookerbook</h2>
         <div style={{ opacity: 0.6, fontSize: 12, marginBottom: 12 }}>
           the citizens of Landing One
@@ -257,7 +283,7 @@ function App() {
       {/* profile page */}
       {selected ? (
         <div
-          style={{ ...panel, flex: 1, maxWidth: 760 }}
+          style={{ ...panel, flex: 1, ...layout.profile }}
           data-kb-area="profile"
         >
           <div
