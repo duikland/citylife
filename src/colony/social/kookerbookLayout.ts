@@ -7,6 +7,13 @@ export type KookerbookResponsiveLayout = {
   shell: Pick<CSSProperties, "flexDirection" | "overflowX" | "width" | "maxWidth">;
   directory: Pick<CSSProperties, "width" | "maxWidth" | "flexShrink">;
   profile: Pick<CSSProperties, "width" | "maxWidth" | "minWidth">;
+  contentText: Pick<CSSProperties, "minWidth" | "overflowWrap" | "wordBreak">;
+};
+
+const WRAPPING_TEXT: KookerbookResponsiveLayout["contentText"] = {
+  minWidth: 0,
+  overflowWrap: "anywhere",
+  wordBreak: "break-word",
 };
 
 export function kookerbookLayoutForViewport(
@@ -23,6 +30,7 @@ export function kookerbookLayoutForViewport(
       },
       directory: { width: "auto", maxWidth: "100%", flexShrink: 1 },
       profile: { width: "auto", maxWidth: "100%", minWidth: 0 },
+      contentText: WRAPPING_TEXT,
     };
   }
 
@@ -36,5 +44,6 @@ export function kookerbookLayoutForViewport(
     },
     directory: { width: 320, maxWidth: 320, flexShrink: 0 },
     profile: { width: "auto", maxWidth: 760, minWidth: 0 },
+    contentText: WRAPPING_TEXT,
   };
 }

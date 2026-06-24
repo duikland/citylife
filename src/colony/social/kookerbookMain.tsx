@@ -257,7 +257,7 @@ function App() {
               }}
             >
               <Portrait p={p} />
-              <div style={{ minWidth: 0 }}>
+              <div style={layout.contentText}>
                 <div style={{ fontWeight: 700 }}>{p.alias}</div>
                 <div style={{ opacity: 0.65, fontSize: 12 }}>
                   {p.address ?? "no address yet"}
@@ -295,7 +295,7 @@ function App() {
             }}
           >
             <Portrait p={selected} size={64} />
-            <div>
+            <div style={layout.contentText}>
               <h2 style={{ margin: 0 }}>{selected.alias}</h2>
               <div style={{ opacity: 0.7 }}>
                 {selected.address
@@ -305,7 +305,9 @@ function App() {
               </div>
             </div>
           </div>
-          <p style={{ opacity: 0.85, marginTop: 4 }}>{selected.bio}</p>
+          <p style={{ opacity: 0.85, marginTop: 4, ...layout.contentText }}>
+            {selected.bio}
+          </p>
           {houseScript && (
             <div style={{ margin: "10px 0" }}>
               <div style={{ opacity: 0.6, fontSize: 12, marginBottom: 6 }}>
@@ -333,7 +335,7 @@ function App() {
                 <div style={{ opacity: 0.55, fontSize: 12 }}>
                   {KIND_LABEL[q.kind]} sol {q.sol}
                 </div>
-                <div>{q.text}</div>
+                <div style={layout.contentText}>{q.text}</div>
               </div>
             ))}
           </div>
