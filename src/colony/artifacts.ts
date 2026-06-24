@@ -20,6 +20,7 @@ export interface VisualArtifact {
   rot: number;
   footprint: ArtifactFootprint;
   category: ArtifactCategory;
+  isPublicSafe: true;
 }
 
 interface CatalogSeed {
@@ -101,6 +102,7 @@ export function createVisualArtifacts(terrain: Terrain): VisualArtifact[] {
       rot: seed.rot,
       footprint: { ...seed.footprint },
       category: seed.category,
+      isPublicSafe: true,
     };
   });
 }
