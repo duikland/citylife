@@ -3728,15 +3728,17 @@ export class ColonyRuntime {
         // The crew always builds — canAfford only colours the hint (stockpile vs sourced off-island).
         const cost = COLONY.build.matNeighborHouse;
         const canAfford = s.materials >= cost;
-        const buildHint = canAfford
-          ? `The build crew raises the house — ${cost} materials from the stockpile`
-          : `The build crew raises the house — the stockpile is short (${s.materials}/${cost}) so the crew sources the rest off-island`;
+        const buildHint = this.playerView
+          ? "The build crew handles the home build privately for this resident."
+          : canAfford
+            ? `The build crew raises the house — ${cost} materials from the stockpile`
+            : `The build crew raises the house — the stockpile is short (${s.materials}/${cost}) so the crew sources the rest off-island`;
         return {
           lots,
           free: lots.filter((l) => !l.occupied).length,
           built: lots.filter((l) => l.built).length,
           houseCost: cost,
-          canAfford,
+          canAfford: this.playerView ? true : canAfford,
           buildHint,
         };
       })(),
