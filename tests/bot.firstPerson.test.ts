@@ -187,6 +187,27 @@ describe("firstPersonView — spec 074", () => {
     expect(isPublicSafe(scopedOtherLot.owner!)).toBe(true);
   });
 
+  it("does not leak other citizens' shop-buying power in the player HUD", () => {
+    const rt = new ColonyRuntime(4242);
+    const adminUi = rt.getUiState();
+    const me = adminUi.citizens.list[0]!;
+    const other = adminUi.citizens.list.find((c) => c.id !== me.id)!;
+    const cheapest = adminUi.commerce.cheapest!;
+
+    rt.sim.state.ledger.accounts[`citizen:${me.id}`] = 0;
+    rt.sim.state.ledger.accounts[`citizen:${other.id}`] = cheapest.price;
+
+    expect(rt.getUiState().commerce.canClaim).toBe(true);
+
+    rt.setOperatorName(me.displayName);
+    rt.setPlayerView(true);
+
+    const playerUi = rt.getUiState();
+    expect(playerUi.citizens.wallets[me.id]).toBe(0);
+    expect(playerUi.citizens.wallets[other.id]).toBeUndefined();
+    expect(playerUi.commerce.canClaim).toBe(false);
+  });
+
   it("boots deterministic in-world agent citizens for Joe and Jack", () => {
     const rt = new ColonyRuntime(4242);
     const ui = rt.getUiState();

@@ -3687,7 +3687,12 @@ export class ColonyRuntime {
             .filter((c) => !owners.has(c.id))
             .map((c) => this.walletK(c.id)),
         );
-        const canClaim = !!cheapest && richestShopless >= cheapest.price;
+        const canClaim = this.playerView
+          ? !!cheapest &&
+            !!playerViewerId &&
+            !owners.has(playerViewerId) &&
+            this.walletK(playerViewerId) >= cheapest.price
+          : !!cheapest && richestShopless >= cheapest.price;
         // free is counted off the underlying ownerCitizenId (not the display-name owner, which would
         // read free for a ghost/removed owner) so it always agrees with cheapestFreeShop.
         const free = (this.commercialDistrict?.parcels ?? []).filter(
