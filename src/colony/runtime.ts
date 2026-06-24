@@ -1572,6 +1572,21 @@ export class ColonyRuntime {
     return true;
   }
 
+  /** Deterministic privacy/dogfood hook: place any public citizen through the same roster state as avatars. */
+  placeCitizenDogfood(
+    citizenId: string,
+    pos: { x: number; y: number },
+    heading: number,
+  ): boolean {
+    const c = this.citizens.byId(citizenId);
+    if (!c) return false;
+    c.pos = { ...pos };
+    c.target = { ...pos };
+    c.heading = heading;
+    this.emit();
+    return true;
+  }
+
   /** Deterministic route-dogfood hook: advance the same first-person driver used by the RAF loop. */
   stepFirstPersonDogfood(seconds: number): boolean {
     if (!this.fpCitizenId) return false;
@@ -3620,9 +3635,19 @@ export class ColonyRuntime {
         const c = this.fpCitizenId
           ? this.citizens.byId(this.fpCitizenId)
           : null;
-        const view = this.fpCitizenId
+        const rawView = this.fpCitizenId
           ? firstPersonView(this.sim.state, this.fpCitizenId, this.citizens)
           : null;
+        const view =
+          this.playerView && rawView
+            ? {
+                ...rawView,
+                neighbours: rawView.neighbours.map((n) => ({
+                  ...n,
+                  plotName: "Occupied",
+                })),
+              }
+            : rawView;
         return {
           active: this.fpCitizenId !== null,
           citizenId: this.fpCitizenId,

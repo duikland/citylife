@@ -187,6 +187,27 @@ describe("firstPersonView — spec 074", () => {
     expect(isPublicSafe(scopedOtherLot.owner!)).toBe(true);
   });
 
+  it("masks nearby citizens' home sites in the player first-person HUD", () => {
+    const rt = new ColonyRuntime(4242);
+    const adminUi = rt.getUiState();
+    const me = adminUi.citizens.list[0]!;
+    const other = adminUi.citizens.list.find((c) => c.id !== me.id)!;
+    const privateOtherPlot = other.plotName;
+
+    rt.setOperatorName(me.displayName);
+    rt.setPlayerView(true);
+    expect(rt.enterFirstPerson(me.id)).toBe(true);
+    rt.placeFirstPersonDogfood({ x: 20, y: 20 }, 0);
+    rt.placeCitizenDogfood(other.id, { x: 21, y: 20 }, 0);
+
+    const playerView = rt.getUiState().firstPerson.view!;
+    expect(playerView.neighbours[0]!.displayName).toBe(other.displayName);
+    expect(playerView.neighbours[0]!.plotName).toBe("Occupied");
+    expect(playerView.neighbours[0]!.plotName).not.toBe(privateOtherPlot);
+    expect(JSON.stringify(playerView)).not.toContain(privateOtherPlot);
+    expect(isPublicSafe(playerView.neighbours[0]!.plotName)).toBe(true);
+  });
+
   it("does not leak other citizens' shop-buying power in the player HUD", () => {
     const rt = new ColonyRuntime(4242);
     const adminUi = rt.getUiState();
