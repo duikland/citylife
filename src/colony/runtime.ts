@@ -3577,12 +3577,19 @@ export class ColonyRuntime {
           },
         };
       })(),
-      border: {
-        households: this.backend.households(),
-        bots: this.botService.bots,
-        botSource: this.botService.source,
-        plots: this.cityPlan.plots,
-      },
+      border: this.playerView
+        ? {
+            households: [],
+            bots: [],
+            botSource: "hidden",
+            plots: [],
+          }
+        : {
+            households: this.backend.households(),
+            bots: this.botService.bots,
+            botSource: this.botService.source,
+            plots: this.cityPlan.plots,
+          },
       citizens: (() => {
         // Player data isolation: a CITYLIFE_PLAYER (playerView) sees only their own full record + others'
         // public-presence stubs, and only their OWN wallet balance; the operator/admin sees everything.

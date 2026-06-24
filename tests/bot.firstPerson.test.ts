@@ -223,6 +223,11 @@ describe("firstPersonView — spec 074", () => {
     expect(playerUi.bank.deposits).toBe(0);
     expect(playerUi.bank.accounts).toBe(0);
     expect(playerUi.bank.recent).toEqual([]);
+    expect(adminUi.border.plots.length).toBeGreaterThan(0);
+    expect(playerUi.border.households).toEqual([]);
+    expect(playerUi.border.bots).toEqual([]);
+    expect(playerUi.border.plots).toEqual([]);
+    expect(isPublicSafe(JSON.stringify(playerUi.border))).toBe(true);
     expect(playerUi.firstPerson.stepInCitizenIds).toEqual([]);
     expect(Object.keys(playerUi.citizens.wallets)).toEqual([]);
     expect(playerUi.citizens.list.length).toBe(adminUi.citizens.list.length);
