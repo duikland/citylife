@@ -199,6 +199,27 @@ export function FirstPersonPanel({
 
       {v && (
         <button
+          className="first-person-panel__rally-button"
+          title="Guided walk to the hilltop rally point"
+          aria-label="Walk to the rally point"
+          style={{
+            alignSelf: "flex-start",
+            padding: "3px 10px",
+            fontSize: 12,
+            background: "rgba(159,212,166,0.14)",
+            border: "1px solid #2f5a3a",
+            borderRadius: 5,
+            color: "#9fd4a6",
+            cursor: "pointer",
+          }}
+          onClick={() => runtime.goToRallyPoint()}
+        >
+          🏁 Walk to Rally
+        </button>
+      )}
+
+      {v && (
+        <button
           style={{
             alignSelf: "flex-start",
             padding: "2px 8px",
