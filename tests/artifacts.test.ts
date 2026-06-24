@@ -1,9 +1,69 @@
 import { describe, expect, it } from "vitest";
+import {
+  artifactCatalogEntries,
+  summarizeRenderableArtifacts,
+} from "../src/colony/artifacts";
 import { ColonySim } from "../src/colony/sim";
 
 const EXPECTED_KINDS = ["bench", "lamppost", "planter", "fountain"];
 
 describe("Colony visual artifacts", () => {
+  it("exports a deterministic public-safe artifact catalog inventory", () => {
+    expect(artifactCatalogEntries()).toEqual([
+      {
+        kind: "bench",
+        category: "furniture",
+        footprint: { w: 1.4, h: 0.55 },
+      },
+      {
+        kind: "lamppost",
+        category: "lighting",
+        footprint: { w: 0.35, h: 0.35 },
+      },
+      {
+        kind: "planter",
+        category: "greenery",
+        footprint: { w: 1, h: 1 },
+      },
+      {
+        kind: "fountain",
+        category: "civic-art",
+        footprint: { w: 1.6, h: 1.6 },
+      },
+    ]);
+  });
+
+  it("freezes catalog inventory entries so consumers cannot mutate shared prefill data", () => {
+    const [bench] = artifactCatalogEntries();
+
+    expect(Object.isFrozen(bench)).toBe(true);
+    expect(Object.isFrozen(bench.footprint)).toBe(true);
+  });
+
+  it("partitions renderable artifacts by known kind and drops unsafe entries", () => {
+    const items = [
+      { id: "bench-0", kind: "bench" },
+      { id: "future-house", kind: "house" },
+      { id: "bench-1", kind: "bench" },
+      { id: "lamppost-0", kind: "lamppost" },
+    ];
+
+    const summary = summarizeRenderableArtifacts(items, 1);
+
+    expect(summary.renderable.map((item) => item.id)).toEqual([
+      "bench-0",
+      "lamppost-0",
+    ]);
+    expect(summary.counts).toEqual({
+      bench: 1,
+      lamppost: 1,
+      planter: 0,
+      fountain: 0,
+    });
+    expect(summary.unknown).toBe(1);
+    expect(summary.overflow).toBe(1);
+  });
+
   it("seeds a deterministic furniture/artifact catalog on dry land", () => {
     const a = new ColonySim(4242);
     const b = new ColonySim(4242);
