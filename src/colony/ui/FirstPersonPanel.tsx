@@ -109,10 +109,13 @@ export function FirstPersonPanel({
                 {Math.round(v.interactionPrompt.distance)} away
               </div>
               <button
+                className="first-person-panel__action-button"
+                aria-label={`Use current action: ${v.interactionPrompt.label}`}
                 style={{
                   marginTop: 4,
-                  padding: "2px 8px",
-                  fontSize: 11,
+                  padding: "6px 10px",
+                  fontSize: 12,
+                  minHeight: 32,
                   background: "rgba(160,212,240,0.12)",
                   border: "1px solid #2a4a6a",
                   borderRadius: 5,
@@ -331,7 +334,7 @@ export function FirstPersonPanel({
         className="first-person-panel__hint"
         style={{ fontSize: 10, opacity: 0.4, textAlign: "center" }}
       >
-        WASD strafe/walk · Shift sprint · arrows turn · Tap arrows to roam
+        WASD strafe/walk · Shift sprint · arrows turn · Tap Use to interact · Tap arrows to roam
       </div>
     </div>
   );
