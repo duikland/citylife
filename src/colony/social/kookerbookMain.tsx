@@ -208,11 +208,15 @@ function App() {
   useEffect(() => {
     if (typeof document === "undefined") return;
     const root = document.getElementById("root");
+    const previousHtmlOverflowX = document.documentElement.style.overflowX;
     const previousMargin = document.body.style.margin;
     const previousOverflowX = document.body.style.overflowX;
     const previousRootWidth = root?.style.width ?? "";
     const previousRootMaxWidth = root?.style.maxWidth ?? "";
     const previousRootOverflowX = root?.style.overflowX ?? "";
+    document.documentElement.style.overflowX = String(
+      layout.html.overflowX ?? "",
+    );
     document.body.style.margin = String(layout.body.margin ?? "");
     document.body.style.overflowX = String(layout.body.overflowX ?? "");
     if (root) {
@@ -221,6 +225,7 @@ function App() {
       root.style.overflowX = String(layout.root.overflowX ?? "");
     }
     return () => {
+      document.documentElement.style.overflowX = previousHtmlOverflowX;
       document.body.style.margin = previousMargin;
       document.body.style.overflowX = previousOverflowX;
       if (root) {
@@ -229,7 +234,7 @@ function App() {
         root.style.overflowX = previousRootOverflowX;
       }
     };
-  }, [layout.body.margin, layout.body.overflowX, layout.root.maxWidth, layout.root.overflowX, layout.root.width]);
+  }, [layout.body.margin, layout.body.overflowX, layout.html.overflowX, layout.root.maxWidth, layout.root.overflowX, layout.root.width]);
   return (
     <div
       style={{

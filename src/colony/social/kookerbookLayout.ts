@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 export const KOOKERBOOK_MOBILE_MAX_WIDTH = 640;
 
 export type KookerbookResponsiveLayout = {
+  html: Pick<CSSProperties, "overflowX">;
   body: Pick<CSSProperties, "margin" | "overflowX">;
   root: Pick<CSSProperties, "width" | "maxWidth" | "overflowX">;
   shell: Pick<
@@ -29,6 +30,7 @@ export function kookerbookLayoutForViewport(
 ): KookerbookResponsiveLayout {
   if (viewportWidth <= KOOKERBOOK_MOBILE_MAX_WIDTH) {
     return {
+      html: { overflowX: "hidden" },
       body: { margin: "0", overflowX: "hidden" },
       root: { width: "100%", maxWidth: "100%", overflowX: "hidden" },
       shell: {
@@ -50,6 +52,7 @@ export function kookerbookLayoutForViewport(
   }
 
   return {
+    html: { overflowX: "hidden" },
     body: { margin: "0", overflowX: "hidden" },
     root: { width: "100%", maxWidth: "100%", overflowX: "hidden" },
     shell: {

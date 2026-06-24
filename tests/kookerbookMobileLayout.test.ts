@@ -9,6 +9,7 @@ describe("Kookerbook mobile layout", () => {
     expect(layout.shell.overflowX).toBe("hidden");
     expect(layout.shell.padding).toBe(10);
     expect(layout.shell.gap).toBe(10);
+    expect(layout.html.overflowX).toBe("hidden");
     expect(layout.body.margin).toBe("0");
     expect(layout.body.overflowX).toBe("hidden");
     expect(layout.root.width).toBe("100%");
