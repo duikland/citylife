@@ -63,6 +63,26 @@ export function GaragePanel({
         🚗 Go to my car
       </button>
 
+      <button
+        data-build-action={garage.bonnetOpen ? "close-bonnet" : "open-bonnet"}
+        title="Open the bonnet to see the engine bay and fit parts"
+        onClick={() =>
+          garage.bonnetOpen ? runtime.closeBonnet() : runtime.openBonnet()
+        }
+        style={{
+          padding: "5px 8px",
+          fontSize: 12,
+          borderRadius: 6,
+          cursor: "pointer",
+          border: "1px solid #3a5a6a",
+          background: "rgba(120,180,210,0.12)",
+          color: "#a0d4f0",
+          fontWeight: 700,
+        }}
+      >
+        {garage.bonnetOpen ? "▼ Close bonnet" : "🔩 Open bonnet"}
+      </button>
+
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {STATS.map(({ key, label }) => {
           const pct = Math.round(garage.stats[key] * 100);
@@ -96,6 +116,97 @@ export function GaragePanel({
           );
         })}
       </div>
+
+      {garage.bonnetOpen && (
+        <div
+          className="garage-panel__bonnet"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            borderTop: "1px solid #1e3a5a",
+            paddingTop: 6,
+          }}
+        >
+          <span style={{ color: "#9fd4a6", fontSize: 11, fontWeight: 700 }}>
+            Engine bay
+          </span>
+          {garage.engineBay.map((s) => {
+            const badge =
+              s.state === "occupied"
+                ? { c: "#ffd25a", t: "fitted" }
+                : s.state === "installable"
+                  ? { c: "#9fd4a6", t: "ready to fit" }
+                  : { c: "#7a90a0", t: "empty" };
+            return (
+              <div key={s.socket} style={{ fontSize: 11 }}>
+                <div
+                  style={{ display: "flex", justifyContent: "space-between" }}
+                >
+                  <span style={{ color: "#c8dff0", fontWeight: 700 }}>
+                    {s.label}
+                  </span>
+                  <span style={{ color: badge.c }}>● {badge.t}</span>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 4,
+                    marginTop: 3,
+                  }}
+                >
+                  {s.mounted ? (
+                    <button
+                      data-build-action={`bonnet-remove-${s.mounted.kind}`}
+                      onClick={() =>
+                        s.mounted && runtime.unmountCarPart(s.mounted.kind)
+                      }
+                      style={{
+                        padding: "3px 7px",
+                        fontSize: 11,
+                        borderRadius: 5,
+                        cursor: "pointer",
+                        border: "1px solid #b6892f",
+                        background: "rgba(255,210,90,0.16)",
+                        color: "#ffd25a",
+                      }}
+                    >
+                      ✓ {s.mounted.label} · remove
+                    </button>
+                  ) : (
+                    s.parts.map((p) => (
+                      <button
+                        key={p.kind}
+                        data-build-action={`bonnet-${p.owned ? "fit" : "buy"}-${p.kind}`}
+                        title={`${p.category}${p.cost ? ` · ${p.cost} city coin` : ""}`}
+                        onClick={() =>
+                          p.owned
+                            ? runtime.mountCarPart(p.kind)
+                            : runtime.buyCarPart(p.kind)
+                        }
+                        style={{
+                          padding: "3px 7px",
+                          fontSize: 11,
+                          borderRadius: 5,
+                          cursor: "pointer",
+                          border: `1px solid ${p.owned ? "#3a5a6a" : "#3a5a2a"}`,
+                          background: p.owned
+                            ? "rgba(120,180,210,0.10)"
+                            : "rgba(120,200,120,0.10)",
+                          color: p.owned ? "#a0d4f0" : "#9fd4a6",
+                        }}
+                      >
+                        {p.owned ? `+ ${p.label}` : `🛒 ${p.label} · ${p.cost}`}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div
         className="garage-panel__parts"

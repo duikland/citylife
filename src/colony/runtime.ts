@@ -101,6 +101,7 @@ import {
   validCarParts,
   deriveStats,
   type CarPartKind,
+  type CarSocket,
 } from "./car/carParts";
 import { ownsCarPart, ownedCarParts, ownCarPart } from "./car/carStore";
 import { CAR_SHOP_ACCOUNT } from "./car/carShop";
@@ -617,6 +618,22 @@ export interface ColonyUiState {
       mounted: boolean;
       owned: boolean;
     }[];
+    // Spec 096 F — the bonnet: open it to reveal the engine bay, each socket with its install state.
+    bonnetOpen: boolean;
+    engineBay: {
+      socket: string;
+      label: string;
+      /** occupied = a part is fitted; installable = empty and a fitting part is owned; empty = none owned. */
+      state: "occupied" | "installable" | "empty";
+      mounted: { kind: string; label: string } | null;
+      parts: {
+        kind: string;
+        label: string;
+        category: "performance" | "cosmetic";
+        cost: number;
+        owned: boolean;
+      }[];
+    }[];
   } | null;
   // Spec 097 R4 — live presence at the hilltop Rally Point (the race rendezvous); null if no rally.
   rally: {
@@ -718,6 +735,8 @@ export class ColonyRuntime {
   // other citizens' public presence (stubs), never their private wallet/usage. Set by the player login
   // path (the first-login/route-gating slice); until then this stays false so nothing changes.
   private playerView = false;
+  // Spec 096 F — is the Garage engine-bay (the bonnet) open in the HUD? A UI toggle, render-free.
+  private bonnetOpen = false;
   // P1 — the citizen currently being viewed in first person (null = orbit camera).
   private fpCitizenId: string | null = null;
   // First-person locomotion — which movement keys are held while you walk your bot around.
@@ -1564,6 +1583,22 @@ export class ColonyRuntime {
     c.target = { x: stand.x, y: stand.y };
     c.heading = Math.atan2(car.y - stand.y, car.x - stand.x); // face the car
     return this.enterFirstPerson(id);
+  }
+
+  /** Spec 096 F — open the bonnet to reveal the engine bay. The Garage HUD then shows each engine-bay
+   *  socket (engine, hood) with its install state so a part can be bought and fitted from there. Requires
+   *  an operator (the panel is operator-gated). The engineBay snapshot lives on uiState.garage. */
+  openBonnet(): boolean {
+    if (!this.operatorCitizenId()) return false;
+    this.bonnetOpen = true;
+    this.emit();
+    return true;
+  }
+
+  /** Spec 096 F — close the bonnet, back to the car overview. */
+  closeBonnet(): void {
+    this.bonnetOpen = false;
+    this.emit();
   }
 
   /** P1 — the bot/governor points a citizen's avatar at a destination cell (it walks there). */
@@ -3878,11 +3913,22 @@ export class ColonyRuntime {
         const car = loadCar(id);
         const mounted = new Set<string>(validCarParts(car.parts));
         const owned = new Set<string>(ownedCarParts(id));
+        // Spec 096 F — the engine bay revealed by the bonnet: the engine + hood sockets, each with the
+        // parts that fit it and an install state (occupied / installable / empty). One part per socket.
+        const ENGINE_BAY: CarSocket[] = ["engine", "hood"];
+        const SOCKET_LABEL: Record<string, string> = {
+          engine: "Engine",
+          hood: "Hood",
+          exhaust: "Exhaust",
+          wheels: "Wheels",
+          spoiler: "Spoiler",
+        };
+        const allKinds = Object.keys(CAR_PARTS) as CarPartKind[];
         return {
           carName: car.name,
           walletK: this.walletK(id),
           stats: deriveStats(car),
-          parts: (Object.keys(CAR_PARTS) as CarPartKind[]).map((k) => {
+          parts: allKinds.map((k) => {
             const d = CAR_PARTS[k];
             return {
               kind: k,
@@ -3892,6 +3938,31 @@ export class ColonyRuntime {
               cost: d.cost,
               mounted: mounted.has(k),
               owned: owned.has(k),
+            };
+          }),
+          bonnetOpen: this.bonnetOpen,
+          engineBay: ENGINE_BAY.map((sock) => {
+            const fitting = allKinds.filter((k) => CAR_PARTS[k].socket === sock);
+            const mountedKind = fitting.find((k) => mounted.has(k)) ?? null;
+            const state: "occupied" | "installable" | "empty" = mountedKind
+              ? "occupied"
+              : fitting.some((k) => owned.has(k))
+                ? "installable"
+                : "empty";
+            return {
+              socket: sock,
+              label: SOCKET_LABEL[sock] ?? sock,
+              state,
+              mounted: mountedKind
+                ? { kind: mountedKind, label: CAR_PARTS[mountedKind].label }
+                : null,
+              parts: fitting.map((k) => ({
+                kind: k,
+                label: CAR_PARTS[k].label,
+                category: CAR_PARTS[k].category,
+                cost: CAR_PARTS[k].cost,
+                owned: owned.has(k),
+              })),
             };
           }),
         };
