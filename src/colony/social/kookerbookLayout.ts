@@ -4,6 +4,7 @@ export const KOOKERBOOK_MOBILE_MAX_WIDTH = 640;
 
 export type KookerbookResponsiveLayout = {
   body: Pick<CSSProperties, "margin" | "overflowX">;
+  root: Pick<CSSProperties, "width" | "maxWidth" | "overflowX">;
   shell: Pick<
     CSSProperties,
     "flexDirection" | "overflowX" | "width" | "maxWidth" | "gap" | "padding"
@@ -29,6 +30,7 @@ export function kookerbookLayoutForViewport(
   if (viewportWidth <= KOOKERBOOK_MOBILE_MAX_WIDTH) {
     return {
       body: { margin: "0", overflowX: "hidden" },
+      root: { width: "100%", maxWidth: "100%", overflowX: "hidden" },
       shell: {
         flexDirection: "column",
         overflowX: "hidden",
@@ -49,6 +51,7 @@ export function kookerbookLayoutForViewport(
 
   return {
     body: { margin: "0", overflowX: "hidden" },
+    root: { width: "100%", maxWidth: "100%", overflowX: "hidden" },
     shell: {
       flexDirection: "row",
       overflowX: "hidden",

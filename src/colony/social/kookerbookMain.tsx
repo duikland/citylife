@@ -207,15 +207,29 @@ function App() {
   };
   useEffect(() => {
     if (typeof document === "undefined") return;
+    const root = document.getElementById("root");
     const previousMargin = document.body.style.margin;
     const previousOverflowX = document.body.style.overflowX;
+    const previousRootWidth = root?.style.width ?? "";
+    const previousRootMaxWidth = root?.style.maxWidth ?? "";
+    const previousRootOverflowX = root?.style.overflowX ?? "";
     document.body.style.margin = String(layout.body.margin ?? "");
     document.body.style.overflowX = String(layout.body.overflowX ?? "");
+    if (root) {
+      root.style.width = String(layout.root.width ?? "");
+      root.style.maxWidth = String(layout.root.maxWidth ?? "");
+      root.style.overflowX = String(layout.root.overflowX ?? "");
+    }
     return () => {
       document.body.style.margin = previousMargin;
       document.body.style.overflowX = previousOverflowX;
+      if (root) {
+        root.style.width = previousRootWidth;
+        root.style.maxWidth = previousRootMaxWidth;
+        root.style.overflowX = previousRootOverflowX;
+      }
     };
-  }, [layout.body.margin, layout.body.overflowX]);
+  }, [layout.body.margin, layout.body.overflowX, layout.root.maxWidth, layout.root.overflowX, layout.root.width]);
   return (
     <div
       style={{

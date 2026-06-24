@@ -11,6 +11,9 @@ describe("Kookerbook mobile layout", () => {
     expect(layout.shell.gap).toBe(10);
     expect(layout.body.margin).toBe("0");
     expect(layout.body.overflowX).toBe("hidden");
+    expect(layout.root.width).toBe("100%");
+    expect(layout.root.maxWidth).toBe("100%");
+    expect(layout.root.overflowX).toBe("hidden");
     expect(layout.directory.width).toBe("auto");
     expect(layout.directory.maxWidth).toBe("100%");
     expect(layout.profile.width).toBe("auto");
