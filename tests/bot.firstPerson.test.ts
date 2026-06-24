@@ -208,6 +208,40 @@ describe("firstPersonView — spec 074", () => {
     expect(playerUi.commerce.canClaim).toBe(false);
   });
 
+  it("falls back to public stubs when a player login has no matching citizen", () => {
+    const rt = new ColonyRuntime(4242);
+    const adminUi = rt.getUiState();
+    const citizen = adminUi.citizens.list[0]!;
+    const ownedLot = adminUi.neighborhood.lots.find((l) => l.ownerId === citizen.id)!;
+
+    expect(adminUi.citizens.wallets[citizen.id]).toBeGreaterThan(0);
+    expect(adminUi.bank.accounts).toBeGreaterThan(0);
+    expect(ownedLot.owner).toBe(citizen.displayName);
+
+    rt.setOperatorName("johndoe");
+    rt.setPlayerView(true);
+
+    const playerUi = rt.getUiState();
+    const stub = playerUi.citizens.list.find((c) => c.id === citizen.id)!;
+    const scopedLot = playerUi.neighborhood.lots.find((l) => l.id === ownedLot.id)!;
+
+    expect(playerUi.firstPerson.operatorCitizenId).toBeNull();
+    expect(playerUi.firstPerson.stepInCitizenIds).toEqual([]);
+    expect(playerUi.citizens.wallets).toEqual({});
+    expect(playerUi.bank.scope).toBe("player");
+    expect(playerUi.bank.deposits).toBe(0);
+    expect(playerUi.bank.accounts).toBe(0);
+    expect(playerUi.bank.recent).toEqual([]);
+    expect(stub.displayName).toBe(citizen.displayName);
+    expect(stub.plotName).toBe("Occupied");
+    expect(stub.tokensSpentLifetime).toBe(0);
+    expect(stub.telegramHandle).toBeUndefined();
+    expect(scopedLot.owner).toBe("Occupied");
+    expect(scopedLot.ownerId).toBeNull();
+    expect(isPublicSafe(stub.plotName)).toBe(true);
+    expect(isPublicSafe(scopedLot.owner!)).toBe(true);
+  });
+
   it("boots deterministic in-world agent citizens for Joe and Jack", () => {
     const rt = new ColonyRuntime(4242);
     const ui = rt.getUiState();
