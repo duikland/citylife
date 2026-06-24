@@ -51,7 +51,15 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 1
 
+      - name: Cache Android APK
+        id: cache-apk
+        uses: actions/cache@v4
+        with:
+          path: public/citylife.apk
+          key: android-apk-${{ hashFiles('android-wrapper/**') }}
+
       - name: Set up JDK 17
+        if: steps.cache-apk.outputs.cache-hit != 'true'
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -60,23 +68,28 @@ jobs:
           cache-dependency-path: android-wrapper/gradle/wrapper/gradle-wrapper.properties
 
       - name: Setup Android SDK
+        if: steps.cache-apk.outputs.cache-hit != 'true'
         uses: android-actions/setup-android@v3
 
       - name: Grant execute permission for gradlew
+        if: steps.cache-apk.outputs.cache-hit != 'true'
         run: chmod +x android-wrapper/gradlew
 
       - name: Create debug keystore
+        if: steps.cache-apk.outputs.cache-hit != 'true'
         run: |
           mkdir -p $GITHUB_WORKSPACE/../keystores
           keytool -genkey -v -keystore $GITHUB_WORKSPACE/../keystores/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           echo "Debug keystore created at $GITHUB_WORKSPACE/../keystores/debug.keystore"
 
       - name: Build Debug APK
+        if: steps.cache-apk.outputs.cache-hit != 'true'
         run: |
           cd android-wrapper
           ./gradlew assembleDebug
 
       - name: Copy APK to public folder
+        if: steps.cache-apk.outputs.cache-hit != 'true'
         run: |
           mkdir -p public
           cp android-wrapper/app/build/outputs/apk/debug/app-debug.apk public/citylife.apk
