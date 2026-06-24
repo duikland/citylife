@@ -56,7 +56,7 @@ export const PLACED_ARTIFACT_KIND_REGISTRY: Record<
   }),
   prop: Object.freeze({
     kind: "prop",
-    variants: Object.freeze(["lamppost", "fountain"] as const),
+    variants: Object.freeze(["lamppost", "fountain", "notice_board"] as const),
     defaultCategory: "lighting",
   }),
   landscaping: Object.freeze({

@@ -6,6 +6,7 @@ export const ARTIFACT_KINDS = [
   "planter",
   "fountain",
   "shade_tree",
+  "notice_board",
 ] as const;
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 export type ArtifactCategory =
@@ -81,6 +82,13 @@ const CATALOG: CatalogSeed[] = [
     rot: Math.PI * 1.25,
     footprint: { w: 1.8, h: 1.8 },
   },
+  {
+    kind: "notice_board",
+    category: "civic-art",
+    offset: { x: 5, y: 1 },
+    rot: Math.PI,
+    footprint: { w: 1.2, h: 0.45 },
+  },
 ];
 
 export const ARTIFACT_CATALOG_SIZE = CATALOG.length;
@@ -118,6 +126,7 @@ export function emptyArtifactCounts(): ArtifactCounts {
     planter: 0,
     fountain: 0,
     shade_tree: 0,
+    notice_board: 0,
   };
 }
 

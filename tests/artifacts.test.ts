@@ -11,6 +11,7 @@ const EXPECTED_KINDS = [
   "planter",
   "fountain",
   "shade_tree",
+  "notice_board",
 ];
 
 describe("Colony visual artifacts", () => {
@@ -46,6 +47,12 @@ describe("Colony visual artifacts", () => {
         footprint: { w: 1.8, h: 1.8 },
         isPublicSafe: true,
       },
+      {
+        kind: "notice_board",
+        category: "civic-art",
+        footprint: { w: 1.2, h: 0.45 },
+        isPublicSafe: true,
+      },
     ]);
   });
 
@@ -76,6 +83,7 @@ describe("Colony visual artifacts", () => {
       planter: 0,
       fountain: 0,
       shade_tree: 0,
+      notice_board: 0,
     });
     expect(summary.unknown).toBe(1);
     expect(summary.overflow).toBe(1);
@@ -93,6 +101,7 @@ describe("Colony visual artifacts", () => {
       "greenery",
       "civic-art",
       "greenery",
+      "civic-art",
     ]);
 
     for (const item of a.state.artifacts) {
