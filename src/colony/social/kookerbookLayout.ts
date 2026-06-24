@@ -3,19 +3,17 @@ import type { CSSProperties } from "react";
 export const KOOKERBOOK_MOBILE_MAX_WIDTH = 640;
 
 export type KookerbookResponsiveLayout = {
-  document: {
-    html: Pick<CSSProperties, "overflowX">;
-    body: Pick<CSSProperties, "margin" | "overflowX">;
-    root: Pick<CSSProperties, "width" | "maxWidth" | "overflowX">;
-  };
+  html: Pick<CSSProperties, "overflowX">;
+  body: Pick<CSSProperties, "margin" | "overflowX">;
+  root: Pick<CSSProperties, "width" | "maxWidth" | "overflowX">;
   shell: Pick<
     CSSProperties,
     | "flexDirection"
     | "overflowX"
     | "width"
     | "maxWidth"
-    | "padding"
     | "gap"
+    | "padding"
     | "boxSizing"
   >;
   panel: Pick<CSSProperties, "maxWidth" | "minWidth" | "overflowX" | "boxSizing">;
@@ -33,25 +31,25 @@ const WRAPPING_TEXT: KookerbookResponsiveLayout["contentText"] = {
   wordBreak: "break-word",
 };
 
-const DOCUMENT_OVERFLOW_GUARD: KookerbookResponsiveLayout["document"] = {
+const DOCUMENT_OVERFLOW_GUARD = {
   html: { overflowX: "hidden" },
   body: { margin: "0", overflowX: "hidden" },
   root: { width: "100%", maxWidth: "100%", overflowX: "hidden" },
-};
+} satisfies Pick<KookerbookResponsiveLayout, "html" | "body" | "root">;
 
 export function kookerbookLayoutForViewport(
   viewportWidth: number,
 ): KookerbookResponsiveLayout {
   if (viewportWidth <= KOOKERBOOK_MOBILE_MAX_WIDTH) {
     return {
-      document: DOCUMENT_OVERFLOW_GUARD,
+      ...DOCUMENT_OVERFLOW_GUARD,
       shell: {
         flexDirection: "column",
         overflowX: "hidden",
         width: "100%",
         maxWidth: "100%",
-        padding: 12,
         gap: 12,
+        padding: 12,
         boxSizing: "border-box",
       },
       panel: {
@@ -80,14 +78,14 @@ export function kookerbookLayoutForViewport(
   }
 
   return {
-    document: DOCUMENT_OVERFLOW_GUARD,
+    ...DOCUMENT_OVERFLOW_GUARD,
     shell: {
       flexDirection: "row",
       overflowX: "hidden",
       width: "100%",
       maxWidth: "100%",
-      padding: 16,
       gap: 16,
+      padding: 16,
       boxSizing: "border-box",
     },
     panel: {
@@ -103,7 +101,12 @@ export function kookerbookLayoutForViewport(
       maxWidth: "100%",
       boxSizing: "border-box",
     },
-    profile: { width: "auto", maxWidth: 760, minWidth: 0, boxSizing: "border-box" },
+    profile: {
+      width: "auto",
+      maxWidth: 760,
+      minWidth: 0,
+      boxSizing: "border-box",
+    },
     profileHeader: { flexDirection: "row", alignItems: "center" },
     houseRender: { width: "100%", maxWidth: "100%", minWidth: 0 },
     contentText: WRAPPING_TEXT,

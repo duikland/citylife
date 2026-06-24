@@ -214,17 +214,13 @@ function App() {
     const previousRootWidth = root?.style.width ?? "";
     const previousRootMaxWidth = root?.style.maxWidth ?? "";
     const previousRootOverflowX = root?.style.overflowX ?? "";
-    document.documentElement.style.overflowX = String(
-      layout.document.html.overflowX ?? "",
-    );
-    document.body.style.margin = String(layout.document.body.margin ?? "");
-    document.body.style.overflowX = String(
-      layout.document.body.overflowX ?? "",
-    );
+    document.documentElement.style.overflowX = String(layout.html.overflowX ?? "");
+    document.body.style.margin = String(layout.body.margin ?? "");
+    document.body.style.overflowX = String(layout.body.overflowX ?? "");
     if (root) {
-      root.style.width = String(layout.document.root.width ?? "");
-      root.style.maxWidth = String(layout.document.root.maxWidth ?? "");
-      root.style.overflowX = String(layout.document.root.overflowX ?? "");
+      root.style.width = String(layout.root.width ?? "");
+      root.style.maxWidth = String(layout.root.maxWidth ?? "");
+      root.style.overflowX = String(layout.root.overflowX ?? "");
     }
     return () => {
       document.documentElement.style.overflowX = previousHtmlOverflowX;
@@ -237,19 +233,17 @@ function App() {
       }
     };
   }, [
-    layout.document.html.overflowX,
-    layout.document.body.margin,
-    layout.document.body.overflowX,
-    layout.document.root.width,
-    layout.document.root.maxWidth,
-    layout.document.root.overflowX,
+    layout.body.margin,
+    layout.body.overflowX,
+    layout.html.overflowX,
+    layout.root.maxWidth,
+    layout.root.overflowX,
+    layout.root.width,
   ]);
   return (
     <div
       style={{
         display: "flex",
-        gap: 16,
-        padding: 16,
         minHeight: "100vh",
         boxSizing: "border-box",
         background: "#0a0e18",
