@@ -2,6 +2,31 @@
 
 Read [`docs/TECH-SPEC.md`](docs/TECH-SPEC.md) first. It is the source of truth for direction.
 
+## Knowledge base + documentation discipline (read this)
+
+The version-controlled knowledge base lives in [`docs/`](docs/) — start at
+[`docs/README.md`](docs/README.md). It carries the whole game: architecture
+([`docs/TECH-SPEC.md`](docs/TECH-SPEC.md)), the north-star
+([`docs/EPIC-street-rod.md`](docs/EPIC-street-rod.md)), the current phase
+([`docs/PHASE-1-street-rod.md`](docs/PHASE-1-street-rod.md)), the lane model
+([`docs/TEAM-LANES.md`](docs/TEAM-LANES.md)), and the numbered specs ([`docs/specs/`](docs/specs/)).
+The current lane model lives in `docs/TEAM-LANES.md`; the older "Multi-agent lanes (Claude +
+Antigravity)" section below is historical context.
+
+**ALWAYS-DOCUMENTED is a binding rule.** Every PR updates the knowledge base in the SAME PR that
+ships the code — a change is not done until the docs reflect it:
+
+- New system or mechanic -> a numbered spec in `docs/specs/` (format in `docs/specs/README.md`);
+  move it to `docs/specs/built/` when it ships.
+- Changed behaviour -> edit the spec, epic, phase, or lanes doc that describes it.
+- A decision or tradeoff -> write the WHY into the relevant spec or the epic.
+- An open question or blocker -> record it in the doc, not only in chat.
+- New doc -> link it from `docs/README.md`.
+
+Reviewers (and the MoJoJo merge gate) treat a missing doc update the same as a missing test. The
+standard: someone could resume the game from `docs/` alone, with every chat log and out-of-repo note
+gone.
+
 ## Architecture rules (do not break these)
 
 - **`src/engine/` is framework-agnostic.** No React, no three.js, no DOM imports. It must run in tests (node) and, later, in a Web Worker. The renderer and UI depend on the engine, never the reverse.
