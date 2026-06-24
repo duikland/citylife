@@ -486,6 +486,21 @@ body,
 .login-btn:hover {
   filter: brightness(1.08);
 }
+.login-apk-link {
+  display: block;
+  text-align: center;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+  margin-top: 12px;
+  opacity: 0.85;
+  transition: opacity 0.2s, text-shadow 0.2s;
+}
+.login-apk-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+  text-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+}
 .login-err {
   color: #e0584d;
   font-size: 13px;

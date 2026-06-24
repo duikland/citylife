@@ -119,6 +119,9 @@ export function LoginScreen({
         <button className="login-btn" type="submit" disabled={busy}>
           {busy ? "Authenticating…" : "Enter the Kookerverse"}
         </button>
+        <a href="/install" className="login-apk-link" target="_self">
+          Get Android TV App & Setup Guide
+        </a>
       </form>
     </div>
   );
