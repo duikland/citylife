@@ -17,6 +17,7 @@ import { parseBlueprint } from "../blueprintScript";
 import { compileBlueprint, VOXEL_Y } from "../houseBuilder";
 import { greedyMesh } from "../render/voxelMesh";
 import type { KbProfile, KbPost } from "./kookerbook";
+import { kookerbookProfileUrl } from "./kookerbookNav";
 
 function houseScriptFor(citizenId: string): string | null {
   const map = loadBlueprintsLocal();
@@ -134,6 +135,12 @@ function App() {
   const profiles = useMemo(() => Object.values(map), [map]);
   const selected = sel && map[sel] ? map[sel] : profiles[0];
   const houseScript = selected ? houseScriptFor(selected.citizenId) : null;
+  const selectProfile = (citizenId: string) => {
+    setSel(citizenId);
+    if (typeof window === "undefined") return;
+    const nextUrl = kookerbookProfileUrl(window.location.href, citizenId);
+    if (nextUrl) window.history.replaceState(null, "", nextUrl);
+  };
 
   const panel: React.CSSProperties = {
     background: "#121826",
@@ -171,7 +178,7 @@ function App() {
           <div
             key={p.citizenId}
             data-kb-action={`select-profile-${p.citizenId}`}
-            onClick={() => setSel(p.citizenId)}
+            onClick={() => selectProfile(p.citizenId)}
             style={{
               display: "flex",
               gap: 10,
