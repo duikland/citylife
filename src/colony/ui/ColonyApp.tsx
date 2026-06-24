@@ -205,6 +205,34 @@ export function homesteadHudTitle(args: { playerScoped: boolean }): string {
   }
   return "Spec 076 — large bordered HOMESTEAD parcels on a terrain-aware street: each fenced plot has a front yard, a set-back voxel house, a garden and a farm field. Assign a citizen to a homestead, build their house, or demolish it. Raze-and-evict also destroys the citizen and tears down their Hermes agent.";
 }
+export type HomesteadActionVisibility = {
+  showDesign: boolean;
+  showCommission: boolean;
+  showBuild: boolean;
+  showDemolish: boolean;
+  showEvict: boolean;
+};
+export function homesteadActionVisibility(args: {
+  playerScoped: boolean;
+  ownerId: string | null;
+  operatorCitizenId: string | null;
+  occupied: boolean;
+  built: boolean;
+  reserved: boolean;
+}): HomesteadActionVisibility {
+  const hasOwner = args.ownerId !== null;
+  const playerOwnsLot =
+    args.operatorCitizenId !== null && args.ownerId === args.operatorCitizenId;
+  const canManageBuild = hasOwner && (!args.playerScoped || playerOwnsLot);
+  const operatorScoped = !args.playerScoped;
+  return {
+    showDesign: canManageBuild,
+    showCommission: canManageBuild && !args.built && !args.reserved,
+    showBuild: canManageBuild && !args.built,
+    showDemolish: operatorScoped && args.built && !args.reserved,
+    showEvict: operatorScoped && hasOwner && !args.reserved,
+  };
+}
 
 export function canShowBorderControl(args: { playerScoped: boolean }): boolean {
   return !args.playerScoped;
@@ -1898,6 +1926,14 @@ export function ColonyApp() {
                 priceZar: l.priceZar,
                 playerScoped: ui.bank.scope === "player",
               });
+              const lotActions = homesteadActionVisibility({
+                playerScoped: ui.bank.scope === "player",
+                ownerId: l.ownerId,
+                operatorCitizenId: ui.firstPerson.operatorCitizenId,
+                occupied: l.occupied,
+                built: l.built,
+                reserved: l.reserved,
+              });
               return (
                 <div
                   key={l.id}
@@ -1968,7 +2004,7 @@ export function ColonyApp() {
                         </button>
                       );
                     })()}
-                  {l.ownerId && (
+                  {lotActions.showDesign && (
                     <button
                       style={{
                         padding: "0 6px",
@@ -1985,7 +2021,7 @@ export function ColonyApp() {
                       {l.built ? "Re-design" : "Design"}
                     </button>
                   )}
-                  {l.ownerId && !l.built && !l.reserved && (
+                  {lotActions.showCommission && (
                     <button
                       style={{
                         padding: "0 6px",
@@ -1998,7 +2034,7 @@ export function ColonyApp() {
                       🛠️ Hire KOOKER
                     </button>
                   )}
-                  {l.ownerId && !l.built && (
+                  {lotActions.showBuild && (
                     <button
                       style={{ padding: "0 6px", fontSize: 10 }}
                       onClick={() => runtime.buildHouse(l.id)}
@@ -2007,7 +2043,7 @@ export function ColonyApp() {
                       Build
                     </button>
                   )}
-                  {l.built && !l.reserved && (
+                  {lotActions.showDemolish && (
                     <button
                       style={{ padding: "0 6px", fontSize: 10 }}
                       onClick={() => runtime.demolishLot(l.id)}
@@ -2016,7 +2052,7 @@ export function ColonyApp() {
                       Demolish
                     </button>
                   )}
-                  {l.ownerId && !l.reserved && (
+                  {lotActions.showEvict && (
                     <button
                       style={{
                         padding: "0 6px",

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { homesteadHudTitle, lotHudCopy } from "../src/colony/ui/ColonyApp";
+import {
+  homesteadActionVisibility,
+  homesteadHudTitle,
+  lotHudCopy,
+} from "../src/colony/ui/ColonyApp";
 import { isPublicSafe } from "../src/colony/newcomers";
 
 describe("player neighborhood HUD privacy", () => {
@@ -52,5 +56,45 @@ describe("player neighborhood HUD privacy", () => {
     expect(title).toContain("Assign a citizen to a homestead");
     expect(title).toContain("Raze-and-evict");
     expect(title).toContain("Hermes agent");
+  });
+
+  it("hides other residents' homestead management buttons from player HUDs", () => {
+    const actions = homesteadActionVisibility({
+      playerScoped: true,
+      ownerId: "citizen_other",
+      operatorCitizenId: "citizen_viewer",
+      occupied: true,
+      built: true,
+      reserved: false,
+    });
+
+    expect(actions).toEqual({
+      showDesign: false,
+      showCommission: false,
+      showBuild: false,
+      showDemolish: false,
+      showEvict: false,
+    });
+    expect(Object.keys(actions).join(" ")).not.toMatch(/owner|wallet|ledger|plot/i);
+    expect(isPublicSafe(Object.keys(actions).join(" "))).toBe(true);
+  });
+
+  it("keeps operator homestead management buttons unrestricted", () => {
+    const actions = homesteadActionVisibility({
+      playerScoped: false,
+      ownerId: "citizen_other",
+      operatorCitizenId: null,
+      occupied: true,
+      built: true,
+      reserved: false,
+    });
+
+    expect(actions).toEqual({
+      showDesign: true,
+      showCommission: false,
+      showBuild: false,
+      showDemolish: true,
+      showEvict: true,
+    });
   });
 });
