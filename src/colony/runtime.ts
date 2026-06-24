@@ -95,6 +95,13 @@ import {
   CURRENCY,
 } from "./ledger";
 import { plotPriceKook, kookToZar, starterDeposit } from "./land";
+import { loadCar, saveCar } from "./car/garageStore";
+import {
+  CAR_PARTS,
+  validCarParts,
+  deriveStats,
+  type CarPartKind,
+} from "./car/carParts";
 import { MockBackend, type CityLifeBackend, type Decision } from "./backend";
 import type { Household, HouseholdOverrides } from "./newcomers";
 import { spawnCitizenSubUser, splitName } from "./bot/citizenSpawn";
@@ -586,6 +593,24 @@ export interface ColonyUiState {
     checkpoints: number;
     offTrack: boolean;
   };
+  // Spec 096 — the signed-in player's car + its catalog (mount toggles). null when no operator is set.
+  garage: {
+    carName: string;
+    stats: {
+      topSpeed: number;
+      acceleration: number;
+      grip: number;
+      braking: number;
+    };
+    parts: {
+      kind: string;
+      label: string;
+      socket: string;
+      category: "performance" | "cosmetic";
+      cost: number;
+      mounted: boolean;
+    }[];
+  } | null;
   neighborhood: {
     lots: {
       id: string;
@@ -1367,6 +1392,33 @@ export class ColonyRuntime {
       .list()
       .find((c) => c.displayName.toLowerCase() === me);
     return hit?.id ?? null;
+  }
+
+  /** Spec 096 — mount a bolt-on part on the signed-in player's car. One part per socket (mounting a new
+   *  part on a socket replaces whatever was there). No-op without an operator or for an unknown kind. */
+  mountCarPart(kind: string): boolean {
+    const id = this.operatorCitizenId();
+    if (!id) return false;
+    const def = CAR_PARTS[kind as CarPartKind];
+    if (!def) return false;
+    const car = loadCar(id);
+    const kept = validCarParts(car.parts).filter(
+      (k) => CAR_PARTS[k].socket !== def.socket,
+    );
+    saveCar(id, { ...car, parts: [...kept, def.kind] });
+    this.emit();
+    return true;
+  }
+
+  /** Spec 096 — remove a bolt-on part from the player's car. No-op without an operator. */
+  unmountCarPart(kind: string): boolean {
+    const id = this.operatorCitizenId();
+    if (!id) return false;
+    const car = loadCar(id);
+    const next = validCarParts(car.parts).filter((k) => k !== kind);
+    saveCar(id, { ...car, parts: next });
+    this.emit();
+    return true;
   }
 
   /** P1 — the bot/governor points a citizen's avatar at a destination cell (it walks there). */
@@ -3567,6 +3619,27 @@ export class ColonyRuntime {
           ),
           checkpoints: r.checkpoints.length,
           offTrack: r.offTrack,
+        };
+      })(),
+      garage: (() => {
+        const id = this.operatorCitizenId();
+        if (!id) return null;
+        const car = loadCar(id);
+        const mounted = new Set<string>(validCarParts(car.parts));
+        return {
+          carName: car.name,
+          stats: deriveStats(car),
+          parts: (Object.keys(CAR_PARTS) as CarPartKind[]).map((k) => {
+            const d = CAR_PARTS[k];
+            return {
+              kind: k,
+              label: d.label,
+              socket: d.socket,
+              category: d.category,
+              cost: d.cost,
+              mounted: mounted.has(k),
+            };
+          }),
         };
       })(),
       neighborhood: (() => {
