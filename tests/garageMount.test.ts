@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { ColonyRuntime } from "../src/colony/runtime";
+import { post } from "../src/colony/ledger";
 
 // Spec 096 — the playable mount/unmount loop: the signed-in player tunes their car (mount parts on
 // sockets, one per socket) and uiState.garage reflects the parts + derived stats. garageStore persists
@@ -29,6 +30,13 @@ describe("garage mount/unmount (096)", () => {
 
     const me = rt.getUiState().citizens.list[0]!;
     rt.setOperatorName(me.displayName);
+    // Slice D — mounting now requires owning the part; fund the wallet and buy them first
+    post(rt.sim.state.ledger, "test float", [
+      { account: `citizen:${me.id}`, amount: 1000 },
+      { account: "test:float", amount: -1000 },
+    ]);
+    expect(rt.buyCarPart("blower")).toBe(true);
+    expect(rt.buyCarPart("fourbarrel_carb")).toBe(true);
     const g0 = rt.getUiState().garage!;
     expect(g0).toBeTruthy();
     expect(g0.parts.every((p) => !p.mounted)).toBe(true);

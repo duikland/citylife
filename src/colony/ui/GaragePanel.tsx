@@ -42,7 +42,7 @@ export function GaragePanel({
       }}
     >
       <span style={{ color: "#ffd25a", fontWeight: 700 }}>
-        🔧 Garage · {garage.carName}
+        🔧 Garage · {garage.carName} · ₭{garage.walletK}
       </span>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -83,32 +83,47 @@ export function GaragePanel({
         className="garage-panel__parts"
         style={{ display: "flex", flexWrap: "wrap", gap: 4 }}
       >
-        {garage.parts.map((p) => (
-          <button
-            key={p.kind}
-            data-build-action={p.mounted ? `unmount-${p.kind}` : `mount-${p.kind}`}
-            title={`${p.socket} · ${p.category}${p.cost ? ` · ${p.cost} city coin` : ""}`}
-            onClick={() =>
-              p.mounted
-                ? runtime.unmountCarPart(p.kind)
-                : runtime.mountCarPart(p.kind)
-            }
-            style={{
-              padding: "3px 7px",
-              fontSize: 11,
-              borderRadius: 5,
-              cursor: "pointer",
-              border: `1px solid ${p.mounted ? "#b6892f" : "#1e3a5a"}`,
-              background: p.mounted
-                ? "rgba(255,210,90,0.16)"
-                : "rgba(255,255,255,0.05)",
-              color: p.mounted ? "#ffd25a" : "#a0d4f0",
-            }}
-          >
-            {p.mounted ? "✓ " : "+ "}
-            {p.label}
-          </button>
-        ))}
+        {garage.parts.map((p) => {
+          // unowned -> Buy (spend city coin); owned -> mount/unmount toggle (the Street Rod loop)
+          const action: "buy" | "mount" | "unmount" = !p.owned
+            ? "buy"
+            : p.mounted
+              ? "unmount"
+              : "mount";
+          return (
+            <button
+              key={p.kind}
+              data-build-action={`${action}-${p.kind}`}
+              title={`${p.socket} · ${p.category}${p.cost ? ` · ${p.cost} city coin` : ""}`}
+              onClick={() => {
+                if (action === "buy") runtime.buyCarPart(p.kind);
+                else if (action === "mount") runtime.mountCarPart(p.kind);
+                else runtime.unmountCarPart(p.kind);
+              }}
+              style={{
+                padding: "3px 7px",
+                fontSize: 11,
+                borderRadius: 5,
+                cursor: "pointer",
+                border: `1px solid ${p.mounted ? "#b6892f" : action === "buy" ? "#3a5a2a" : "#1e3a5a"}`,
+                background: p.mounted
+                  ? "rgba(255,210,90,0.16)"
+                  : action === "buy"
+                    ? "rgba(120,200,120,0.10)"
+                    : "rgba(255,255,255,0.05)",
+                color: p.mounted
+                  ? "#ffd25a"
+                  : action === "buy"
+                    ? "#9fd4a6"
+                    : "#a0d4f0",
+              }}
+            >
+              {action === "buy"
+                ? `🛒 ${p.label} · ${p.cost}`
+                : `${p.mounted ? "✓ " : "+ "}${p.label}`}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

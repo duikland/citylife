@@ -102,6 +102,8 @@ import {
   deriveStats,
   type CarPartKind,
 } from "./car/carParts";
+import { ownsCarPart, ownedCarParts, ownCarPart } from "./car/carStore";
+import { CAR_SHOP_ACCOUNT } from "./car/carShop";
 import { MockBackend, type CityLifeBackend, type Decision } from "./backend";
 import type { Household, HouseholdOverrides } from "./newcomers";
 import { spawnCitizenSubUser, splitName } from "./bot/citizenSpawn";
@@ -599,6 +601,7 @@ export interface ColonyUiState {
   // Spec 096 — the signed-in player's car + its catalog (mount toggles). null when no operator is set.
   garage: {
     carName: string;
+    walletK: number;
     stats: {
       topSpeed: number;
       acceleration: number;
@@ -612,6 +615,7 @@ export interface ColonyUiState {
       category: "performance" | "cosmetic";
       cost: number;
       mounted: boolean;
+      owned: boolean;
     }[];
   } | null;
   // Spec 097 R4 — live presence at the hilltop Rally Point (the race rendezvous); null if no rally.
@@ -1407,13 +1411,49 @@ export class ColonyRuntime {
     return hit?.id ?? null;
   }
 
-  /** Spec 096 — mount a bolt-on part on the signed-in player's car. One part per socket (mounting a new
-   *  part on a socket replaces whatever was there). No-op without an operator or for an unknown kind. */
+  /** Spec 096 Slice D — buy a car part with the player's in-game city coin (KCO). Records ownership so
+   *  the part can then be mounted (the Street Rod buy-then-bolt-on loop). Free parts own for nothing; a
+   *  paid part is gated on the exact ledger balance and moves the in-game double-entry ledger only (the
+   *  real-kooker-ledger mirror is a later, furniture-lane-coordinated slice). */
+  buyCarPart(kind: string): boolean {
+    const id = this.operatorCitizenId();
+    if (!id) return false;
+    const def = CAR_PARTS[kind as CarPartKind];
+    if (!def) return false;
+    if (ownsCarPart(id, def.kind)) return true; // already owned (incl. free) — no charge
+    const price = def.cost;
+    if (price <= 0) {
+      ownCarPart(id, def.kind);
+      this.emit();
+      return true;
+    }
+    if (ledgerBalance(this.sim.state.ledger, `citizen:${id}`) < price)
+      return false;
+    const c = this.citizens.byId(id);
+    const posted = ledgerPost(
+      this.sim.state.ledger,
+      `${c?.displayName ?? id} buys a ${def.label} for ${price} ${CURRENCY}`,
+      [
+        { account: `citizen:${id}`, amount: -price },
+        { account: CAR_SHOP_ACCOUNT, amount: price },
+      ],
+    );
+    if (!posted) return false;
+    ownCarPart(id, def.kind);
+    this.kbPost(id, "event", `Bought a ${def.label} for ${price} city coin.`);
+    this.emit();
+    return true;
+  }
+
+  /** Spec 096 — mount a bolt-on part on the signed-in player's car. The part must be OWNED (buy it
+   *  first); one part per socket (a new part on a socket replaces the old). No-op without an operator,
+   *  for an unknown kind, or for an unowned part. */
   mountCarPart(kind: string): boolean {
     const id = this.operatorCitizenId();
     if (!id) return false;
     const def = CAR_PARTS[kind as CarPartKind];
     if (!def) return false;
+    if (!ownsCarPart(id, def.kind)) return false; // must own it first
     const car = loadCar(id);
     const kept = validCarParts(car.parts).filter(
       (k) => CAR_PARTS[k].socket !== def.socket,
@@ -3762,8 +3802,10 @@ export class ColonyRuntime {
         if (!id) return null;
         const car = loadCar(id);
         const mounted = new Set<string>(validCarParts(car.parts));
+        const owned = new Set<string>(ownedCarParts(id));
         return {
           carName: car.name,
+          walletK: this.walletK(id),
           stats: deriveStats(car),
           parts: (Object.keys(CAR_PARTS) as CarPartKind[]).map((k) => {
             const d = CAR_PARTS[k];
@@ -3774,6 +3816,7 @@ export class ColonyRuntime {
               category: d.category,
               cost: d.cost,
               mounted: mounted.has(k),
+              owned: owned.has(k),
             };
           }),
         };
