@@ -1366,6 +1366,7 @@ export class ColonyRuntime {
   /** P1 — record the logged-in operator name (from auth). Marks their avatar + gates the step-into. */
   setOperatorName(name: string | null): void {
     this.operatorName = name && name.trim() ? name.trim() : null;
+    this.updateOperatorCar();
     if (this.fpCitizenId && !this.canStepIntoCitizen(this.fpCitizenId)) {
       this.exitFirstPerson();
       return;
@@ -1418,6 +1419,7 @@ export class ColonyRuntime {
       (k) => CAR_PARTS[k].socket !== def.socket,
     );
     saveCar(id, { ...car, parts: [...kept, def.kind] });
+    this.updateOperatorCar();
     this.emit();
     return true;
   }
@@ -1429,8 +1431,24 @@ export class ColonyRuntime {
     const car = loadCar(id);
     const next = validCarParts(car.parts).filter((k) => k !== kind);
     saveCar(id, { ...car, parts: next });
+    this.updateOperatorCar();
     this.emit();
     return true;
+  }
+
+  /** Spec 096 — (re)render the signed-in player's car parked in the world, a cell off their home (the
+   *  land-next-to-your-car spot). Called whenever the operator or the car changes. Render-only. */
+  private updateOperatorCar(): void {
+    if (!this.renderer) return;
+    const id = this.operatorCitizenId();
+    const c = id ? this.citizens.byId(id) : null;
+    if (!id || !c) {
+      this.renderer.setOperatorCar(null, null);
+      return;
+    }
+    const home = c.homeXY ?? c.pos;
+    const cell = { x: Math.round(home.x) + 1, y: Math.round(home.y) };
+    this.renderer.setOperatorCar(loadCar(id), cell);
   }
 
   /** P1 — the bot/governor points a citizen's avatar at a destination cell (it walks there). */
@@ -3348,6 +3366,7 @@ export class ColonyRuntime {
     this.renderer.setRoadWays(this.roadWays); // spec 088 — smooth ribbon road surfaces over the cell roads
     this.renderer.setBusRoute(this.busRoute); // spec 088 — the bus that loops between the hoods
     this.renderer.setRaceState(this.raceState);
+    this.updateOperatorCar(); // spec 096 — park the player's car in the world if an operator is set
     this.renderer.onGroundClick = (gx, gy) => this.openPlotBook(gx, gy); // spec 090 — click a plot to open its Kookerbook
     this.running = true;
     this.lastFrame = performance.now();
