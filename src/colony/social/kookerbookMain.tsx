@@ -297,6 +297,7 @@ function App() {
               gap: 14,
               alignItems: "center",
               marginBottom: 8,
+              ...layout.profileHeader,
             }}
           >
             <Portrait p={selected} size={64} />
