@@ -171,6 +171,8 @@ describe("firstPersonView — spec 074", () => {
     expect(playerUi.bank.accounts).toBe(1);
     expect(playerUi.bank.landOffice).toBe(0);
     expect(playerUi.bank.recent).toEqual([]);
+    expect(adminUi.bank.sync.pending + adminUi.bank.sync.synced).toBeGreaterThan(0);
+    expect(playerUi.bank.sync).toEqual({ pending: 0, synced: 0, lastError: null });
     const scopedOtherLot = playerUi.neighborhood.lots.find(
       (l) => l.id === otherOwnedLot.id,
     )!;

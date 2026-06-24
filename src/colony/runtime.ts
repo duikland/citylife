@@ -3585,11 +3585,13 @@ export class ColonyRuntime {
             : s.ledger.txns
                 .slice(0, 6)
                 .map((tx) => ({ id: tx.id, memo: tx.memo })),
-          sync: {
-            pending: st.pending,
-            synced: st.synced,
-            lastError: st.lastError,
-          },
+          sync: this.playerView
+            ? { pending: 0, synced: 0, lastError: null }
+            : {
+                pending: st.pending,
+                synced: st.synced,
+                lastError: st.lastError,
+              },
         };
       })(),
       border: this.playerView
