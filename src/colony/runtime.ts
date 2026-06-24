@@ -1511,6 +1511,37 @@ export class ColonyRuntime {
     return true;
   }
 
+  /** R3 — first-person "Walk to Rally": guide the active avatar to the hilltop rally point.
+   *  A rally is a Structure, and firstPersonView.interactionPrompt only scans buildings, so the
+   *  hilltop never auto-surfaces as an Action prompt — this is the explicit button-driven walk.
+   *  Reuses the exact guided-walk machinery as the civic branch of activateFirstPersonInteraction
+   *  (citizens.setTarget + fpGuidedTarget; deterministic, no rng). */
+  goToRallyPoint(): boolean {
+    const id = this.fpCitizenId;
+    if (!id) return false;
+    const c = this.citizens.byId(id);
+    if (!c) return false;
+    const rally = this.sim.state.structures.find((s) => s.kind === "rally");
+    if (!rally) {
+      this.fpNarrating = false;
+      this.fpNarration = "No rally point in this colony yet.";
+      this.emit();
+      return false;
+    }
+    const rawTarget = { x: Math.round(rally.x), y: Math.round(rally.y) };
+    const target =
+      this.blockedStepReason(rawTarget.x, rawTarget.y) !== null
+        ? (this.firstPersonApproachTarget(c.pos, rawTarget) ?? rawTarget)
+        : rawTarget;
+    this.citizens.setTarget(id, target);
+    this.fpWalkSpeed = 0;
+    this.fpGuidedTarget = { label: "the Rally Point", ...target };
+    this.fpNarrating = false;
+    this.fpNarration = "Guiding you to the Rally Point.";
+    this.emit();
+    return true;
+  }
+
   /** Deterministic route-dogfood hook: place the active avatar at a controlled edge before stepping. */
   placeFirstPersonDogfood(
     pos: { x: number; y: number },
