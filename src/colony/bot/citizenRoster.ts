@@ -75,8 +75,9 @@ function publicView(c: Citizen): CitizenPublic {
   };
 }
 
-/** A PLAYER may see only their own data and other citizens' public PRESENCE — their name and that they
- *  exist in the city — but never another player's named address/plot, usage or contact fields. */
+/** A PLAYER may see only their own data and other citizens' public PRESENCE — their name and live
+ *  avatar presence — but never another player's private address/plot, usage or contact fields. So
+ *  the stub masks plotName, drops telegramHandle and zeroes tokensSpentLifetime. */
 function publicStub(c: Citizen): CitizenPublic {
   return {
     id: c.id,

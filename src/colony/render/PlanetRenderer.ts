@@ -31,6 +31,8 @@ import type { Neighborhood } from "../neighborhood";
 import type { CommercialDistrict, ShopParcel } from "../commerce/district";
 import { BUSINESSES, type Business, type Emblem } from "../commerce/businesses";
 import { surveyBillboards } from "../commerce/billboards";
+import { buildCarMesh } from "../car/carMesh";
+import type { CarSpec } from "../car/carSpec";
 import { posterModel, paintPoster } from "../commerce/adCanvas";
 import {
   buildVoxelHouse,
@@ -1573,6 +1575,23 @@ export class PlanetRenderer {
       fountainBowl,
       fountainJet,
     ])!;
+    const shadeTreeTrunk = new THREE.CylinderGeometry(0.16, 0.22, 1.05, 8);
+    shadeTreeTrunk.translate(0, 0.52, 0);
+    const shadeTreeCrown = new THREE.SphereGeometry(0.72, 10, 8);
+    shadeTreeCrown.scale(1, 0.82, 1);
+    shadeTreeCrown.translate(0, 1.18, 0);
+    const shadeTreeGeo = mergeGeometries([shadeTreeTrunk, shadeTreeCrown])!;
+    const noticePost = new THREE.BoxGeometry(0.12, 0.92, 0.12);
+    noticePost.translate(0, 0.46, 0);
+    const noticePanel = new THREE.BoxGeometry(0.92, 0.5, 0.08);
+    noticePanel.translate(0, 0.92, 0);
+    const noticeCap = new THREE.BoxGeometry(1.0, 0.08, 0.12);
+    noticeCap.translate(0, 1.21, 0);
+    const noticeBoardGeo = mergeGeometries([
+      noticePost,
+      noticePanel,
+      noticeCap,
+    ])!;
     this.artifactCap = Math.max(1, ARTIFACT_CATALOG_SIZE);
     this.artifactMeshes = {
       bench: new THREE.InstancedMesh(
@@ -1599,6 +1618,16 @@ export class PlanetRenderer {
       fountain: new THREE.InstancedMesh(
         fountainGeo,
         new THREE.MeshStandardMaterial({ color: 0x6f8da7, roughness: 0.55 }),
+        this.artifactCap,
+      ),
+      shade_tree: new THREE.InstancedMesh(
+        shadeTreeGeo,
+        new THREE.MeshStandardMaterial({ color: 0x2f6f3e, roughness: 0.88 }),
+        this.artifactCap,
+      ),
+      notice_board: new THREE.InstancedMesh(
+        noticeBoardGeo,
+        new THREE.MeshStandardMaterial({ color: 0x8f6a3a, roughness: 0.78 }),
         this.artifactCap,
       ),
     };
@@ -2787,6 +2816,8 @@ export class PlanetRenderer {
       lamppost: 0,
       planter: 0,
       fountain: 0,
+      shade_tree: 0,
+      notice_board: 0,
     };
     for (const item of renderable) {
       const mesh = this.artifactMeshes[item.kind];
@@ -2898,6 +2929,36 @@ export class PlanetRenderer {
       roadY: (x, y) => this.smoothRoadY(x, y),
     });
     if (this.busLayer) this.scene.add(this.busLayer.group);
+  }
+
+  private operatorCarGroup: THREE.Group | null = null;
+
+  /** Spec 096 — park the signed-in player's car in the world (the land-next-to-your-car vision). Rebuilt
+   *  on change (operator set, parts mounted or unmounted); null clears it. Render-only, additive. */
+  setOperatorCar(
+    spec: CarSpec | null,
+    cell: { x: number; y: number } | null,
+  ): void {
+    if (this.operatorCarGroup) {
+      this.operatorCarGroup.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.geometry) m.geometry.dispose();
+        const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+        if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+        else if (mat) mat.dispose();
+      });
+      this.scene.remove(this.operatorCarGroup);
+      this.operatorCarGroup = null;
+    }
+    if (!spec || !cell) return;
+    const g = buildCarMesh(spec);
+    g.position.set(
+      this.wx(cell.x),
+      this.surfaceY(cell.x, cell.y),
+      this.wz(cell.y),
+    );
+    this.operatorCarGroup = g;
+    this.scene.add(g);
   }
 
   // The neon palette for the strip — saturated signage that pops against the calm residential teal.
