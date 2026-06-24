@@ -195,6 +195,16 @@ export function lotHudCopy(args: {
 export function canShowBorderControl(args: { playerScoped: boolean }): boolean {
   return !args.playerScoped;
 }
+export function furnitureMarketplaceSellerLabel(args: {
+  sellerCitizenId: string;
+  viewerCitizenId: string;
+  sellerDisplayName: string | undefined;
+  playerScoped: boolean;
+}): string {
+  if (args.sellerCitizenId === args.viewerCitizenId) return "you";
+  if (args.playerScoped) return "another resident";
+  return args.sellerDisplayName ?? "a resident";
+}
 export function avatarFoundryCopy(args: {
   foundries: number;
   staffed: boolean;
@@ -2615,10 +2625,13 @@ export function ColonyApp() {
                   const listings = runtime.marketListings();
                   if (listings.length === 0) return null;
                   const nameOf = (cid: string) =>
-                    cid === me
-                      ? "you"
-                      : (ui.citizens.list.find((x) => x.id === cid)
-                          ?.displayName ?? "a resident");
+                    furnitureMarketplaceSellerLabel({
+                      sellerCitizenId: cid,
+                      viewerCitizenId: me,
+                      sellerDisplayName: ui.citizens.list.find((x) => x.id === cid)
+                        ?.displayName,
+                      playerScoped: ui.bank.scope === "player",
+                    });
                   return (
                     <div
                       data-build-area="furniture-market"
