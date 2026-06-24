@@ -96,7 +96,11 @@ import {
 } from "./ledger";
 import { plotPriceKook, kookToZar, starterDeposit } from "./land";
 import { loadCar, saveCar } from "./car/garageStore";
-import { PAINT_PALETTES, type PaintChannel } from "./car/carSpec";
+import {
+  PAINT_PALETTES,
+  type PaintChannel,
+  type CarStatVector,
+} from "./car/carSpec";
 import {
   CAR_PARTS,
   validCarParts,
@@ -631,6 +635,8 @@ export interface ColonyUiState {
       cost: number;
       mounted: boolean;
       owned: boolean;
+      /** Spec 096 — what fitting this part does to handling, as short up/down badges (empty = cosmetic). */
+      effects: { label: string; up: boolean }[];
     }[];
     // Spec 096 F — the bonnet: open it to reveal the engine bay, each socket with its install state.
     bonnetOpen: boolean;
@@ -1482,6 +1488,25 @@ export class ColonyRuntime {
 
   private canStepIntoCitizen(citizenId: string): boolean {
     return this.stepInCitizenIds().includes(citizenId);
+  }
+
+  /** Spec 096 — the handling effect of a part as short up/down badges, so the Garage HUD shows at a
+   *  glance what fitting it does (the core promise: a part changes performance, not just looks). Empty
+   *  for a pure cosmetic. Pure + deterministic. */
+  private partEffects(kind: CarPartKind): { label: string; up: boolean }[] {
+    const LABELS: [keyof CarStatVector, string][] = [
+      ["topSpeed", "Spd"],
+      ["acceleration", "Acc"],
+      ["grip", "Grip"],
+      ["braking", "Brk"],
+    ];
+    const d = CAR_PARTS[kind].statDeltas;
+    const out: { label: string; up: boolean }[] = [];
+    for (const [stat, label] of LABELS) {
+      const v = d[stat];
+      if (typeof v === "number" && v !== 0) out.push({ label, up: v > 0 });
+    }
+    return out;
   }
 
   /** Player data isolation: turn the restricted CITYLIFE_PLAYER view on/off. When on, the HUD shows only
@@ -4060,6 +4085,7 @@ export class ColonyRuntime {
               cost: d.cost,
               mounted: mounted.has(k),
               owned: owned.has(k),
+              effects: this.partEffects(k),
             };
           }),
           bonnetOpen: this.bonnetOpen,

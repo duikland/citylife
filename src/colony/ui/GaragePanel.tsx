@@ -292,9 +292,35 @@ export function GaragePanel({
                     : "#a0d4f0",
               }}
             >
-              {action === "buy"
-                ? `🛒 ${p.label} · ${p.cost}`
-                : `${p.mounted ? "✓ " : "+ "}${p.label}`}
+              <span
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1,
+                  alignItems: "flex-start",
+                }}
+              >
+                <span>
+                  {action === "buy"
+                    ? `🛒 ${p.label} · ${p.cost}`
+                    : `${p.mounted ? "✓ " : "+ "}${p.label}`}
+                </span>
+                <span style={{ display: "flex", gap: 4, fontSize: 9 }}>
+                  {p.effects.length === 0 ? (
+                    <span style={{ color: "#7a90a0" }}>cosmetic</span>
+                  ) : (
+                    p.effects.map((e) => (
+                      <span
+                        key={e.label}
+                        style={{ color: e.up ? "#9fd4a6" : "#e08a8a" }}
+                      >
+                        {e.label}
+                        {e.up ? "↑" : "↓"}
+                      </span>
+                    ))
+                  )}
+                </span>
+              </span>
             </button>
           );
         })}
