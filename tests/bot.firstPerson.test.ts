@@ -208,6 +208,42 @@ describe("firstPersonView — spec 074", () => {
     expect(playerUi.commerce.canClaim).toBe(false);
   });
 
+  it("keeps an unmatched logged-in player from falling back to the admin HUD payload", () => {
+    const rt = new ColonyRuntime(4242);
+    const adminUi = rt.getUiState();
+    const other = adminUi.citizens.list[0]!;
+
+    expect(adminUi.citizens.wallets[other.id]).toBeGreaterThan(0);
+    expect(other.plotName).not.toBe("Occupied");
+    expect(other.tokensSpentLifetime).toBe(0);
+
+    rt.setOperatorName("johndoe");
+    rt.setPlayerView(true);
+
+    const playerUi = rt.getUiState();
+    const citizenPayload = JSON.stringify(playerUi.citizens);
+    const bankPayload = JSON.stringify(playerUi.bank);
+
+    expect(playerUi.firstPerson.operatorCitizenId).toBeNull();
+    expect(playerUi.firstPerson.stepInCitizenIds).toEqual([]);
+    expect(playerUi.bank.scope).toBe("player");
+    expect(playerUi.bank.deposits).toBe(0);
+    expect(playerUi.bank.accounts).toBe(0);
+    expect(playerUi.bank.landOffice).toBe(0);
+    expect(playerUi.bank.recent).toEqual([]);
+    expect(playerUi.citizens.wallets).toEqual({});
+    expect(playerUi.citizens.list).toHaveLength(adminUi.citizens.list.length);
+    expect(playerUi.citizens.list.every((c) => c.plotName === "Occupied")).toBe(
+      true,
+    );
+    expect(playerUi.citizens.list.every((c) => c.tokensSpentLifetime === 0)).toBe(
+      true,
+    );
+    expect(citizenPayload).not.toContain(other.plotName);
+    expect(bankPayload).not.toMatch(/Land office|Real ledger|arrives with/i);
+    expect(isPublicSafe("Occupied")).toBe(true);
+  });
+
   it("boots deterministic in-world agent citizens for Joe and Jack", () => {
     const rt = new ColonyRuntime(4242);
     const ui = rt.getUiState();

@@ -3587,13 +3587,14 @@ export class ColonyRuntime {
         // Player data isolation: a CITYLIFE_PLAYER (playerView) sees only their own full record + others'
         // public-presence stubs, and only their OWN wallet balance; the operator/admin sees everything.
         const viewerId = playerViewerId;
-        const roster = viewerId
-          ? this.citizens.listFor(viewerId, VIW_ID)
+        const roster = this.playerView
+          ? this.citizens.listFor(viewerId ?? "__unmatched_player__", viewerId ? VIW_ID : undefined)
           : this.citizens.list();
-        const walletCitizens =
-          this.playerView && viewerId
+        const walletCitizens = this.playerView
+          ? viewerId
             ? this.citizens.list().filter((c) => c.id === viewerId)
-            : this.citizens.list();
+            : []
+          : this.citizens.list();
         return {
           count: this.citizens.size(),
           awake: this.citizens.awakeCount(),

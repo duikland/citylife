@@ -75,14 +75,13 @@ function publicView(c: Citizen): CitizenPublic {
   };
 }
 
-/** A PLAYER may see only their own data and other citizens' public PRESENCE — their name, plot and where
- *  they live in the world (so the city still reads as inhabited) — but never another player's private
- *  usage or contact fields. So the stub drops telegramHandle and zeroes tokensSpentLifetime. */
+/** A PLAYER may see only their own data and other citizens' public PRESENCE — their name and that they
+ *  exist in the city — but never another player's named address/plot, usage or contact fields. */
 function publicStub(c: Citizen): CitizenPublic {
   return {
     id: c.id,
     displayName: c.displayName,
-    plotName: c.plotName,
+    plotName: "Occupied",
     homeXY: { x: c.homeXY.x, y: c.homeXY.y },
     hasPod: c.hasPod,
     tokensSpentLifetime: 0,
@@ -266,8 +265,8 @@ export class CitizenRoster {
    *  privileged view and returns the full public record of every citizen (identical to list()). For a
    *  PLAYER viewer (their own citizen id) it returns their own full record but only a public-presence
    *  stub for everyone else, so a player sees only their own data plus others' public presence — never
-   *  another player's private usage/contact fields. The Builder (builderId) is always shown in full so
-   *  the construction trade stays legible to everyone. */
+   *  another player's private address/usage/contact fields. The Builder (builderId) is always shown in
+   *  full so the construction trade stays legible to everyone. */
   listFor(viewerId: string | null, builderId?: string): CitizenPublic[] {
     if (!viewerId) return this.list();
     return Array.from(this.byHousehold.values()).map((c) =>
