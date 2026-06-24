@@ -1148,6 +1148,52 @@ export class ColonyRuntime {
       { roadKind: this.sim.state.roadKind },
       busAnchors,
     );
+    // Spec 097 R3.5 — connect the hilltop Rally Point to the road network. Route a spur from the
+    // nearest existing road cell to the rally cell and lay it like any other road, mirroring the
+    // commercial connector, so the guided walk and a rally-started race reach the bus-stop on a real
+    // drivable road. Laid AFTER the bus route so that loop is unchanged. Fail soft when no in-margin
+    // route exists: the overlook stays reachable on foot and simply gets no spur that seed.
+    const rallyStruct = this.sim.state.structures.find((s) => s.kind === "rally");
+    if (rallyStruct && this.sim.state.roads.length > 0) {
+      const rallyCell = {
+        x: Math.round(rallyStruct.x),
+        y: Math.round(rallyStruct.y),
+      };
+      // Try the nearest road termini in turn (sorted deterministically by distance then x,y). The
+      // route is allowed to cross homesteads so a path is always found through dense development, but
+      // only the CLEAN run reaching down from the rally is paved: the ribbon climbs the knoll to the
+      // bus-stop and stops where the homesteads (already road-fronted) begin, so no road is ever drawn
+      // through a house. If a seat is so embedded that even its own cell is built over, it fails soft.
+      const candidates: Cell[] = this.sim.state.roads
+        .map((r) => ({ x: r.x, y: r.y }))
+        .sort(
+          (a, b) =>
+            Math.hypot(a.x - rallyCell.x, a.y - rallyCell.y) -
+              Math.hypot(b.x - rallyCell.x, b.y - rallyCell.y) ||
+            a.x - b.x ||
+            a.y - b.y,
+        )
+        .slice(0, 16);
+      const roadable = (c: Cell) =>
+        cellOk(t0, c.x, c.y) && !residentialKeys.has(`${c.x},${c.y}`);
+      for (const terminus of candidates) {
+        const path =
+          leastCostPath(t0, terminus, rallyCell, {
+            slopeWeight: 0.5,
+            diagonal: true,
+            margin: 160, // the hilltop can need a long detour around a ridge to reach a road
+          }) ?? [];
+        if (path.length < 2) continue;
+        // the contiguous roadable suffix ending at the rally (the undeveloped knoll approach)
+        let cut = path.length;
+        for (let k = path.length - 1; k >= 0 && roadable(path[k]!); k--) cut = k;
+        const tail = path.slice(cut);
+        if (tail.length >= 2) {
+          mergeAvenue(this.sim.state, layRoad(tail, 1));
+          break;
+        }
+      }
+    }
     // Spec 082 — restore stored Kookerbook profiles BEFORE seeding Joe: ensureKbProfile skips
     // citizens that already have a profile, so a restored timeline is never clobbered by a fresh
     // founder profile (the bug: seed-then-restore overwrote Joe's stored posts with a 1-post reset).
