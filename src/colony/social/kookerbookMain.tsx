@@ -254,6 +254,7 @@ function App() {
                 marginBottom: 4,
                 color: "inherit",
                 textDecoration: "none",
+                ...layout.directoryLink,
               }}
             >
               <Portrait p={p} />
