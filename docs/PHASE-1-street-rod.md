@@ -28,7 +28,9 @@ Seed a fixed, named NPC friend standing AT the rally cell so presence reaches 2 
   - Deterministic vitest: construct runtime; assert friend pos within 0.01 of the rally cell; step many night frames (clock.isDay=false); assert friend still within 1.5 of the rally.
   - Live 5191: after walking to the rally in first person, `window.__colony.getUiState().rally.present === 2` and `.ready === true`, verified at night.
 
-### S2 (me) — One-button "Head to the night meetup" + presentCitizens widening [SPINE]
+### S2 (me) — One-button "Head to the night meetup" + presentCitizens widening [SPINE] — SHIPPED
+
+**Shipped:** `headToNightMeetup()` chains `updateOperatorCar()` -> `jumpToMyHouse()` -> `goToRallyPoint()` behind a "Head to the night meetup" Garage button (no-op without an operator). `rallyPresence` + `uiState.rally` now additively carry `presentCitizens:{id,displayName}[]` (names isPublicSafe-screened at seed); existing `{x,y,present,ready}` unchanged. This completes the car-lane spine: garage tune -> parked car -> first person -> drive to the rally -> meet the seeded friend; and it hands Joe's S3 the present friends' NAMES for nameplates. Tests: `tests/meetupFlow.test.ts`. With S2 merged, phase-2 (the commercial district) is unblocked per `docs/VISION-open-world.md`.
 
 - Files: `src/colony/runtime.ts` — new `headToNightMeetup()` orchestrator (~car block L1700-2020); widen `rallyPresence` + `uiState.rally` (L4208-4217) to add `presentCitizens:{id,displayName}[]`. `src/colony/ui/GaragePanel.tsx` — new button.
 - `headToNightMeetup()` = `updateOperatorCar()` -> `jumpToMyHouse()` -> `goToRallyPoint()`; no-op without an operator citizen.

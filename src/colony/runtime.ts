@@ -683,6 +683,7 @@ export interface ColonyUiState {
     y: number;
     present: number;
     ready: boolean;
+    presentCitizens: { id: string; displayName: string }[];
   } | null;
   neighborhood: {
     lots: {
@@ -1934,6 +1935,17 @@ export class ColonyRuntime {
     return true;
   }
 
+  /** Phase-1 S2 — the one-button "Head to the night meetup". Ensures the player's tuned car is parked
+   *  in the world, drops them into first person beside it, then guides them out along the spur road to
+   *  the hilltop Rally Point where the seeded friend waits — the whole garage -> car -> drive -> meet
+   *  journey behind a single press. No-op without an operator citizen. Deterministic. */
+  headToNightMeetup(): boolean {
+    if (!this.operatorCitizenId()) return false;
+    this.updateOperatorCar(); // (re)park the tuned car a cell off home
+    if (!this.jumpToMyHouse()) return false; // drop into first person beside it
+    return this.goToRallyPoint(); // guide out to the night rally
+  }
+
   /** Deterministic route-dogfood hook: place the active avatar at a controlled edge before stepping. */
   placeFirstPersonDogfood(
     pos: { x: number; y: number },
@@ -1981,17 +1993,29 @@ export class ColonyRuntime {
 
   /** Spec 097 R4 — avatars standing at the hilltop Rally Point (within ~1.5 cells). Deterministic from
    *  positions; the first-person operator avatar is one of these citizens. */
-  private rallyPresence(): { x: number; y: number; present: number } | null {
+  private rallyPresence(): {
+    x: number;
+    y: number;
+    present: number;
+    presentCitizens: { id: string; displayName: string }[];
+  } | null {
     const rallyS = this.sim.state.structures.find((s) => s.kind === "rally");
     if (!rallyS) return null;
     const R = 1.5;
-    let present = 0;
+    // Phase-1 S2 — also carry WHO is present (id + public-safe display name) so the Player/UI lane can
+    // draw nameplates and a who-is-here read. The names are already isPublicSafe-screened at seed time.
+    const presentCitizens: { id: string; displayName: string }[] = [];
     for (const pub of this.citizens.list()) {
       const cc = this.citizens.byId(pub.id);
       if (cc && Math.hypot(cc.pos.x - rallyS.x, cc.pos.y - rallyS.y) <= R)
-        present++;
+        presentCitizens.push({ id: cc.id, displayName: cc.displayName });
     }
-    return { x: rallyS.x, y: rallyS.y, present };
+    return {
+      x: rallyS.x,
+      y: rallyS.y,
+      present: presentCitizens.length,
+      presentCitizens,
+    };
   }
 
   /** Spec 097 R5 — start the Road Rally. An OPTIONAL startCell biases the track start near a given point
@@ -4240,6 +4264,7 @@ export class ColonyRuntime {
           y: p.y,
           present: p.present,
           ready: p.present >= 2 && this.raceState === null,
+          presentCitizens: p.presentCitizens,
         };
       })(),
       neighborhood: (() => {

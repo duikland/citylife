@@ -68,6 +68,24 @@ export function GaragePanel({
       </button>
 
       <button
+        data-build-action="head-to-meetup"
+        title="Drive out to the night rally to meet up"
+        onClick={() => runtime.headToNightMeetup()}
+        style={{
+          padding: "5px 8px",
+          fontSize: 12,
+          borderRadius: 6,
+          cursor: "pointer",
+          border: "1px solid #b6892f",
+          background: "rgba(255,210,90,0.16)",
+          color: "#ffd25a",
+          fontWeight: 700,
+        }}
+      >
+        🌙 Head to the night meetup
+      </button>
+
+      <button
         data-build-action={garage.bonnetOpen ? "close-bonnet" : "open-bonnet"}
         title="Open the bonnet to see the engine bay and fit parts"
         onClick={() =>
