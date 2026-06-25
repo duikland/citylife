@@ -72,7 +72,10 @@ function parcelFootprintHash(rt: ColonyRuntime): string {
   return sortedHash(cells);
 }
 
-function referenceIntersection(street: Cell[], crossStreet: Cell[]): Cell | undefined {
+function referenceIntersection(
+  street: Cell[],
+  crossStreet: Cell[],
+): Cell | undefined {
   const union: Cell[] = [];
   const seen = new Set<string>();
   for (const c of [...street, ...crossStreet]) {
@@ -115,12 +118,16 @@ function degreeAt(cell: Cell, street: Cell[], crossStreet: Cell[]): number {
 
 function coastalCandidateKeys(rt: ColonyRuntime): Set<string> {
   const t = rt.sim.state.terrain;
-  const lighthouse = rt.sim.state.structures.find((s) => s.kind === "lighthouse");
+  const lighthouse = rt.sim.state.structures.find(
+    (s) => s.kind === "lighthouse",
+  );
   expect(lighthouse).toBeTruthy();
   const W = 64,
     H = 48;
-  const clampX = (v: number) => Math.max(0, Math.min(t.size - W, Math.round(v)));
-  const clampY = (v: number) => Math.max(0, Math.min(t.size - H, Math.round(v)));
+  const clampX = (v: number) =>
+    Math.max(0, Math.min(t.size - W, Math.round(v)));
+  const clampY = (v: number) =>
+    Math.max(0, Math.min(t.size - H, Math.round(v)));
   const toLanding = Math.sign(t.landing.x - lighthouse!.x) || 1;
   const out = new Set<string>();
   for (const along of [16, 28, 40, 52, 8])
@@ -135,13 +142,27 @@ function coastalCandidateKeys(rt: ColonyRuntime): Set<string> {
 describe("phase 2A district determinism gate", () => {
   it("source-scans the deterministic district path", () => {
     const runtimeCommercialPath = [
-      sourceBetween(runtimeSource, "this.commercialReserve = (() => {", "// Spec 086 — SATELLITE HAMLETS"),
-      sourceBetween(runtimeSource, "const shopCells = new Set<string>();", "// Spec 088 — the BUS route"),
-      sourceBetween(runtimeSource, "private raceCommercialCenter()", "private raceTick"),
+      sourceBetween(
+        runtimeSource,
+        "this.commercialReserve = (() => {",
+        "// Spec 086 — SATELLITE HAMLETS",
+      ),
+      sourceBetween(
+        runtimeSource,
+        "const shopCells = new Set<string>();",
+        "// Spec 088 — the BUS route",
+      ),
+      sourceBetween(
+        runtimeSource,
+        "private raceCommercialCenter()",
+        "private raceTick",
+      ),
     ].join("\n");
     const sources = [districtSource, businessesSource, runtimeCommercialPath];
     for (const src of sources)
-      expect(src).not.toMatch(/Math\.random|Date\.now|performance\.now|new Date/);
+      expect(src).not.toMatch(
+        /Math\.random|Date\.now|performance\.now|new Date/,
+      );
   });
 
   it("pins golden intersections and hashes on live seeds", () => {
@@ -150,9 +171,9 @@ describe("phase 2A district determinism gate", () => {
       const d = rt.commercialDistrict!;
       const golden = GOLDEN[seed];
       expect(rt.commercialReserve).toEqual(golden.reserve);
-      expect(coastalCandidateKeys(rt).has(`${golden.reserve.x},${golden.reserve.y}`)).toBe(
-        true,
-      );
+      expect(
+        coastalCandidateKeys(rt).has(`${golden.reserve.x},${golden.reserve.y}`),
+      ).toBe(true);
       expect(d.intersection).toEqual(golden.intersection);
       expect(sortedHash(d.crossStreet)).toBe(golden.crossStreetHash);
       expect(parcelFootprintHash(rt)).toBe(golden.parcelFootprintHash);
@@ -168,7 +189,9 @@ describe("phase 2A district determinism gate", () => {
         x: reserve.x + Math.floor(reserve.w / 2),
         y: reserve.y + Math.floor(reserve.h / 2),
       };
-      expect(d.intersection).toEqual(referenceIntersection(d.street, d.crossStreet));
+      expect(d.intersection).toEqual(
+        referenceIntersection(d.street, d.crossStreet),
+      );
       expect(d.intersection).toEqual(expected);
       expect(degreeAt(d.intersection!, d.street, d.crossStreet)).toBe(4);
     }

@@ -1205,7 +1205,10 @@ export class ColonyRuntime {
         kind: "avenue",
         width: 4,
       });
-    if (this.commercialDistrict && this.commercialDistrict.crossStreet.length >= 2)
+    if (
+      this.commercialDistrict &&
+      this.commercialDistrict.crossStreet.length >= 2
+    )
       this.roadWays.push({
         path: this.commercialDistrict.crossStreet,
         kind: "avenue",
