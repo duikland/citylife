@@ -1,0 +1,71 @@
+# CityLife — Knowledge Base (start here)
+
+This `docs/` tree is the **version-controlled knowledge base** for CityLife. It travels with the
+game: anyone — a human, a coding agent, or a fresh session — who picks up the game gets the full
+picture from here, without needing any out-of-repo notes. **If it was worked on, it is written down
+here.** That is a hard rule, not a nicety — see [Documentation discipline](#documentation-discipline-always-documented).
+
+CityLife is a deterministic 3D city-builder (React 19 + TypeScript + Vite + plain three.js, vitest
+in a node env, no `Math.random` / `Date.now` in the sim). It is built by several dev lanes on one
+repo, on protected `main` (PRs + review only).
+
+---
+
+## Read these first, in order
+
+1. **[TECH-SPEC.md](TECH-SPEC.md)** and **[TECH-SPEC-v2-COLONY.md](TECH-SPEC-v2-COLONY.md)** — the
+   engine and colony architecture: the source of truth for direction.
+2. **[../AGENTS.md](../AGENTS.md)** — the rules every coding agent must follow (architecture
+   invariants, determinism, CI-safe commits, the documentation discipline, lane ownership).
+3. **[EPIC-street-rod.md](EPIC-street-rod.md)** — the current north-star initiative: two brothers
+   meet at night, drive, hang, race, and tune their cars. The single source of truth for the Street
+   Rod game (mirrors GitHub issue #125).
+4. **[PHASE-1-street-rod.md](PHASE-1-street-rod.md)** — the active phase: the end-to-end slice
+   (garage to car to meeting up with friends), split across the dev lanes with acceptance criteria.
+5. **[TEAM-LANES.md](TEAM-LANES.md)** — who owns what, the cross-lane seams, the cron operating
+   model, and the review/merge flow.
+
+---
+
+## The map
+
+| Area | Where | What it holds |
+|---|---|---|
+| **Architecture** | [TECH-SPEC.md](TECH-SPEC.md), [TECH-SPEC-v2-COLONY.md](TECH-SPEC-v2-COLONY.md) | Engine/render decoupling, the Game API contract, the colony model. |
+| **North-star + phases** | [EPIC-street-rod.md](EPIC-street-rod.md), [PHASE-1-street-rod.md](PHASE-1-street-rod.md) | The vision and the current end-to-end slice. |
+| **Lanes + way of work** | [TEAM-LANES.md](TEAM-LANES.md), [../AGENTS.md](../AGENTS.md) | Lane ownership, seams, crons, documentation discipline. |
+| **Specs (the design record)** | [specs/](specs/) | Numbered game-mechanic specs. Active specs at `specs/NNN-*.md`; shipped ones move to [specs/built/](specs/built/). Index + format in [specs/README.md](specs/README.md). |
+| **Visual standard** | [specs/VISUAL-STANDARD.md](specs/VISUAL-STANDARD.md) | Every thing is a seen thing — the one format for visual components. |
+| **Research** | [research/](research/) | Dated deep-dives that ground the specs (economy, citizens, roads, radio, districts, house builder). |
+| **Working plans** | [plans/](plans/) | Multi-slice plans in flight. |
+| **Per-agent lanes** | [agents/](agents/) | Lane queues and acceptance criteria for individual coding agents. |
+| **Operations** | [DEPLOY.md](DEPLOY.md), [HANDOVER.md](HANDOVER.md) | Deploy pipeline and the cold-start handover brief. |
+| **Onboarding lore** | [KOOKERVERSE_FOR_NEWCOMERS.md](KOOKERVERSE_FOR_NEWCOMERS.md) | The in-world primer. |
+
+---
+
+## Documentation discipline (always-documented)
+
+**Every piece of work updates this knowledge base in the same PR that ships it.** A change is not
+"done" until the knowledge base reflects it. Concretely, for every slice:
+
+1. **New system or mechanic → a spec.** Add a numbered spec under [specs/](specs/) using the format
+   in [specs/README.md](specs/README.md) (Why / Mechanic / Rules & data / Cost / Acceptance). When it
+   ships, move it to [specs/built/](specs/built/) and mark it `built`.
+2. **Changed behaviour → update the doc that owns it.** If a spec, the epic, the phase plan, or
+   `TEAM-LANES.md` describes what you changed, edit it in the same PR so it stays true.
+3. **A decision (a tradeoff, an architecture choice, a "why we did it this way") → write the why.**
+   Capture it in the relevant spec or the epic so the next person inherits the reasoning, not just
+   the code.
+4. **An open question or blocker → record it in the doc**, not only in chat or an external note, so
+   it survives the session.
+5. **Keep this index current.** If you add a doc, link it here.
+
+The test: if every chat log and external note vanished, could someone resume the game from `docs/`
+alone? If not, the documentation is incomplete. Reviewers (and the MoJoJo merge gate) treat a missing
+doc update the same as a missing test.
+
+> Why this matters: the design has, in the past, lived in chat history and out-of-repo operator
+> notes that did not travel with the code. The autonomous lanes can be cancelled, sessions reset, and
+> context compacts — so the repo itself has to carry the knowledge. This file is the contract that it
+> does.
