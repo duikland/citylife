@@ -3,6 +3,7 @@
 // rose of directional controls (WASD / arrow keys also work via ColonyApp).
 // After each step the bot narrates what the citizen sees in 1–2 sentences.
 import { useState } from "react";
+import { isPublicSafe } from "../newcomers";
 import type { ColonyRuntime } from "../runtime";
 import type { ColonyUiState } from "../runtime";
 
@@ -23,6 +24,7 @@ export function nightFriendBannerCopy(
 ): string | null {
   if (!view || view.clock.isDay || view.neighbours.length === 0) return null;
   const names = view.neighbours
+    .filter((n) => isPublicSafe(n.displayName))
     .slice(0, 2)
     .map((n) => n.displayName.split(" ")[0])
     .join(", ");

@@ -200,6 +200,20 @@ describe("FirstPersonPanel immersive HUD", () => {
     expect(html).not.toContain("Third");
   });
 
+  it("screens unsafe neighbour names from the night friend banner", () => {
+    const fp = makeFirstPerson();
+    if (!fp.view) throw new Error("expected first-person view");
+    fp.view.clock.isDay = false;
+    fp.view.neighbours = [
+      { displayName: "Hermes token keeper", plotName: "Occupied", distance: 4 },
+      { displayName: "Orin Reed", plotName: "Occupied", distance: 5 },
+    ];
+
+    expect(nightFriendBannerCopy(fp.view)).toBe(
+      "Friend nearby at the night rally: Orin",
+    );
+  });
+
   it("hides the friend banner by day and when nobody is nearby", () => {
     const fp = makeFirstPerson();
     if (!fp.view) throw new Error("expected first-person view");

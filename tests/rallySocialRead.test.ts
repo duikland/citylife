@@ -23,7 +23,7 @@ describe("rally who-is-here social read", () => {
         present: 2,
         presentCitizens: [
           { id: "joe", displayName: "Joe Crab" },
-          { id: "jack", displayName: "Jack Kooker" },
+          { id: "jack", displayName: "Jack Kooper" },
           { id: "extra", displayName: "Extra Friend" },
         ],
       }),
@@ -35,10 +35,27 @@ describe("rally who-is-here social read", () => {
       summary: "Joe, Jack",
       citizens: [
         { id: "joe", displayName: "Joe Crab" },
-        { id: "jack", displayName: "Jack Kooker" },
+        { id: "jack", displayName: "Jack Kooper" },
       ],
-      signature: "joe:Joe Crab|jack:Jack Kooker",
+      signature: "joe:Joe Crab|jack:Jack Kooper",
     });
+  });
+
+  it("screens unsafe present citizen names before UI copy or renderer ids", () => {
+    const read = rallyWhoIsHereCopy(
+      makeRally({
+        present: 2,
+        presentCitizens: [
+          { id: "safe", displayName: "Mara Lane" },
+          { id: "unsafe", displayName: "Hermes token keeper" },
+        ],
+      }),
+      false,
+    );
+
+    expect(read?.summary).toBe("Mara");
+    expect(read?.citizens).toEqual([{ id: "safe", displayName: "Mara Lane" }]);
+    expect(read?.signature).toBe("safe:Mara Lane");
   });
 
   it("falls back to a rounded present count until presentCitizens lands", () => {

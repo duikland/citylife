@@ -56,6 +56,7 @@ import { buildBusLayer, type BusLayer } from "./busLayer";
 import type { BusRoute } from "../transit/busRoute";
 import { buildRoadRibbons, ROAD_RIBBON_LIFT, type RoadWay } from "./roadRibbon";
 import type { RaceState } from "../racing/race";
+import { isPublicSafe } from "../newcomers";
 
 export type ViewMode = "biome" | "buildable" | "elevation";
 export type CameraPreset = "street" | "district" | "planet";
@@ -2968,8 +2969,11 @@ export class PlanetRenderer {
   /** S3 — read-only rally presence from uiState.rally.presentCitizens. Until the car lane lands that
    *  additive field, callers pass an empty list and the renderer draws no social nameplates. */
   setRallyPresentCitizens(citizens: RallyPresentCitizenView[]): void {
-    this.rallyPresentCitizenIds = new Set(citizens.map((c) => c.id));
-    const wanted = new Map(citizens.map((c) => [c.id, c.displayName]));
+    const safeCitizens = citizens.filter(
+      (c) => isPublicSafe(c.id) && isPublicSafe(c.displayName),
+    );
+    this.rallyPresentCitizenIds = new Set(safeCitizens.map((c) => c.id));
+    const wanted = new Map(safeCitizens.map((c) => [c.id, c.displayName]));
     for (const [id, plate] of [...this.rallyNameplates]) {
       if (!wanted.has(id)) this.disposeRallyNameplate(id, plate);
     }

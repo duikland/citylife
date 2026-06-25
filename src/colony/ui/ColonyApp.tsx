@@ -10,7 +10,7 @@ import {
   type FirstPersonMouseSensitivity,
 } from "../runtime";
 import type { CameraPreset, ViewMode } from "../render/PlanetRenderer";
-import type { HouseholdOverrides } from "../newcomers";
+import { isPublicSafe, type HouseholdOverrides } from "../newcomers";
 import { AuthClient } from "../authClient";
 // Spec 088 Slice D/F UI — the Furniture studio HUD panel (design + buy into the player's inventory).
 import {
@@ -360,7 +360,11 @@ export function rallyWhoIsHereCopy(
   const presentCitizens = ((rally as RallyRead).presentCitizens ?? [])
     .filter(
       (c): c is RallyCitizenRead =>
-        !!c && typeof c.id === "string" && typeof c.displayName === "string",
+        !!c &&
+        typeof c.id === "string" &&
+        typeof c.displayName === "string" &&
+        isPublicSafe(c.id) &&
+        isPublicSafe(c.displayName),
     )
     .slice(0, Math.max(0, Math.round(rally.present)));
   const label = presentCitizens.length
