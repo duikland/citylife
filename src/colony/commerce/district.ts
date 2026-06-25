@@ -134,17 +134,14 @@ export function makeCommercialDistrict(
   }
 
   const shopCells = new Set<string>();
-  for (const p of parcels) claim(shopCells, p.x, p.y, p.x + p.w - 1, p.y + p.h - 1);
+  for (const p of parcels)
+    claim(shopCells, p.x, p.y, p.x + p.w - 1, p.y + p.h - 1);
 
   const crossStreetX = reserve.x + Math.floor(reserve.w / 2);
   const crossStreet: Cell[] = [];
   for (let y = reserve.y; y < reserve.y + reserve.h; y++) {
     const key = `${crossStreetX},${y}`;
-    if (
-      cellOk(t, crossStreetX, y) &&
-      !shopCells.has(key) &&
-      !blocked.has(key)
-    )
+    if (cellOk(t, crossStreetX, y) && !shopCells.has(key) && !blocked.has(key))
       crossStreet.push({ x: crossStreetX, y });
   }
 

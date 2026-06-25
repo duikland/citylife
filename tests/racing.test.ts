@@ -245,7 +245,9 @@ describe("spec 087 road rally track generation", () => {
       const track = trackFor(seed);
       const intersection = rt.commercialDistrict!.intersection!;
       expect(excluded.has(roadKey(intersection.x, intersection.y))).toBe(false);
-      expect(rt.sim.state.roadKind.has(roadKey(intersection.x, intersection.y))).toBe(true);
+      expect(
+        rt.sim.state.roadKind.has(roadKey(intersection.x, intersection.y)),
+      ).toBe(true);
       expect(
         Math.hypot(
           track.checkpoints[0]!.x - intersection.x,

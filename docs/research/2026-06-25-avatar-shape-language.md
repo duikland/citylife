@@ -106,18 +106,21 @@ more deeply.
 A future implementation PR should be sliced like this:
 
 1. **Data model only**
+
    - Add a pure `avatarSilhouettes.ts` registry under the Player & UI/render boundary.
    - Thread only the smallest new field needed through `AvatarView`, likely `avatarRole?: string` or a
      widened `kind` union.
    - Tests prove stable card selection from public ids and role hints.
 
 2. **Cole card proof**
+
    - Add a deterministic procedural Cole racer mesh or a renderer group built from primitives.
    - Keep it behind the existing avatar source and rally presence path.
    - Tests assert the Cole card is selected for `citizen_rally_friend` and that unsafe labels are not
      rendered.
 
 3. **First-person readability check**
+
    - Live-probe Joe standing near Cole at night.
    - Capture before/after screenshots from Joe's eye height.
    - Acceptance is visual: the object in front must read as a person/racer before reading the UI text.
