@@ -9,6 +9,14 @@
 - Asset pipeline: [specs/100-blender-asset-pipeline.md](specs/100-blender-asset-pipeline.md) (Blender -> glTF authored shells; geometry in Blender, placement in code)
 - District spec (to author): docs/specs/101-commercial-district-and-garage-landmark.md
 
+## Direction locked (2026-06-25, Irwin)
+
+Three steers now fixed:
+
+1. **Go as far toward NFS as we can.** The endgame is a FULL open-world car game — free-roam cruising between landmarks, a real drivable road network, a city that lives around you — not just a tight stage. We get there in staged PARTS, and THIS document evolves into those parts as each one is scoped and ships (see the roadmap).
+2. **REPLACE the current commerce.** The new larger district replaces today's thin 40x30 high street; it does not sit beside it.
+3. **The garage is a first-class LANDMARK STRUCTURE** — like the rally point, placed deterministically by a `findGarageSite` (more car-lane-owned), not a mere corner shop-parcel. It anchors the intersection as a true landmark.
+
 ## What CityLife is becoming
 
 A deterministic 3D voxel city that FEELS like a car game. The whole game exists so two brothers meet at night, drive to a spot, hang out, race, and tune their cars (Street Rod, spec 099). The NFS feel is not the cars — it is the SHAPE OF THE WORLD around that loop. We are extending the Street Rod loop, not replacing it.
@@ -27,11 +35,11 @@ The loop NFS calls build -> meet -> race -> scan-classifieds is CityLife's tune 
 
 ## The commercial-area direction
 
-A real DISTRICT, not the single thin high street of small co-equal plots in today's 40x30 reserve.
+A real DISTRICT that REPLACES the single thin high street of small co-equal plots in today's 40x30 reserve.
 
 - THE INTERSECTION AS THE STAGE — grow the reserve to ~64x48, survey it as a BLOCK with a high street PLUS a perpendicular cross-street that CROSS at the core; route the commercial connector to meet at a right angle and widen both to carriageway, forming a true 4-way/strong-T crossing. The crossing cell is the deterministic major intersection (argmax road-degree, x-then-y tie-break). It doubles as the race start/checkpoint.
 - THE MALL AS GRAVITY-WELL ANCHOR — one large singular mass (ANCHOR pad ~14x10, wallH ~2.6) reserved FIRST at the district end nearest the intersection: an oversailing emissive entry canopy, a stepped parapet/sign tower, 2-3 glowing entry bays. The mall is the ONE always-present civic anchor; the for-sale storefronts (Nearest bar, Sprout, Sportifine, Chef Ott) plug into its frontage and stay buy-and-build — preserving the for-sale economy while giving a landmark silhouette.
-- THE GARAGE AS AUTO-RETAIL LANDMARK — a CORNER pad (~10x8) on the crossing corner hardest against the intersection: a glassy warm-lit showroom cube, a lower service-bay shed with roll-up doors + forecourt lane, a tall corner pylon sign (tallest vertical in the district), and forecourt display cars. This finally gives the garage an in-world building (today: HUD only) on the NFS main drag. The garage door opens the existing tuning UI.
+- THE GARAGE AS A FIRST-CLASS LANDMARK STRUCTURE — placed deterministically by a `findGarageSite` on the crossing corner hardest against the intersection (a SeedStructure like the rally point, car-lane-owned), with the commercial district built AROUND it: a glassy warm-lit showroom cube, a lower service-bay shed with roll-up doors + forecourt lane, a tall corner pylon sign (tallest vertical in the district), and forecourt display cars. This finally gives the garage an in-world building (today: HUD only) on the NFS main drag. The garage door opens the existing tuning UI.
 - HIERARCHY is the 'reads as a district' lever — ONE dominant mass (mall) + ONE secondary landmark (garage) + a tertiary ribbon of in-line for-sale shops, with a non-buildable forecourt/parking apron giving a clear street wall.
 - NIGHT — hot neon at the intersection (district-palette signage, mall sign tower, garage pylon, warm showroom glass), every lit mesh on the 1-daylight emissive floor; DAY — calm.
 
@@ -50,10 +58,17 @@ Gate per district slice: does this ladder toward the night meetup and the race? 
 5. PHASE 2D — AUTHORED GLB SHELLS (Jack, optional uplift) — replace code-massed boxes with Blender-authored shells per spec 100.
 6. PHASE-2 RACE (car lane, blocked) — own-car rally race on the Codex carSpec hook; the new intersection is its start/checkpoint.
 
+Beyond the spine + the commercial district lies the FULL open-world arc (Irwin: as far as we can). These are the PARTS this document grows into; each is scoped into its own slices + spec when it starts, and the phase-1-first gate + determinism + lanes hold throughout:
+
+7. PHASE 3 — FREE-ROAM DRIVING (car lane) — drive your tuned car anywhere on the road network, not only guided walks or the race track; the car becomes the primary way you move through the world.
+8. PHASE 4 — A REAL ROAD NETWORK YOU CRUISE (Jack + car lane) — multiple intersections, loops and shortcuts (not one hero crossing), so the map reads as a legible open-world you navigate by landmark.
+9. PHASE 5 — THE CITY LIVES AROUND YOU (Jack + Joe) — ambient traffic + citizens on the streets, the day-browse / night-cruise rhythm made real, more districts and landmarks to drive between.
+10. ONGOING — this document is the live breakdown: it is updated as the direction evolves into each part, and each part earns its own spec as it begins.
+
 ## Lane ownership
 
 - World & Build (Jack) — the district shape, the mall anchor, business identities, the massing, the GLB shells. Files: commerce/district.ts, commerce/businesses.ts, the commercial block in runtime.ts, PlanetRenderer rebuildCommercial, venuePropAssets.ts, billboards.ts.
-- Car / Garage (me) — the garage storefront IDENTITY (coordinated into commerce/businesses.ts — the one cross-lane seam, EPIC section 9), goToGarage(), and the garage-door -> tuning-UI link. The car lane never edits rally proximity logic.
+- Car / Garage (me) — the garage LANDMARK STRUCTURE itself (a SeedStructure placed by `findGarageSite`, mirroring the rally point), goToGarage(), and the garage-door -> tuning-UI link. Jack builds the commercial district AROUND it; the storefront identity is the read-only seam. The car lane never edits rally proximity logic. Later, free-roam driving (phase 3) is also car-lane.
 - Player & UI (Joe) — mall/garage/intersection nameplates + POI markers, signage iconography polish, first-person framing of the intersection stage. Read-only from the world model.
 
 ## Hard rules (carried from TEAM-LANES.md)
@@ -64,16 +79,19 @@ Gate per district slice: does this ladder toward the night meetup and the race? 
 - Protected main, PR-only, CI-safe commit bodies, docs in the same PR.
 - Stay in your lane — the garage storefront is the only cross-lane seam (read-only/additive).
 
-## Open questions (Irwin to steer)
+## Decisions + open questions
 
-- HOW FAR TOWARD NFS — full free-roam cruising city, or a tight Street-Rod stage with the district as dressing? (Plan ships the latter first.)
+RESOLVED (Irwin, 2026-06-25):
+- HOW FAR TOWARD NFS -> as far as we can: the FULL open-world car game endgame, reached in staged parts (see Direction locked + the roadmap).
+- REPLACE vs AUGMENT -> REPLACE the current high street with the larger district.
+- GARAGE MODEL -> a first-class LANDMARK STRUCTURE (a SeedStructure placed by findGarageSite, like the rally), not a corner shop-parcel.
+- INTERSECTION AMBITION -> one hero intersection for the commercial district NOW; a real road mesh with loops/shortcuts arrives in the full-open-world arc (phase 4).
+
+STILL OPEN (Irwin to steer):
 - MALL SCOPE — one always-present civic anchor, or a fully buildable mega-anchor bots raise over time? (Plan: the former.)
-- REPLACE vs AUGMENT — does the bigger district replace the current high street or sit beside it? (Plan: grow in place.)
 - REAL-KOOKER-APP FRONTS — should the mall front a real kooker hub app; should the garage front an app or stay a pure landmark? (Undecided.)
-- GARAGE MODEL — a corner ShopParcel (commerce survey) or a SeedStructure landmark (like the rally)? (Both deterministic.)
-- INTERSECTION AMBITION — one hero intersection or a small road mesh with shortcuts/loops? (Plan: one hero first.)
-- DAY/NIGHT MOOD — how explicit should the in-world signalling of day-browse / night-race be?
-- RESERVE SIZE — 64x48 is a first guess relative to world.size=608; how big before it crowds residential/satellites?
+- DAY/NIGHT MOOD — how explicit should the in-world signalling of day-browse / night-cruise / night-race be?
+- DISTRICT SIZE — replacing the high street gives room; how big should the district be relative to world.size=608 before it crowds residential/satellites?
 
 ---
-This document is updated as the game evolves. Last direction set: the NFS-feel commercial district + mall + garage-near-the-intersection arc (phase-2), subordinate to the phase-1 garage -> car -> meet -> race spine.
+This document is updated as the game evolves. Last direction set (2026-06-25): go as far toward a FULL open-world car game as we can (staged into the roadmap parts); REPLACE the current high street with the larger commercial district; make the garage a first-class landmark structure. All of it stays subordinate to, and gated behind, the phase-1 garage -> car -> meet -> race spine.
