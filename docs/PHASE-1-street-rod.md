@@ -50,9 +50,10 @@ Seed a fixed, named NPC friend standing AT the rally cell so presence reaches 2 
   - Live 5191: at night the friend shows a readable nameplate and the who-is-here panel lists them; verified at low light.
 - Depends on: S2 (graceful degrade lets it start in parallel).
 
-### S4 (jack) — Night-hangout venue dressing around the rally
+### S4 (jack) — Night-hangout venue dressing around the rally — PR in flight
 
 - Files: `src/colony/render/venueProps.ts` (NEW, mirrors `shoreProps.ts`), `artifacts.ts`, `artifactSchema.ts`, and ONLY the additive 2-line registration in `PlanetRenderer.ts` (`this.venueProps = buildVenueProps(...)` + `this.venueProps?.update(daylight, now)` in `frame()`).
+- Current implementation record: see `docs/specs/101-night-rally-venue-props.md`. The slice is render-only: `venueProps.ts` reads the existing rally structure, masks roads/occupied/structure footprints, adds deterministic night-lit lantern/stool/crate dressing, and leaves the Blender GLB proof prop from spec 100 separate.
 - Acceptance:
   - Reads `structures.find(kind==='rally')` read-only; masks roadSet+occupied+structure footprints; no Math.random/Date.now; lit elements emissive-floor at night.
   - Does NOT edit gradeRoadsInto, the rally marker branch, sim.ts placement, or any car/furniture/race file.
