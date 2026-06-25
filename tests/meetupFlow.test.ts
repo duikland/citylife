@@ -10,9 +10,7 @@ describe("night meetup flow (phase-1 S2)", () => {
     return (
       rt as unknown as {
         citizens: {
-          byId: (
-            id: string,
-          ) =>
+          byId: (id: string) =>
             | {
                 pos: { x: number; y: number };
                 target: { x: number; y: number };
