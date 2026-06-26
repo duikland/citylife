@@ -61,6 +61,10 @@ import {
   buildMallAnchorShellModel,
   mallAnchorNightFloorEmissive,
 } from "./mallAnchorShell";
+import {
+  buildGarageAnchorShellModel,
+  garageAnchorNightFloorEmissive,
+} from "./garageAnchorShell";
 import type { RaceState } from "../racing/race";
 import { isPublicSafe } from "../newcomers";
 import {
@@ -250,6 +254,7 @@ export class PlanetRenderer {
   private commercialGroup = new THREE.Group();
   private commercialSignMats: THREE.MeshStandardMaterial[] = [];
   private commercialMallFloorMat: THREE.MeshStandardMaterial | null = null;
+  private commercialGarageFloorMats: THREE.MeshStandardMaterial[] = [];
   private commercialFloorMats: THREE.MeshStandardMaterial[] = [];
   // Spec 084 S1 — per-lot house mesh key (blueprint + foundation height) for incremental rebuilds.
   private lotHouseKey = new Map<string, string>();
@@ -701,13 +706,21 @@ export class PlanetRenderer {
       for (const p of this.neighborhood.parcels)
         mark(p.x, p.y, Math.ceil(Math.max(p.w, p.h) / 2) + 1);
     // Commercial plots (spec 079) — the footprint min-corner is (x,y) here, so clear around the centre.
-    if (this.commercialDistrict)
+    if (this.commercialDistrict) {
       for (const p of this.commercialDistrict.parcels)
         mark(
           p.x + (p.w - 1) / 2,
           p.y + (p.h - 1) / 2,
           Math.ceil(Math.max(p.w, p.h) / 2) + 1,
         );
+      const gp = this.commercialDistrict.garagePad;
+      if (gp)
+        mark(
+          gp.x + (gp.w - 1) / 2,
+          gp.y + (gp.h - 1) / 2,
+          Math.ceil(Math.max(gp.w, gp.h) / 2) + 2,
+        );
+    }
     mark(t.landing.x, t.landing.y, 4); // keep the colony heart clear
     const cells: number[] = [];
     for (let i = 0; i < N * N; i++) {
@@ -1012,6 +1025,8 @@ export class PlanetRenderer {
     if (cd) {
       sig += `cd${cd.reserve.x},${cd.reserve.y},${cd.reserve.w},${cd.reserve.h};`;
       for (const p of cd.parcels) sig += `${p.id}:${p.x},${p.y},${p.w},${p.h}|`;
+      if (cd.garagePad)
+        sig += `garage:${cd.garagePad.x},${cd.garagePad.y},${cd.garagePad.w},${cd.garagePad.h},${cd.garagePad.facingAngle.toFixed(4)}|`;
     }
     if (sig === this.terrainLevelSig) return;
     this.terrainLevelSig = sig;
@@ -1084,6 +1099,16 @@ export class PlanetRenderer {
       const seats = [
         ...cd.parcels.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h })),
         { x: cd.mallPad.x, y: cd.mallPad.y, w: cd.mallPad.w, h: cd.mallPad.h },
+        ...(cd.garagePad
+          ? [
+              {
+                x: cd.garagePad.x,
+                y: cd.garagePad.y,
+                w: cd.garagePad.w,
+                h: cd.garagePad.h,
+              },
+            ]
+          : []),
       ];
       const seatY = (r: { x: number; y: number; w: number; h: number }) =>
         Math.max(this.groundY(r.x + (r.w - 1) / 2, r.y + (r.h - 1) / 2), DRY);
@@ -1122,6 +1147,16 @@ export class PlanetRenderer {
           h: p.h + 2,
         })),
         { x: cd.mallPad.x, y: cd.mallPad.y, w: cd.mallPad.w, h: cd.mallPad.h },
+        ...(cd.garagePad
+          ? [
+              {
+                x: cd.garagePad.x,
+                y: cd.garagePad.y,
+                w: cd.garagePad.w,
+                h: cd.garagePad.h,
+              },
+            ]
+          : []),
       ];
       applyCoastalCommercialDryBlend({
         next,
@@ -2686,6 +2721,8 @@ export class PlanetRenderer {
     if (this.commercialMallFloorMat)
       this.commercialMallFloorMat.emissiveIntensity =
         mallAnchorNightFloorEmissive(s.clock.daylight);
+    for (const fm of this.commercialGarageFloorMats)
+      fm.emissiveIntensity = garageAnchorNightFloorEmissive(s.clock.daylight);
     for (const fm of this.commercialFloorMats)
       fm.emissiveIntensity = commercialShopNightFloorEmissive(s.clock.daylight);
   }
@@ -3324,6 +3361,261 @@ export class PlanetRenderer {
     this.commercialGroup.add(g);
   }
 
+  private buildGarageAnchorShell(d: CommercialDistrict): void {
+    if (!d.garagePad) return;
+    const model = buildGarageAnchorShellModel(d.garagePad, (x, y) =>
+      this.surfaceY(x, y),
+    );
+    const g = new THREE.Group();
+    g.name = "commercialDistrict.garagePad.garageAnchorShell";
+    g.userData = {
+      kind: model.kind,
+      publicName: model.publicName,
+      isPublicSafe: model.isPublicSafe,
+      facingAngle: model.facingAngle,
+      roadTarget: d.garagePad.roadTarget,
+    };
+    g.position.set(
+      this.wx(model.center.x),
+      model.baseY,
+      this.wz(model.center.y),
+    );
+    g.rotation.y = model.facingAngle;
+
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0xffb24a,
+      emissive: 0xff9f2f,
+      emissiveIntensity: garageAnchorNightFloorEmissive(
+        this.sim.state.clock.daylight,
+      ),
+      roughness: 0.52,
+      transparent: true,
+      opacity: 0.54,
+    });
+    this.commercialGarageFloorMats.push(floorMat);
+    const floor = new THREE.Mesh(
+      new THREE.BoxGeometry(model.nightFloor.w, 0.04, model.nightFloor.d),
+      floorMat,
+    );
+    floor.name = "garageAnchorNightFloor";
+    floor.position.y = model.nightFloor.y;
+
+    const forecourtMat = new THREE.MeshStandardMaterial({
+      color: 0x4c5262,
+      roughness: 0.68,
+      metalness: 0.02,
+      emissive: 0xff9f2f,
+      emissiveIntensity:
+        garageAnchorNightFloorEmissive(this.sim.state.clock.daylight) * 0.58,
+    });
+    this.commercialGarageFloorMats.push(forecourtMat);
+    const forecourt = new THREE.Mesh(
+      new THREE.BoxGeometry(model.forecourt.w, 0.035, model.forecourt.d),
+      forecourtMat,
+    );
+    forecourt.name = "garageAnchorRoadFacingForecourt";
+    forecourt.position.set(0, model.forecourt.y, model.forecourt.frontOffset);
+    forecourt.receiveShadow = true;
+
+    const showroom = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        model.showroom.w,
+        model.showroom.h,
+        model.showroom.d,
+      ),
+      new THREE.MeshStandardMaterial({
+        color: 0x8fe6ff,
+        roughness: 0.18,
+        metalness: 0.08,
+        emissive: 0xffb86b,
+        emissiveIntensity: 0.38,
+        transparent: true,
+        opacity: 0.74,
+      }),
+    );
+    showroom.name = "garageAnchorGlassShowroom";
+    showroom.position.set(model.showroom.x, model.showroom.y, model.showroom.z);
+    showroom.castShadow = true;
+    showroom.receiveShadow = true;
+
+    const showroomFront = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        model.showroom.w * 0.84,
+        model.showroom.h * 0.58,
+        0.08,
+      ),
+      new THREE.MeshStandardMaterial({
+        color: 0xbff6ff,
+        roughness: 0.08,
+        metalness: 0.04,
+        emissive: 0x5fdfff,
+        emissiveIntensity: 0.52,
+        transparent: true,
+        opacity: 0.82,
+      }),
+    );
+    showroomFront.name = "garageAnchorGlassShowroomFront";
+    showroomFront.position.set(
+      model.showroom.x,
+      model.showroom.h * 0.54,
+      model.showroom.z + model.showroom.d / 2 + 0.06,
+    );
+
+    const showroomHeader = new THREE.Mesh(
+      new THREE.BoxGeometry(model.showroom.w * 0.9, 0.32, 0.14),
+      new THREE.MeshStandardMaterial({
+        color: 0xffb24a,
+        emissive: 0xff8f2f,
+        emissiveIntensity: 0.65,
+        roughness: 0.36,
+      }),
+    );
+    showroomHeader.name = "garageAnchorShowroomHeaderSign";
+    showroomHeader.position.set(
+      model.showroom.x,
+      model.showroom.h + 0.12,
+      model.showroom.z + model.showroom.d / 2 + 0.08,
+    );
+
+    const service = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        model.serviceBay.w,
+        model.serviceBay.h,
+        model.serviceBay.d,
+      ),
+      new THREE.MeshStandardMaterial({
+        color: 0x46505d,
+        roughness: 0.78,
+        metalness: 0.08,
+        emissive: 0x121a24,
+        emissiveIntensity: 0.08,
+      }),
+    );
+    service.name = "garageAnchorServiceBayBlock";
+    service.position.set(
+      model.serviceBay.x,
+      model.serviceBay.y,
+      model.serviceBay.z,
+    );
+    service.castShadow = true;
+    service.receiveShadow = true;
+
+    const roof = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        model.footprint.w * 0.82,
+        0.22,
+        model.footprint.d * 0.62,
+      ),
+      new THREE.MeshStandardMaterial({ color: 0x1f2731, roughness: 0.86 }),
+    );
+    roof.name = "garageAnchorFlatRoofCanopy";
+    roof.position.set(0.12, model.serviceBay.h + 0.12, -0.04);
+    roof.castShadow = true;
+
+    const doorMat = new THREE.MeshStandardMaterial({
+      color: 0xd8e4ee,
+      roughness: 0.5,
+      metalness: 0.22,
+      emissive: 0xffc36b,
+      emissiveIntensity: 0.22,
+    });
+    for (let i = 0; i < model.serviceBay.doorCount; i++) {
+      const sx =
+        model.serviceBay.x +
+        (i - (model.serviceBay.doorCount - 1) / 2) *
+          (model.serviceBay.bayDoorW * 1.25);
+      const door = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          model.serviceBay.bayDoorW,
+          model.serviceBay.h * 0.62,
+          0.06,
+        ),
+        doorMat,
+      );
+      door.name = `garageAnchorRollupDoor.${i + 1}`;
+      door.position.set(
+        sx,
+        model.serviceBay.h * 0.36,
+        model.serviceBay.z + model.serviceBay.d / 2 + 0.035,
+      );
+      g.add(door);
+      for (let slat = 1; slat <= 3; slat++) {
+        const rib = new THREE.Mesh(
+          new THREE.BoxGeometry(model.serviceBay.bayDoorW * 0.96, 0.025, 0.075),
+          new THREE.MeshStandardMaterial({ color: 0x8fa1ad, roughness: 0.45 }),
+        );
+        rib.name = `garageAnchorDoorSlat.${i + 1}.${slat}`;
+        rib.position.set(
+          door.position.x,
+          door.position.y + (slat - 2) * 0.28,
+          door.position.z + 0.02,
+        );
+        g.add(rib);
+      }
+    }
+
+    const pylonMat = new THREE.MeshStandardMaterial({
+      color: 0xffb24a,
+      emissive: 0xff8f2f,
+      emissiveIntensity: 0.85,
+      roughness: 0.32,
+    });
+    const pylon = new THREE.Mesh(
+      new THREE.BoxGeometry(model.pylon.w, model.pylon.h, model.pylon.d),
+      pylonMat,
+    );
+    pylon.name = "garageAnchorCornerPylonSign";
+    pylon.position.set(model.pylon.x, model.pylon.y, model.pylon.z);
+    pylon.castShadow = true;
+
+    const pylonCap = new THREE.Mesh(
+      new THREE.BoxGeometry(model.pylon.w * 2.2, 0.75, model.pylon.d * 1.25),
+      pylonMat,
+    );
+    pylonCap.name = "garageAnchorPylonLightBox";
+    pylonCap.position.set(model.pylon.x, model.pylon.h + 0.2, model.pylon.z);
+
+    for (const [i, car] of model.displayCars.entries()) {
+      const cg = new THREE.Group();
+      cg.name = `garageAnchorDisplayCar.${i + 1}`;
+      cg.position.set(car.x, 0.08, car.z);
+      cg.rotation.y = car.rot;
+      cg.scale.setScalar(car.scale);
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(1.15, 0.22, 0.56),
+        new THREE.MeshStandardMaterial({
+          color: i === 0 ? 0x31d6ff : 0xff6b4a,
+          roughness: 0.5,
+        }),
+      );
+      body.position.y = 0.22;
+      const cab = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.24, 0.42),
+        new THREE.MeshStandardMaterial({
+          color: 0xb9f1ff,
+          emissive: 0x1f7d99,
+          emissiveIntensity: 0.18,
+        }),
+      );
+      cab.position.set(-0.05, 0.43, 0);
+      cg.add(body, cab);
+      g.add(cg);
+    }
+
+    g.add(
+      floor,
+      forecourt,
+      showroom,
+      showroomFront,
+      showroomHeader,
+      service,
+      roof,
+      pylon,
+      pylonCap,
+    );
+    this.commercialGroup.add(g);
+  }
+
   /** Raise a vibrant neon market stall on each surveyed shop plot: a dark counter body, a glowing
    *  awning canopy, and a bright signage panel facing the street. Disposes any prior build first. */
   private buildCommercialDistrict(): void {
@@ -3344,6 +3636,7 @@ export class PlanetRenderer {
     this.commercialGroup.clear();
     this.commercialSignMats = [];
     this.commercialMallFloorMat = null;
+    this.commercialGarageFloorMats = [];
     this.commercialFloorMats = [];
     this.scene.add(this.commercialGroup);
     const d = this.commercialDistrict;
@@ -3351,6 +3644,7 @@ export class PlanetRenderer {
     const t = this.sim.state.terrain;
 
     this.buildMallAnchorShell(d);
+    this.buildGarageAnchorShell(d);
 
     d.parcels.forEach((p, i) => {
       // Spec 079 — each plot fronts a real kooker app: its business sets the neon palette, a rooftop
