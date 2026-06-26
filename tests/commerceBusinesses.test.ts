@@ -29,7 +29,8 @@ describe("commerce businesses (themed app storefronts)", () => {
     const assigned = parcels.map((p) => a[p.id] as BusinessId);
     expect(new Set(assigned).size).toBe(parcels.length);
     const names = assigned.map((id) => BUSINESSES[id].name);
-    for (let i = 1; i < names.length; i++) expect(names[i]).not.toBe(names[i - 1]);
+    for (let i = 1; i < names.length; i++)
+      expect(names[i]).not.toBe(names[i - 1]);
     // every plot gets exactly one known business
     for (const p of parcels)
       expect(BUSINESSES[a[p.id] as BusinessId]).toBeTruthy();
@@ -41,7 +42,8 @@ describe("commerce businesses (themed app storefronts)", () => {
     expect(shops.length).toBeGreaterThanOrEqual(8);
     const names = shops.map((p) => businessName(p.business));
 
-    for (let i = 1; i < names.length; i++) expect(names[i]).not.toBe(names[i - 1]);
+    for (let i = 1; i < names.length; i++)
+      expect(names[i]).not.toBe(names[i - 1]);
 
     const counts = new Map<string, number>();
     for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
@@ -49,7 +51,8 @@ describe("commerce businesses (themed app storefronts)", () => {
   }, 20000);
 
   it("marks every authored storefront identity as public-safe metadata", () => {
-    for (const b of Object.values(BUSINESSES)) expect(b.isPublicSafe).toBe(true);
+    for (const b of Object.values(BUSINESSES))
+      expect(b.isPublicSafe).toBe(true);
   });
 
   it("is deterministic", () => {
