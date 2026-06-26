@@ -33,7 +33,11 @@ describe("commercial shop massing variety", () => {
       "chef_market",
     ];
     const models = ids.map((id, i) =>
-      commercialShopMassing(parcel(i === 0 ? "showroom" : "store", id, i), BUSINESSES[id], i),
+      commercialShopMassing(
+        parcel(i === 0 ? "showroom" : "store", id, i),
+        BUSINESSES[id],
+        i,
+      ),
     );
 
     for (let i = 1; i < models.length; i++) {
@@ -41,8 +45,12 @@ describe("commercial shop massing variety", () => {
       expect(models[i].roofForm).not.toBe(models[i - 1].roofForm);
     }
 
-    expect(new Set(models.map((m) => m.wallHeight)).size).toBeGreaterThanOrEqual(3);
-    expect(new Set(models.map((m) => m.signatureFeature)).size).toBe(ids.length);
+    expect(
+      new Set(models.map((m) => m.wallHeight)).size,
+    ).toBeGreaterThanOrEqual(3);
+    expect(new Set(models.map((m) => m.signatureFeature)).size).toBe(
+      ids.length,
+    );
   });
 
   it("keeps the shop night floor emissive deterministic and clamped", () => {

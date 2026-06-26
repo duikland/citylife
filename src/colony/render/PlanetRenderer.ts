@@ -3408,7 +3408,11 @@ export class PlanetRenderer {
 
       // Roof form — per-business massing turns adjacent shops into distinct silhouettes instead of
       // one flat box recoloured.
-      const roof = this.buildCommercialShopRoof(massing, neon, coastalDriedSeat);
+      const roof = this.buildCommercialShopRoof(
+        massing,
+        neon,
+        coastalDriedSeat,
+      );
       roof.name = `commercialShopRoof.${massing.roofForm}`;
       roof.position.y = wallH + massing.roofRise / 2;
 
@@ -4028,47 +4032,83 @@ export class PlanetRenderer {
       const featureMat = glow(biz.palette, 0.55);
       const sideX = bodyW * 0.38;
       if (biz.id === "citylife_garage") {
-        const bay = new THREE.Mesh(new THREE.BoxGeometry(bodyW * 0.46, 0.72, 0.08), matte(0x1d222b));
+        const bay = new THREE.Mesh(
+          new THREE.BoxGeometry(bodyW * 0.46, 0.72, 0.08),
+          matte(0x1d222b),
+        );
         bay.position.set(0, 0.36, frontZ + front * 0.12);
-        const wrench = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.08, 0.08), featureMat);
+        const wrench = new THREE.Mesh(
+          new THREE.BoxGeometry(0.54, 0.08, 0.08),
+          featureMat,
+        );
         wrench.position.set(sideX, wallH + 0.18, frontZ * 0.2);
         grp.add(bay, wrench);
       } else if (biz.id === "mojojo_records") {
-        const disc = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.055, 10, 18), featureMat);
+        const disc = new THREE.Mesh(
+          new THREE.TorusGeometry(0.24, 0.055, 10, 18),
+          featureMat,
+        );
         disc.position.set(-sideX, wallH + 0.12, frontZ * 0.2);
         disc.rotation.x = Math.PI / 2;
-        const booth = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 0.32), matte(0x20242c));
+        const booth = new THREE.Mesh(
+          new THREE.BoxGeometry(0.5, 0.28, 0.32),
+          matte(0x20242c),
+        );
         booth.position.set(0, 0.14, frontZ + front * 0.58);
         grp.add(disc, booth);
       } else if (biz.id === "classifieds_arcade") {
         for (const sx of [-0.28, 0, 0.28]) {
-          const board = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.34, 0.05), featureMat);
+          const board = new THREE.Mesh(
+            new THREE.BoxGeometry(0.2, 0.34, 0.05),
+            featureMat,
+          );
           board.position.set(sx, wallH * 0.52, frontZ + front * 0.12);
           grp.add(board);
         }
       } else if (biz.id === "ledger_exchange") {
-        const counter = new THREE.Mesh(new THREE.BoxGeometry(bodyW * 0.62, 0.26, 0.28), matte(0x4d3b1f));
+        const counter = new THREE.Mesh(
+          new THREE.BoxGeometry(bodyW * 0.62, 0.26, 0.28),
+          matte(0x4d3b1f),
+        );
         counter.position.set(0, 0.13, frontZ + front * 0.52);
-        const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.04, 18), featureMat);
+        const coin = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.16, 0.16, 0.04, 18),
+          featureMat,
+        );
         coin.position.set(sideX, wallH + 0.2, frontZ * 0.2);
         coin.rotation.x = Math.PI / 2;
         grp.add(counter, coin);
       } else if (biz.id === "tarentaal_tours") {
-        const perch = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.7, 6), matte(0x9a7a4a));
+        const perch = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.025, 0.025, 0.7, 6),
+          matte(0x9a7a4a),
+        );
         perch.position.set(-sideX, 0.35, frontZ + front * 0.55);
-        const bird = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 7), featureMat);
+        const bird = new THREE.Mesh(
+          new THREE.SphereGeometry(0.14, 8, 7),
+          featureMat,
+        );
         bird.position.set(-sideX, 0.76, frontZ + front * 0.55);
         grp.add(perch, bird);
       } else if (biz.id === "builder_studio") {
-        const frameA = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.9, 0.06), featureMat);
+        const frameA = new THREE.Mesh(
+          new THREE.BoxGeometry(0.08, 0.9, 0.06),
+          featureMat,
+        );
         frameA.position.set(-0.38, 0.45, frontZ + front * 0.18);
         const frameB = frameA.clone();
         frameB.position.x = 0.38;
-        const lintel = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.08, 0.06), featureMat);
+        const lintel = new THREE.Mesh(
+          new THREE.BoxGeometry(0.84, 0.08, 0.06),
+          featureMat,
+        );
         lintel.position.set(0, 0.88, frontZ + front * 0.18);
         grp.add(frameA, frameB, lintel);
       } else {
-        const marker = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.24, 0.1), featureMat);
+        const marker = new THREE.Mesh(
+          new THREE.BoxGeometry(0.36, 0.24, 0.1),
+          featureMat,
+        );
         marker.position.set(sideX, wallH + 0.18, frontZ * 0.2);
         grp.add(marker);
       }
@@ -4082,7 +4122,9 @@ export class PlanetRenderer {
     coastalDriedSeat: boolean,
   ): THREE.Mesh {
     const mat = new THREE.MeshStandardMaterial({
-      color: coastalDriedSeat ? new THREE.Color(neon).lerp(new THREE.Color(0x536b3a), 0.3) : neon,
+      color: coastalDriedSeat
+        ? new THREE.Color(neon).lerp(new THREE.Color(0x536b3a), 0.3)
+        : neon,
       emissive: neon,
       emissiveIntensity: 0.16,
       roughness: 0.55,
@@ -4091,35 +4133,64 @@ export class PlanetRenderer {
     const w = massing.bodyW * massing.roofOverhang;
     const d = massing.bodyD * massing.roofOverhang;
     if (massing.roofForm === "gable") {
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.55, massing.roofRise, 4), mat);
+      const roof = new THREE.Mesh(
+        new THREE.ConeGeometry(w * 0.55, massing.roofRise, 4),
+        mat,
+      );
       roof.rotation.y = Math.PI / 4;
       roof.scale.z = d / w;
       return roof;
     }
     if (massing.roofForm === "mono") {
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(w, massing.roofRise, d), mat);
+      const roof = new THREE.Mesh(
+        new THREE.BoxGeometry(w, massing.roofRise, d),
+        mat,
+      );
       roof.rotation.z = 0.08;
       return roof;
     }
     if (massing.roofForm === "sawtooth") {
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(w, massing.roofRise, d), mat);
+      const roof = new THREE.Mesh(
+        new THREE.BoxGeometry(w, massing.roofRise, d),
+        mat,
+      );
       roof.rotation.z = -0.08;
       return roof;
     }
     if (massing.roofForm === "greenhouse")
-      return new THREE.Mesh(new THREE.SphereGeometry(Math.min(w, d) * 0.42, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+      return new THREE.Mesh(
+        new THREE.SphereGeometry(
+          Math.min(w, d) * 0.42,
+          16,
+          8,
+          0,
+          Math.PI * 2,
+          0,
+          Math.PI / 2,
+        ),
+        mat,
+      );
     if (massing.roofForm === "arena") {
-      const roof = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.48, w * 0.55, massing.roofRise, 18), mat);
+      const roof = new THREE.Mesh(
+        new THREE.CylinderGeometry(w * 0.48, w * 0.55, massing.roofRise, 18),
+        mat,
+      );
       roof.scale.z = d / w;
       return roof;
     }
     if (massing.roofForm === "market-canopy") {
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(w * 1.08, massing.roofRise, d * 0.7), mat);
+      const roof = new THREE.Mesh(
+        new THREE.BoxGeometry(w * 1.08, massing.roofRise, d * 0.7),
+        mat,
+      );
       roof.rotation.x = 0.12;
       return roof;
     }
     if (massing.roofForm === "tower-cap")
-      return new THREE.Mesh(new THREE.CylinderGeometry(w * 0.28, w * 0.38, massing.roofRise, 8), mat);
+      return new THREE.Mesh(
+        new THREE.CylinderGeometry(w * 0.28, w * 0.38, massing.roofRise, 8),
+        mat,
+      );
     return new THREE.Mesh(new THREE.BoxGeometry(w, massing.roofRise, d), mat);
   }
 
@@ -4182,33 +4253,51 @@ export class PlanetRenderer {
       return m;
     }
     if (emblem === "garage") {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.08), glow(neon, 0.55));
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(0.26, 0.18, 0.08),
+        glow(neon, 0.55),
+      );
       m.position.y = 0.12;
       return m;
     }
     if (emblem === "record") {
-      const m = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.035, 8, 16), glow(neon, 0.65));
+      const m = new THREE.Mesh(
+        new THREE.TorusGeometry(0.13, 0.035, 8, 16),
+        glow(neon, 0.65),
+      );
       m.position.y = 0.13;
       return m;
     }
     if (emblem === "board") {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, 0.04), glow(neon, 0.6));
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(0.24, 0.18, 0.04),
+        glow(neon, 0.6),
+      );
       m.position.y = 0.12;
       return m;
     }
     if (emblem === "coin") {
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.04, 18), glow(neon, 0.55));
+      const m = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.12, 0.04, 18),
+        glow(neon, 0.55),
+      );
       m.rotation.x = Math.PI / 2;
       m.position.y = 0.12;
       return m;
     }
     if (emblem === "bird") {
-      const m = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.24, 5), glow(neon, 0.5));
+      const m = new THREE.Mesh(
+        new THREE.ConeGeometry(0.12, 0.24, 5),
+        glow(neon, 0.5),
+      );
       m.position.y = 0.14;
       return m;
     }
     if (emblem === "frame") {
-      const m = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.02, 4, 4), glow(neon, 0.55));
+      const m = new THREE.Mesh(
+        new THREE.TorusGeometry(0.13, 0.02, 4, 4),
+        glow(neon, 0.55),
+      );
       m.position.y = 0.14;
       return m;
     }
