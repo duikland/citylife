@@ -238,7 +238,7 @@ DONE
 DONE
 
 - src/colony/commerce/businesses.ts (pure): a catalog of THEMED businesses, each fronting a real
-  kooker app — The Nearest (energy/radar) as a BAR with seating, Chef Ott's Market (kitchen +
+  kooker app — The Nearest (energy/radar) as a BAR with seating, Chef Otto's Market (kitchen +
   exercise), Sportifine Club (sports), Sprout Greenhouse (plant companion), plus generic Trading
   Post / Corner Kiosk. assignBusinesses() deterministically gives the marquee apps the biggest plots
   first (the bar lands on the largest, for its counter + stools); the rest fill generic. district.ts
@@ -260,7 +260,7 @@ DONE
 - renderer buildBusinessProps(): each marquee storefront gets distinct, recognisable props — the
   Nearest bar a radar mast + dish, four glowing colour vials, and a little bar-chart sign (the
   concept-café look on top of its counter + stools); Sprout a row of plant sprouts + shrubs;
-  Sportifine a green pitch + goal + ball; Chef Ott a striped market awning + food crates + a chimney.
+  Sportifine a green pitch + goal + ball; Chef Otto a striped market awning + food crates + a chimney.
   Generic plots keep the simple themed stall. 711 green, tsc clean, verified live.
 
 ### 2026-06-13 — Loop iteration 3: live bots gather at the Nearest bar after dark
@@ -291,7 +291,7 @@ DONE
 - tsc clean, render-only (no test delta). Live-verified on :5188 — close shot of the bar front shows
   the crab keeper over the wooden counter, orange shell + blue earcup headset + claws, no console errors.
 
-### 2026-06-13 — Loop iteration 5: bespoke storefronts for Sprout, Sportifine and Chef Ott
+### 2026-06-13 — Loop iteration 5: bespoke storefronts for Sprout, Sportifine and Chef Otto
 
 DONE
 
@@ -301,7 +301,7 @@ DONE
     bushes flanking the door, a white trellis arch with green vines, roof shrubs. Reads as a lush nursery.
   - Sportifine — the green pitch + goal + ball, plus two floodlight poles with glowing lamp heads, a
     stepped grandstand in the club colour, and a corner flag. Reads as a sports club.
-  - Chef Ott — the striped awning + produce crates now carry colourful goods, a glowing grill under the
+  - Chef Otto — the striped awning + produce crates now carry colourful goods, a glowing grill under the
     smoking chimney, an outdoor bistro table with stools, and a kettlebell (the app's exercise side).
 - tsc clean, render-only. Live-verified on :5188 — framed all three storefronts street-side; each is
   distinct and busy, no console errors.
@@ -312,7 +312,7 @@ DONE
 
 - The commercial district now fronts the Founders Lighthouse on the coast (see docs/specs/086 Slice P1
   for the reserve-search + connector details). The themed storefronts (Nearest with Joe, Sprout,
-  Sportifine, Chef Ott) carry over unchanged — they just sit on the seaside now, a scenic promenade by
+  Sportifine, Chef Otto) carry over unchanged — they just sit on the seaside now, a scenic promenade by
   the landmark. LIVE seed 4242: reserve (117,234), district 52 cells off the lighthouse, road-connected
   to the founders (BFS), no shop on the tower, no console errors. tsc clean.
 
@@ -341,7 +341,7 @@ DONE
   centre-line, lamps + benches + planters lining both verges, neon storefronts flanking, the SEA
   alongside. Reads as a seaside commercial promenade. No console errors.
 - COMMERCE VISION COMPLETE: distributed city -> scattered hamlets + roads -> four characterful app
-  storefronts (Joe tending the Nearest, Sprout, Sportifine, Chef Ott) -> live bots at the bar after dark
+  storefronts (Joe tending the Nearest, Sprout, Sportifine, Chef Otto) -> live bots at the bar after dark
   -> relocated to the scenic lighthouse shore (086-P1) -> lit + furnished promenade. All on FOR-SALE
   plots; no premature builds.
   NEXT
