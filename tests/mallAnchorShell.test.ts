@@ -45,7 +45,9 @@ describe("mall anchor shell render model", () => {
       expect(modelA.nightFloor.y).toBeCloseTo(0.025, 5);
       expect(modelA.nightFloor.emissiveIntensity.day).toBe(0.08);
       expect(modelA.nightFloor.emissiveIntensity.night).toBe(1.35);
-      expect(modelA.baseY).toBeLessThanOrEqual(padSurfaceY(a.mallPad.x, a.mallPad.y));
+      expect(modelA.baseY).toBeLessThanOrEqual(
+        padSurfaceY(a.mallPad.x, a.mallPad.y),
+      );
     }
   }, 30000);
 });
