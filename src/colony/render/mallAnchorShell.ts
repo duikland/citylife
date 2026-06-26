@@ -1,5 +1,10 @@
 import type { Reserve } from "../commerce/district";
 
+export function mallAnchorNightFloorEmissive(daylight: number): number {
+  const clamped = Math.max(0, Math.min(1, daylight));
+  return 0.08 + (1 - clamped) * 1.27;
+}
+
 export interface MallAnchorShellModel {
   kind: "mall_anchor_shell";
   center: { x: number; y: number };

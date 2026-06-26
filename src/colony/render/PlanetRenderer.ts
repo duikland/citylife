@@ -57,7 +57,10 @@ import { buildBusLayer, type BusLayer } from "./busLayer";
 import type { BusRoute } from "../transit/busRoute";
 import { buildRoadRibbons, ROAD_RIBBON_LIFT, type RoadWay } from "./roadRibbon";
 import { applyCoastalCommercialDryBlend } from "./terrainLeveling";
-import { buildMallAnchorShellModel } from "./mallAnchorShell";
+import {
+  buildMallAnchorShellModel,
+  mallAnchorNightFloorEmissive,
+} from "./mallAnchorShell";
 import type { RaceState } from "../racing/race";
 import { isPublicSafe } from "../newcomers";
 
@@ -2632,7 +2635,8 @@ export class PlanetRenderer {
     for (const sm of this.commercialSignMats)
       sm.emissiveIntensity = 0.7 + night * 0.9;
     if (this.commercialMallFloorMat)
-      this.commercialMallFloorMat.emissiveIntensity = 0.08 + night * 1.27;
+      this.commercialMallFloorMat.emissiveIntensity =
+        mallAnchorNightFloorEmissive(s.clock.daylight);
   }
 
   frame() {

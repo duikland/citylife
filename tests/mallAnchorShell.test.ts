@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ColonyRuntime } from "../src/colony/runtime";
-import { buildMallAnchorShellModel } from "../src/colony/render/mallAnchorShell";
+import {
+  buildMallAnchorShellModel,
+  mallAnchorNightFloorEmissive,
+} from "../src/colony/render/mallAnchorShell";
 // @ts-ignore Vite/Vitest raw import for source-scan coverage.
 import mallAnchorShellSource from "../src/colony/render/mallAnchorShell.ts?raw";
 
@@ -15,6 +18,12 @@ describe("mall anchor shell render model", () => {
     expect(mallAnchorShellSource).not.toMatch(
       /Math\.random|Date\.now|performance\.now|new Date/,
     );
+  });
+
+  it("maps the night floor emissive from dim day to bright night", () => {
+    expect(mallAnchorNightFloorEmissive(1)).toBe(0.08);
+    expect(mallAnchorNightFloorEmissive(0)).toBe(1.35);
+    expect(mallAnchorNightFloorEmissive(0.5)).toBeCloseTo(0.715, 5);
   });
 
   it("builds a deterministic flat-roofed anchor shell from each surveyed mall pad", () => {
