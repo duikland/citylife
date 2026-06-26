@@ -44,7 +44,7 @@ One venue per slice, marquee apps first:
 
 - **The Nearest** — a **walk-in radar bar**: open frontage, interior counter + stools (seating is already a business flag), rooftop **radar dish**, cyan neon.
 - **Sportifine** — a club building **plus an adjacent sports field** (pitch, goal, line markings, small stands), lime.
-- **Chef Ott's Market** — market hall + stalls + crates, orange.
+- **Chef Otto's Market** — market hall + stalls + crates, orange.
 - **Sprout Greenhouse** — glasshouse with plant rows, green.
 - Multi-cell footprints via the existing blueprint/voxel path. Day calm / night neon, night emissive floor.
 
@@ -53,7 +53,7 @@ One venue per slice, marquee apps first:
 - **S1 (Jack/World)** — `zoneGrid` data layer in ColonyState; `cellZone()` reads it, seeded from the current formula; persisted; tests. Pure foundation, no visible change yet.
 - **S2 (Joe/UI)** — "Plan" view mode + tool palette (zone brush + bulldoze first), raycast paint onto `zoneGrid`, tasteful tints, day+night.
 - **S3 (Jack/World)** — large-plot survey: commercial zone -> large plots; raise caps; add venue plot kinds.
-- **S4 (Jack/World)** — venue massing, **The Nearest radar walk-in bar FIRST**, then Sportifine club+field, Chef Ott market, Sprout greenhouse (one venue per slice).
+- **S4 (Jack/World)** — venue massing, **The Nearest radar walk-in bar FIRST**, then Sportifine club+field, Chef Otto market, Sprout greenhouse (one venue per slice).
 - **S5 (Joe/UI)** — venue POI/signage realign on the large plots (de-cluttered, distinct) — folds in the current de-dup goal.
 - **S6 (Joe/UI)** — road-paint tool + plot stamp.
 - **Lead** — owns the ColonyState seam, slice sequencing, and the design council; keeps VISION + this spec current.

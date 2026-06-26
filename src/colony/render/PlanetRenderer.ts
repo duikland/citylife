@@ -4219,7 +4219,7 @@ export class PlanetRenderer {
       }
 
       // Signature props give each marquee app a distinct, recognisable place (the bar's radar dish +
-      // vials + bar-chart, Sprout's plants, Sportifine's pitch, Chef Ott's market awning + crates).
+      // vials + bar-chart, Sprout's plants, Sportifine's pitch, Chef Otto's market awning + crates).
       if (biz) g.add(this.buildBusinessProps(biz, bodyW, bodyD, wallH, front));
 
       this.commercialGroup.add(g);

@@ -74,8 +74,8 @@ export const BUSINESSES: Record<BusinessId, Business> = {
   },
   chef_market: {
     id: "chef_market",
-    name: "Chef Ott's Market",
-    app: "Chef Ott kitchen and exercise",
+    name: "Chef Otto's Market",
+    app: "Chef Otto kitchen and exercise",
     tagline: "Cook it, eat it, work it off",
     palette: 0xff6a3d,
     emblem: "crate",
