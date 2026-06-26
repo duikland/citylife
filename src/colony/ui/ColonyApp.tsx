@@ -43,6 +43,7 @@ const PROFESSION_SUGGESTIONS = [
 import { RadioPanel } from "./RadioPanel";
 import { FirstPersonPanel } from "./FirstPersonPanel";
 import { GaragePanel } from "./GaragePanel";
+import { RaceMobileControls } from "./RaceMobileControls";
 import "./colony.css";
 
 // Spec 089 — the CityLife HUD shows only the city-relevant stats (citizens, homesteads, the bank, the
@@ -497,6 +498,20 @@ export function FirstPersonMouseLookBar({
   );
 }
 
+function detectTouchCapable(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    return false;
+  }
+  return (
+    navigator.maxTouchPoints > 0 ||
+    "ontouchstart" in window ||
+    Boolean(window.matchMedia?.("(pointer: coarse)").matches) ||
+    Boolean(window.matchMedia?.("(any-pointer: coarse)").matches) ||
+    (import.meta.env.DEV &&
+      new URLSearchParams(window.location.search).get("touch") === "1")
+  );
+}
+
 export function ColonyApp() {
   const runtime = useRuntime();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -526,6 +541,7 @@ export function ColonyApp() {
   const [rightHudOpen, setRightHudOpen] = useState(false);
   const [mouseLookLocked, setMouseLookLocked] = useState(false);
   const [pointerLockError, setPointerLockError] = useState<string | null>(null);
+  const [touchCapable, setTouchCapable] = useState(detectTouchCapable);
   // Furniture studio (spec 088 Slice D UI) — the design-and-buy controls.
   const [furnKind, setFurnKind] = useState<FurnitureKind>("sofa");
   const [furnName, setFurnName] = useState("");
@@ -565,6 +581,19 @@ export function ColonyApp() {
   useEffect(() => {
     runtime.flushLedgerSync();
   }, [runtime]);
+
+  useEffect(() => {
+    const coarsePointer = window.matchMedia?.("(pointer: coarse)");
+    const updateTouchCapable = () => setTouchCapable(detectTouchCapable());
+    const markTouchCapable = () => setTouchCapable(true);
+    updateTouchCapable();
+    coarsePointer?.addEventListener?.("change", updateTouchCapable);
+    window.addEventListener("touchstart", markTouchCapable, { passive: true });
+    return () => {
+      coarsePointer?.removeEventListener?.("change", updateTouchCapable);
+      window.removeEventListener("touchstart", markTouchCapable);
+    };
+  }, []);
 
   useEffect(() => {
     const renderer = (runtime as unknown as Record<string, unknown>)[
@@ -813,6 +842,11 @@ export function ColonyApp() {
           </button>
         </div>
       )}
+      <RaceMobileControls
+        race={ui.race}
+        runtime={runtime}
+        isTouch={touchCapable}
+      />
 
       <header className="topbar">
         <div className="brand">
