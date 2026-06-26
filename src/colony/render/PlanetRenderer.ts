@@ -32,6 +32,7 @@ import type { Neighborhood } from "../neighborhood";
 import type { CommercialDistrict } from "../commerce/district";
 import { BUSINESSES, type Business, type Emblem } from "../commerce/businesses";
 import { surveyBillboards } from "../commerce/billboards";
+import { surveyBusinessLabels, type BusinessLabel } from "../commerce/businessLabels";
 import { buildCarMesh } from "../car/carMesh";
 import type { CarSpec } from "../car/carSpec";
 import { posterModel, paintPoster } from "../commerce/adCanvas";
@@ -251,6 +252,11 @@ export class PlanetRenderer {
   private commercialSignMats: THREE.MeshStandardMaterial[] = [];
   private commercialMallFloorMat: THREE.MeshStandardMaterial | null = null;
   private commercialFloorMats: THREE.MeshStandardMaterial[] = [];
+  private commercialLabelMats: {
+    sprite: THREE.SpriteMaterial;
+    floor: THREE.MeshBasicMaterial;
+    model: BusinessLabel;
+  }[] = [];
   // Spec 084 S1 — per-lot house mesh key (blueprint + foundation height) for incremental rebuilds.
   private lotHouseKey = new Map<string, string>();
   private settlerGroup = new THREE.Group();
@@ -2688,6 +2694,13 @@ export class PlanetRenderer {
         mallAnchorNightFloorEmissive(s.clock.daylight);
     for (const fm of this.commercialFloorMats)
       fm.emissiveIntensity = commercialShopNightFloorEmissive(s.clock.daylight);
+    for (const entry of this.commercialLabelMats) {
+      const glow =
+        entry.model.nightEmissiveFloor +
+        night * (entry.model.nightEmissivePeak - entry.model.nightEmissiveFloor);
+      entry.sprite.opacity = Math.min(1, glow);
+      entry.floor.opacity = 0.18 + night * 0.34;
+    }
   }
 
   frame() {
@@ -3345,6 +3358,7 @@ export class PlanetRenderer {
     this.commercialSignMats = [];
     this.commercialMallFloorMat = null;
     this.commercialFloorMats = [];
+    this.commercialLabelMats = [];
     this.scene.add(this.commercialGroup);
     const d = this.commercialDistrict;
     if (!d) return;
@@ -3626,6 +3640,11 @@ export class PlanetRenderer {
       this.commercialGroup.add(g);
     });
 
+    for (const label of surveyBusinessLabels(d)) {
+      const plate = this.makeCommercialBusinessLabel(label);
+      if (plate) this.commercialGroup.add(plate);
+    }
+
     // 086-P1 polish — a seaside PROMENADE: warm lamp posts line the high street on alternating verges,
     // glowing after dark so the coastal strip by the lighthouse reads as a lit boardwalk. Cheap static
     // posts; the head emissive stays below the bloom threshold (warmth, not a halo). Disposed with the
@@ -3793,6 +3812,72 @@ export class PlanetRenderer {
         this.commercialGroup.add(grp);
       }
     }
+  }
+
+  private makeCommercialBusinessLabel(label: BusinessLabel): THREE.Object3D | null {
+    if (!isPublicSafe(label.text)) return null;
+    const group = new THREE.Group();
+    group.name = `commercial-label-${label.shopId}`;
+    group.position.set(
+      this.wx(label.x),
+      this.surfaceY(label.x, label.y) + label.height,
+      this.wz(label.y),
+    );
+
+    const cv = document.createElement("canvas");
+    cv.width = 512;
+    cv.height = 160;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return null;
+    const accent = `#${label.color.toString(16).padStart(6, "0")}`;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = "rgba(5, 8, 18, 0.86)";
+    ctx.fillRect(18, 22, cv.width - 36, cv.height - 44);
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 8;
+    ctx.strokeRect(22, 26, cv.width - 44, cv.height - 52);
+    ctx.fillStyle = accent;
+    ctx.fillRect(42, 122, cv.width - 84, 8);
+    ctx.fillStyle = "#fff5d6";
+    ctx.font = "700 42px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 14;
+    ctx.fillText(label.text, cv.width / 2, cv.height / 2, cv.width - 78);
+    ctx.shadowBlur = 0;
+
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const spriteMat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      opacity: label.nightEmissiveFloor,
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+    });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(6.0, 1.9, 1);
+    sprite.name = label.text;
+    sprite.renderOrder = 30;
+
+    const floorMat = new THREE.MeshBasicMaterial({
+      color: label.color,
+      transparent: true,
+      opacity: label.nightEmissiveFloor * 0.28,
+      depthWrite: false,
+      depthTest: false,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    });
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(1.25, 24), floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.72;
+    floor.renderOrder = 29;
+    group.add(floor, sprite);
+    this.commercialLabelMats.push({ sprite: spriteMat, floor: floorMat, model: label });
+    return group;
   }
 
   /** Signature props for a marquee storefront, positioned relative to its plot centre. `front` is the
