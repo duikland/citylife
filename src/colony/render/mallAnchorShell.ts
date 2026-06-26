@@ -12,7 +12,13 @@ export interface MallAnchorShellModel {
   body: { w: number; h: number; d: number; y: number };
   wing: { w: number; h: number; d: number; xOffset: number; y: number };
   roof: { w: number; h: number; d: number; y: number };
-  entranceCanopy: { w: number; h: number; d: number; zOffset: number; y: number };
+  entranceCanopy: {
+    w: number;
+    h: number;
+    d: number;
+    zOffset: number;
+    y: number;
+  };
   nightFloor: {
     w: number;
     d: number;
