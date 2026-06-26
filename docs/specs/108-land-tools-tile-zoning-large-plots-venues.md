@@ -1,4 +1,6 @@
-# Spec 107 — Land Tools: RCT-style tile zoning, large plots, and real venues
+# Spec 108 — Land Tools: RCT-style tile zoning, large plots, and real venues
+
+(Renumbered from 107 to avoid collision with Jack's spec 107 commercial-high-street-variety.)
 
 Status: DESIGN — direction decisions LOCKED (see Decisions) · Owner: lead (design) + Jack/World & Joe/UI (slices) · Date: 2026-06-26
 
