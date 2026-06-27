@@ -2,11 +2,24 @@ import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { getAuthClient } from "../authClient";
 import { LoginScreen } from "./LoginScreen";
 import { CinematicBackdrop } from "./CinematicBackdrop";
+import { VisitorSignupScreen } from "./VisitorSignupScreen";
+import { VisitorUnlockScreen } from "./VisitorUnlockScreen";
+
+type View =
+  | "login"
+  | "visitor-signup"
+  | "visitor-pending"
+  | "visitor-unlock"
+  | "visitor-activated";
 
 /** Gates its children behind operator login. Renders the LoginScreen until authenticated.
  *  On mount, tries a dev auto-login (async — reads VITE_OPERATOR_EMAIL + VITE_OPERATOR_PASSWORD
  *  from the gitignored .env.local and hits the kooker auth service). Shows nothing during that
- *  brief check so there's no login flash when auto-login is configured. */
+ *  brief check so there's no login flash when auto-login is configured.
+ *
+ *  Visitor self-service flow (no operator account required):
+ *    login → visitor-signup → visitor-pending → visitor-unlock → visitor-activated → login
+ */
 export function AuthGate({ children }: { children: ReactNode }) {
   const auth = useMemo(() => getAuthClient(), []);
   // QA/dev affordance: ?login=1 forces the login form to show even when a cached session or dev
@@ -25,6 +38,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // After 10s untouched, the login screen drops into a cinematic fly-around backdrop (LoginScreen owns
   // the idle timer; we own the backdrop). It's a screensaver behind the card — login is still required.
   const [idle, setIdle] = useState(false);
+  // The visitor self-service flow's view state machine (only reached when not authed).
+  const [view, setView] = useState<View>("login");
+  const [signedUpEmail, setSignedUpEmail] = useState("");
 
   useEffect(() => {
     if (forceLogin) {
@@ -70,18 +86,97 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (isDev && isLocalHost && (localTestSetting || urlSkip))
     return <>{children}</>;
   if (checking) return null;
-  if (!authed)
+  if (authed) return <>{children}</>;
+
+  const backToLogin = () => setView("login");
+
+  if (view === "visitor-signup") {
     return (
-      <>
-        {idle && <CinematicBackdrop />}
-        <LoginScreen
-          auth={auth}
-          onAuthed={() => setAuthed(true)}
-          onIdle={() => setIdle(true)}
-          onActive={() => setIdle(false)}
-          isCinematic={idle}
-        />
-      </>
+      <VisitorSignupScreen
+        onSignedUp={(email) => {
+          setSignedUpEmail(email);
+          setView("visitor-pending");
+        }}
+        onBackToLogin={backToLogin}
+      />
     );
-  return <>{children}</>;
+  }
+
+  if (view === "visitor-pending") {
+    return (
+      <div className="login">
+        <div className="login-card">
+          <div className="login-brand">
+            City<span>Life</span>
+          </div>
+          <div className="login-sub">Registration received</div>
+          <p className="login-blurb">
+            Your account is pending operator review. Once approved, you'll
+            receive a one-time unlock code. Enter it below when you have it.
+          </p>
+          <div className="visitor-pending-badge">Awaiting activation</div>
+          <button
+            className="login-btn"
+            type="button"
+            onClick={() => setView("visitor-unlock")}
+          >
+            I have my unlock code
+          </button>
+          <div className="login-hint visitor-back">
+            <button type="button" className="login-link" onClick={backToLogin}>
+              Back to sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "visitor-unlock") {
+    return (
+      <VisitorUnlockScreen
+        initialEmail={signedUpEmail}
+        onActivated={() => setView("visitor-activated")}
+        onBackToLogin={backToLogin}
+      />
+    );
+  }
+
+  if (view === "visitor-activated") {
+    return (
+      <div className="login">
+        <div className="login-card">
+          <div className="login-brand">
+            City<span>Life</span>
+          </div>
+          <div className="login-sub">Account activated</div>
+          <p className="login-blurb">
+            Your account is now active. Sign in with your email and password to
+            enter the Kookerverse.
+          </p>
+          <div className="visitor-activated-badge">Ready to enter</div>
+          <button className="login-btn" type="button" onClick={backToLogin}>
+            Sign in now
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // The default (login) view: the form, with the idle→cinematic backdrop behind it AND the visitor
+  // entry points wired in.
+  return (
+    <>
+      {idle && <CinematicBackdrop />}
+      <LoginScreen
+        auth={auth}
+        onAuthed={() => setAuthed(true)}
+        onVisitorSignup={() => setView("visitor-signup")}
+        onVisitorUnlock={() => setView("visitor-unlock")}
+        onIdle={() => setIdle(true)}
+        onActive={() => setIdle(false)}
+        isCinematic={idle}
+      />
+    </>
+  );
 }

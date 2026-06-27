@@ -4,23 +4,29 @@ import type { AuthClient } from "../authClient";
 /** How long the login screen may sit untouched before it drops into the cinematic attract backdrop. */
 const IDLE_MS = 10_000;
 
-/** Border Authority login — real kooker account, authenticated against the kooker auth service. */
-export function LoginScreen({
-  auth,
-  onAuthed,
-  onIdle,
-  onActive,
-  isCinematic,
-}: {
+interface Props {
   auth: AuthClient;
   onAuthed: () => void;
+  onVisitorSignup: () => void;
+  onVisitorUnlock: () => void;
   /** Fired after IDLE_MS of no interaction — the operator wants the cinematic fly-around to take over. */
   onIdle?: () => void;
   /** Fired the moment the operator stirs (mouse/key/touch) — return from the cinematic to the form. */
   onActive?: () => void;
   /** When true, the form root goes transparent so the cinematic backdrop shows through behind the card. */
   isCinematic?: boolean;
-}) {
+}
+
+/** Border Authority login — real kooker account, authenticated against the kooker auth service. */
+export function LoginScreen({
+  auth,
+  onAuthed,
+  onVisitorSignup,
+  onVisitorUnlock,
+  onIdle,
+  onActive,
+  isCinematic,
+}: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +125,24 @@ export function LoginScreen({
         <button className="login-btn" type="submit" disabled={busy}>
           {busy ? "Authenticating…" : "Enter the Kookerverse"}
         </button>
+        <div className="login-hint visitor-links">
+          New to CityLife?{" "}
+          <button
+            type="button"
+            className="login-link"
+            onClick={onVisitorSignup}
+          >
+            Sign up as a visitor
+          </button>
+          {" · "}
+          <button
+            type="button"
+            className="login-link"
+            onClick={onVisitorUnlock}
+          >
+            I have an unlock code
+          </button>
+        </div>
       </form>
     </div>
   );
