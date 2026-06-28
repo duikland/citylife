@@ -448,7 +448,8 @@ body,
   align-items: center;
   justify-content: center;
   background-color: #05070f;
-  background-image: radial-gradient(
+  background-image:
+    radial-gradient(
       1px 1px at 15px 25px,
       rgba(255, 255, 255, 0.75) 50%,
       transparent 51%
@@ -544,7 +545,42 @@ body,
   padding: 1px 5px;
   border-radius: 4px;
 }
-
+.login-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+  text-decoration: underline;
+}
+.login-link:hover {
+  filter: brightness(1.15);
+}
+.visitor-links {
+  margin-top: 6px;
+  text-align: center;
+  line-height: 1.8;
+}
+.visitor-back {
+  text-align: center;
+  margin-top: 4px;
+}
+.visitor-code-input {
+  font-family: "Courier New", monospace;
+  letter-spacing: 0.1em;
+  font-size: 13px !important;
+}
+.visitor-pending-badge {
+  background: rgba(230, 200, 77, 0.15);
+  border: 1px solid rgba(230, 200, 77, 0.35);
+  color: #e6c84d;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  text-align: center;
+  margin: 4px 0;
+}
 /* Border Control */
 .border-modal {
   width: 470px;

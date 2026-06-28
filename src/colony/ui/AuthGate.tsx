@@ -2,11 +2,20 @@ import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { getAuthClient } from "../authClient";
 import { LoginScreen } from "./LoginScreen";
 import { CinematicBackdrop } from "./CinematicBackdrop";
+import { VisitorSignupScreen } from "./VisitorSignupScreen";
+
+type View = "login" | "visitor-signup";
 
 /** Gates its children behind operator login. Renders the LoginScreen until authenticated.
  *  On mount, tries a dev auto-login (async — reads VITE_OPERATOR_EMAIL + VITE_OPERATOR_PASSWORD
  *  from the gitignored .env.local and hits the kooker auth service). Shows nothing during that
- *  brief check so there's no login flash when auto-login is configured. */
+ *  brief check so there's no login flash when auto-login is configured.
+ *
+ *  Visitor self-service flow (no operator account required): a brand-new user takes the
+ *  "Sign up as a visitor" link to request access; everyone else just signs in. A not-yet-activated
+ *  visitor who signs in is prompted for their unlock code INLINE on the login screen (no separate
+ *  pending/unlock screens), which activates the account and signs them straight in.
+ */
 export function AuthGate({ children }: { children: ReactNode }) {
   const auth = useMemo(() => getAuthClient(), []);
   // QA/dev affordance: ?login=1 forces the login form to show even when a cached session or dev
@@ -25,6 +34,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // After 10s untouched, the login screen drops into a cinematic fly-around backdrop (LoginScreen owns
   // the idle timer; we own the backdrop). It's a screensaver behind the card — login is still required.
   const [idle, setIdle] = useState(false);
+  // login (default) vs the signup screen for brand-new visitors. Reached only when not authed.
+  const [view, setView] = useState<View>("login");
 
   useEffect(() => {
     if (forceLogin) {
@@ -70,18 +81,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (isDev && isLocalHost && (localTestSetting || urlSkip))
     return <>{children}</>;
   if (checking) return null;
-  if (!authed)
-    return (
-      <>
-        {idle && <CinematicBackdrop />}
-        <LoginScreen
-          auth={auth}
-          onAuthed={() => setAuthed(true)}
-          onIdle={() => setIdle(true)}
-          onActive={() => setIdle(false)}
-          isCinematic={idle}
-        />
-      </>
-    );
-  return <>{children}</>;
+  if (authed) return <>{children}</>;
+
+  if (view === "visitor-signup") {
+    return <VisitorSignupScreen onBackToLogin={() => setView("login")} />;
+  }
+
+  // The default (login) view: the form, with the idle→cinematic backdrop behind it. A not-yet-active
+  // visitor who signs in is prompted for their unlock code inline by LoginScreen itself.
+  return (
+    <>
+      {idle && <CinematicBackdrop />}
+      <LoginScreen
+        auth={auth}
+        onAuthed={() => setAuthed(true)}
+        onVisitorSignup={() => setView("visitor-signup")}
+        onIdle={() => setIdle(true)}
+        onActive={() => setIdle(false)}
+        isCinematic={idle}
+      />
+    </>
+  );
 }
