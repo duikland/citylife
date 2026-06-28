@@ -1,4 +1,4 @@
-# Spec 116 — Kookerbos clean reserved plots
+# Spec 116 — Kookerbos Woods clean reserved plots
 
 ## Why
 
@@ -8,11 +8,11 @@ Operator feedback on the live Kookerbos Woods render found three placement failu
 2. one plot visually crossed the road,
 3. shore-side plots could sit on beach/sea-edge sand.
 
-Kookerbos must provide two small, clean, reserved house plots in the woods: one for the founder and one for Gerhard.
+Kookerbos Woods must provide two small, clean, reserved house plots in the actual woods-side settlement by the island/lagoon: one for the founder and one for Gerhard.
 
 ## Mechanic
 
-- Kookerbos is a named satellite neighbourhood in the distributed-city set.
+- `Kookerbos Woods` is the named satellite neighbourhood for the island/lagoon woods side; procedural anchor order must not assign that name to an unrelated road cluster.
 - Its first two small woods plots, ordered from the upper/above-road side then left-to-right, are reserved for:
   - `citizen_irwin`
   - `citizen_gerhard`

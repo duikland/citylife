@@ -17,17 +17,33 @@ function footprintBox(p: Parcel) {
   };
 }
 
+function namedPlaces(runtime: ColonyRuntime): { name: string; x: number; y: number; radius: number }[] {
+  return (runtime as unknown as { neighbourhoodPlaces: { name: string; x: number; y: number; radius: number }[] }).neighbourhoodPlaces;
+}
+
+function kookerbosWoods(runtime: ColonyRuntime): { name: string; x: number; y: number; radius: number } {
+  const place = namedPlaces(runtime).find((p) => p.name === "Kookerbos Woods");
+  expect(place).toBeTruthy();
+  return place!;
+}
+
 function sortedKookerbosLots(runtime: ColonyRuntime): Parcel[] {
-  const places = (runtime as unknown as { neighbourhoodPlaces: { name: string; x: number; y: number; radius: number }[] }).neighbourhoodPlaces;
-  const kookerbos = places.find((p) => p.name === "Kookerbos");
-  expect(kookerbos).toBeTruthy();
+  const place = kookerbosWoods(runtime);
   return runtime
     .lots()
-    .filter((lot) => Math.hypot(lot.x - kookerbos!.x, lot.y - kookerbos!.y) <= kookerbos!.radius)
+    .filter((lot) => Math.hypot(lot.x - place.x, lot.y - place.y) <= place.radius)
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 describe("Kookerbos clean reserved plots", () => {
+  it("names the actual lagoon-side woods settlement Kookerbos Woods", () => {
+    const runtime = new ColonyRuntime(4242);
+    const place = kookerbosWoods(runtime);
+    expect(place.x, "seed 4242 Kookerbos Woods is on the island/lagoon woods side, not the opposite road cluster").toBeGreaterThan(380);
+    expect(place.y, "seed 4242 Kookerbos Woods is on the island/lagoon woods side, not the opposite road cluster").toBeLessThan(180);
+    expect(namedPlaces(runtime).some((p) => p.name === "Kookerbos")).toBe(false);
+  });
+
   it("reserves two small woods plots for the founder and Gerhard, unowned for signup purchase", () => {
     for (const seed of SEEDS) {
       const runtime = new ColonyRuntime(seed);

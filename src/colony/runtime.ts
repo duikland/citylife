@@ -98,6 +98,7 @@ import { plotPriceKook, kookToZar, starterDeposit } from "./land";
 import {
   nearestNeighbourhoodLabel,
   type NamedNeighbourhood,
+  type CityLifeNeighbourhoodName,
   type NeighbourhoodLabel,
 } from "./neighbourhoodNames";
 import { loadCar, saveCar } from "./car/garageStore";
@@ -979,11 +980,38 @@ export class ColonyRuntime {
     // Spec 086 — SATELLITE HAMLETS in the woods + hills, each routed + placed AROUND everything already
     // taken (the coast, the commercial reserve, prior hamlets), so scattered clusters never overlap.
     const satellites: Neighborhood[] = [];
-    for (const a of findSatelliteAnchors(
+    const satelliteAnchors: Cell[] = [];
+    const anchors = findSatelliteAnchors(
       t0,
       { x: t0.landing.x, y: t0.landing.y },
       6,
-    )) {
+    );
+    const kookerbosAnchor = anchors
+      .filter((a) => t0.biome[t0.idx(a.x, a.y)] === Biome.Forest)
+      .sort((a, b) => a.y - b.y || b.x - a.x)[0];
+    const fitKookerbosAnchor = (anchor: Cell): Cell => {
+      let best = anchor;
+      let bestLots = -1;
+      let bestD = Infinity;
+      for (let dy = -16; dy <= 16; dy += 4) {
+        for (let dx = -16; dx <= 16; dx += 4) {
+          const c = { x: anchor.x + dx, y: anchor.y + dy };
+          if (!t0.inBounds(c.x, c.y) || t0.biome[t0.idx(c.x, c.y)] !== Biome.Forest) continue;
+          const nbhd = makeNeighborhoodAt(t0, c, { small: true, blocked: taken });
+          const d = Math.hypot(c.x - anchor.x, c.y - anchor.y);
+          if (nbhd.lots.length > bestLots || (nbhd.lots.length === bestLots && d < bestD)) {
+            best = c;
+            bestLots = nbhd.lots.length;
+            bestD = d;
+          }
+        }
+      }
+      return best;
+    };
+    for (const rawAnchor of anchors) {
+      const a = kookerbosAnchor && rawAnchor.x === kookerbosAnchor.x && rawAnchor.y === kookerbosAnchor.y
+        ? fitKookerbosAnchor(rawAnchor)
+        : rawAnchor;
       const nbhd = makeNeighborhoodAt(t0, a, { small: true, blocked: taken });
       if (nbhd.lots.length === 0) continue;
       const b = t0.biome[t0.idx(a.x, a.y)];
@@ -999,6 +1027,7 @@ export class ColonyRuntime {
       addCells(nbhd.verge);
       for (const c of cells) residentialKeys.add(`${c.x},${c.y}`);
       satellites.push(nbhd);
+      satelliteAnchors.push(a);
     }
     const hoodCenter = (nbhd: Neighborhood): { x: number; y: number } => {
       const cells = nbhd.carriage.length > 0 ? nbhd.carriage : nbhd.lots.map((l) => ({ x: l.x, y: l.y }));
@@ -1034,16 +1063,25 @@ export class ColonyRuntime {
         radius: 30,
       });
     }
-    const unusedSatelliteNames = new Set(["Kookerbos", "Ridgeline", "Lantern Hollow"] as const);
+    const satelliteNames = new Map<Neighborhood, CityLifeNeighbourhoodName>();
+    const satelliteByAnchor = satellites.map((nbhd, i) => ({ nbhd, anchor: satelliteAnchors[i]! }));
+    const kookerbosSatellite =
+      satelliteByAnchor
+        .filter(({ anchor }) => t0.biome[t0.idx(anchor.x, anchor.y)] === Biome.Forest)
+        .sort((a, b) => a.anchor.y - b.anchor.y || b.anchor.x - a.anchor.x)[0]?.nbhd ??
+      satelliteByAnchor.sort((a, b) => a.anchor.y - b.anchor.y || b.anchor.x - a.anchor.x)[0]?.nbhd;
+    if (kookerbosSatellite) satelliteNames.set(kookerbosSatellite, "Kookerbos Woods");
+    const unusedSatelliteNames = new Set(["Ridgeline", "Lantern Hollow"] as const);
     for (const nbhd of satellites) {
       const c = hoodCenter(nbhd);
+      const existing = satelliteNames.get(nbhd);
       const b = t0.biome[t0.idx(c.x, c.y)];
-      const preferred = b === Biome.Forest ? "Kookerbos" : b === Biome.Highland ? "Ridgeline" : "Lantern Hollow";
-      const name = unusedSatelliteNames.has(preferred)
+      const preferred: CityLifeNeighbourhoodName = b === Biome.Highland ? "Ridgeline" : "Lantern Hollow";
+      const name = existing ?? (unusedSatelliteNames.has(preferred)
         ? preferred
-        : (unusedSatelliteNames.values().next().value ?? null);
+        : (unusedSatelliteNames.values().next().value ?? null));
       if (!name) continue;
-      unusedSatelliteNames.delete(name);
+      unusedSatelliteNames.delete(name as "Ridgeline" | "Lantern Hollow");
       places.push({ name, ...c, radius: 32 });
     }
     this.neighbourhoodPlaces = places;
@@ -2578,7 +2616,7 @@ export class ColonyRuntime {
    *  founder plus Gerhard. They stay unowned/unbuilt so the matching reserved citizen can still buy/build
    *  through the normal signup economy, while newcomer auto-assignment skips them via reservedFor. */
   private reserveKookerbosPlots(): void {
-    const kookerbos = this.neighbourhoodPlaces.find((p) => p.name === "Kookerbos");
+    const kookerbos = this.neighbourhoodPlaces.find((p) => p.name === "Kookerbos Woods");
     if (!kookerbos) return;
     const lots = this.neighborhood.lots
       .filter((lot) => Math.hypot(lot.x - kookerbos.x, lot.y - kookerbos.y) <= kookerbos.radius)
