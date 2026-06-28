@@ -63,7 +63,7 @@ describe("Kookerbos clean reserved plots", () => {
     }
   });
 
-  it("keeps every Kookerbos plot footprint road-clear, beach-clear, sea-clear and buildable", () => {
+  it("keeps every Kookerbos plot footprint road-clear, road-adjacent-clear, beach-clear, sea-clear and buildable", () => {
     for (const seed of SEEDS) {
       const runtime = new ColonyRuntime(seed);
       const terrain = runtime.sim.state.terrain;
@@ -75,7 +75,16 @@ describe("Kookerbos clean reserved plots", () => {
           for (let x = b.minX; x <= b.maxX; x++) {
             const i = terrain.idx(x, y);
             const biome = terrain.biome[i];
-            if (roads.has(`${x},${y}`)) offenders.push(`seed ${seed} ${lot.id} road ${x},${y}`);
+            for (const [dx, dy] of [
+              [0, 0],
+              [1, 0],
+              [-1, 0],
+              [0, 1],
+              [0, -1],
+            ] as const) {
+              if (roads.has(`${x + dx},${y + dy}`))
+                offenders.push(`seed ${seed} ${lot.id} road-clearance ${x},${y} touches road ${x + dx},${y + dy}`);
+            }
             if (terrain.buildable[i] === 0) offenders.push(`seed ${seed} ${lot.id} unbuildable ${x},${y}`);
             if (terrain.isWater(x, y)) offenders.push(`seed ${seed} ${lot.id} water ${x},${y}`);
             if ([Biome.Beach, Biome.Ocean, Biome.Shallows].includes(biome))

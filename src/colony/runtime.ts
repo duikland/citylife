@@ -838,7 +838,7 @@ export class ColonyRuntime {
     // then claim the COMMERCIAL reserve off its avenue, THEN scatter satellite hamlets that avoid
     // everything already placed (a shared `taken` set), then stitch trunk roads between them. Without
     // reserving commerce first, the satellites ate its land and the shop district vanished.
-    const footprintCells = (nbhd: Neighborhood): { x: number; y: number }[] => {
+    const parcelFootprintCells = (nbhd: Neighborhood): { x: number; y: number }[] => {
       const out: { x: number; y: number }[] = [];
       for (const lot of nbhd.lots) {
         let minX = Infinity,
@@ -853,8 +853,13 @@ export class ColonyRuntime {
         }
         for (let y = minY; y <= maxY; y++)
           for (let x = minX; x <= maxX; x++) out.push({ x, y });
-        for (const d of lot.driveway) out.push({ x: d.x, y: d.y });
       }
+      return out;
+    };
+    const footprintCells = (nbhd: Neighborhood): { x: number; y: number }[] => {
+      const out = parcelFootprintCells(nbhd);
+      for (const lot of nbhd.lots)
+        for (const d of lot.driveway) out.push({ x: d.x, y: d.y });
       return out;
     };
     // `taken` = every placed cell (parcels + their roads + the commercial reserve); satellites and the
@@ -865,7 +870,22 @@ export class ColonyRuntime {
       for (const c of cells) taken.add(`${c.x},${c.y}`);
     };
     const residentialKeys = new Set<string>();
+    const residentialRoadClearanceKeys = new Set<string>();
+    const addRoadClearance = (cells: { x: number; y: number }[]) => {
+      for (const c of cells) {
+        for (const [dx, dy] of [
+          [0, 0],
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const) {
+          residentialRoadClearanceKeys.add(`${c.x + dx},${c.y + dy}`);
+        }
+      }
+    };
     const primaryCells = footprintCells(this.neighborhood);
+    addRoadClearance(parcelFootprintCells(this.neighborhood));
     for (const c of this.neighborhood.verge)
       this.sim.state.roadSet.add(`${c.x},${c.y}`);
     reserveParcelLand(this.sim.state, primaryCells);
@@ -1019,6 +1039,7 @@ export class ColonyRuntime {
       for (const lot of nbhd.lots) lot.id = `${name}_${lot.id}`; // unique id; never collides with lot_1/lot_2
       this.neighborhood.parcels.push(...nbhd.parcels); // parcels === lots (same array ref), so lots update too
       const cells = footprintCells(nbhd);
+      addRoadClearance(parcelFootprintCells(nbhd));
       reserveParcelLand(this.sim.state, cells);
       mergeAvenue(this.sim.state, nbhd.carriage);
       for (const c of nbhd.verge) this.sim.state.roadSet.add(`${c.x},${c.y}`);
@@ -1176,14 +1197,28 @@ export class ColonyRuntime {
     const paveLink = (a: Cell[], b: Cell[]) => {
       if (a.length === 0 || b.length === 0) return;
       const [from, to] = nearestPair(a, b);
+      const endpointRoads = new Set([
+        ...this.sim.state.roads.map((r) => `${r.x},${r.y}`),
+        ...a.map((c) => `${c.x},${c.y}`),
+        ...b.map((c) => `${c.x},${c.y}`),
+      ]);
+      const linkRoadAllowed = (x: number, y: number) =>
+        !residentialKeys.has(`${x},${y}`) &&
+        (!residentialRoadClearanceKeys.has(`${x},${y}`) || endpointRoads.has(`${x},${y}`));
       const path =
         leastCostPath(t0, from, to, {
           slopeWeight: 0.5,
-          diagonal: true,
+          diagonal: false,
           blocked: (x, y) => residentialKeys.has(`${x},${y}`),
         }) ?? [];
       if (path.length === 0) return;
-      mergeAvenue(this.sim.state, layRoad(path, 1));
+      mergeAvenue(
+        this.sim.state,
+        [
+          ...layRoad(path, 1),
+          ...path,
+        ].filter((c) => linkRoadAllowed(c.x, c.y)),
+      );
     };
     const coast = this.neighborhood.carriage;
     for (let i = 0; i < satellites.length; i++) {
