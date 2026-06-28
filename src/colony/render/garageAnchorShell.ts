@@ -66,9 +66,9 @@ export function buildGarageAnchorShellModel(
   const serviceBay = {
     w: footprint.w * 0.58,
     h: 2.15,
-    d: footprint.d * 0.56,
+    d: footprint.d * 0.33,
     x: footprint.w * 0.21,
-    z: -footprint.d * 0.06,
+    z: 0,
     y: 1.075,
     doorCount: 3 as const,
     bayDoorW: footprint.w * 0.135,
@@ -94,8 +94,8 @@ export function buildGarageAnchorShellModel(
   };
   const forecourt = {
     w: footprint.w * 0.92,
-    d: footprint.d * 0.34,
-    frontOffset: footprint.d * 0.52,
+    d: footprint.d * 0.3,
+    frontOffset: footprint.d * 0.26,
     y: 0.045,
   };
   return {
@@ -111,8 +111,8 @@ export function buildGarageAnchorShellModel(
     pylon,
     forecourt,
     nightFloor: {
-      w: footprint.w * 0.98,
-      d: footprint.d * 0.92,
+      w: footprint.w * 0.93,
+      d: footprint.d * 0.86,
       y: 0.035,
       emissiveIntensity: { day: 0.12, night: 1.05 },
     },

@@ -27,6 +27,7 @@ Implementation contract now used by the code:
 - The render group is named `commercialDistrict.garagePad.garageAnchorShell` with public-safe `userData`.
 - The night floor mesh is named `garageAnchorNightFloor`; `garageAnchorNightFloorEmissive(daylight)` clamps to `0.12` by day and `1.05` by night.
 - The visible silhouette must include `garageAnchorGlassShowroom`, `garageAnchorGlassShowroomFront`, `garageAnchorShowroomHeaderSign`, `garageAnchorServiceBayBlock`, `garageAnchorRollupDoor.*`, `garageAnchorCornerPylonSign`, `garageAnchorRoadFacingForecourt`, and `garageAnchorDisplayCar.*` children.
+- The pylon, forecourt, display cars, and drive-in apron are visual footprint, not road furniture: the surveyed pylon island is inset from the intersection corner, at least three Manhattan cells from final widened roads, and the rendered forecourt/apron samples must stay inside the garage pad so the post/apron cannot read as standing in the crossroad.
 
 ### P2 — Orient the garage forecourt/showroom toward the road (folded into P1)
 

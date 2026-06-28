@@ -65,6 +65,47 @@ function localToGrid(angle: number, local: { x: number; z: number }) {
   };
 }
 
+function modelLocalToAbsoluteGrid(
+  center: { x: number; y: number },
+  angle: number,
+  local: { x: number; z: number },
+) {
+  const offset = localToGrid(angle, local);
+  return { x: center.x + offset.x, y: center.y + offset.y };
+}
+
+function rectSamples(local: { x: number; z: number; w: number; d: number }) {
+  return [
+    { x: local.x, z: local.z },
+    { x: local.x - local.w / 2, z: local.z - local.d / 2 },
+    { x: local.x + local.w / 2, z: local.z - local.d / 2 },
+    { x: local.x - local.w / 2, z: local.z + local.d / 2 },
+    { x: local.x + local.w / 2, z: local.z + local.d / 2 },
+  ];
+}
+
+function expectInsidePad(
+  p: { x: number; y: number },
+  pad: { x: number; y: number; w: number; h: number },
+) {
+  expect(p.x).toBeGreaterThanOrEqual(pad.x - 0.01);
+  expect(p.y).toBeGreaterThanOrEqual(pad.y - 0.01);
+  expect(p.x).toBeLessThanOrEqual(pad.x + pad.w - 1 + 0.01);
+  expect(p.y).toBeLessThanOrEqual(pad.y + pad.h - 1 + 0.01);
+}
+
+function nearestRoadDistance(
+  p: { x: number; y: number },
+  roads: ReadonlySet<string>,
+): number {
+  let nearest = Infinity;
+  for (const key of roads) {
+    const [x, y] = key.split(",").map(Number) as [number, number];
+    nearest = Math.min(nearest, Math.abs(Math.round(p.x) - x) + Math.abs(Math.round(p.y) - y));
+  }
+  return nearest;
+}
+
 describe("garage landmark site and render model (spec 109 P1/P2)", () => {
   it("surveys one deterministic public-safe garage landmark pad per commercial district", () => {
     expect(COLONY.commerce.garagePadW).toBe(16);
@@ -96,8 +137,8 @@ describe("garage landmark site and render model (spec 109 P1/P2)", () => {
       expect(Math.abs(iy)).toBe(1);
       expect(g.crossFrontDir.x).toBe(0);
       expect(g.islandCell).toEqual({
-        x: intersection.x - ix,
-        y: intersection.y - iy,
+        x: intersection.x - ix * 3,
+        y: intersection.y - iy * 3,
       });
       expect(g.x).toBe(ix < 0 ? intersection.x + 1 : intersection.x - g.w);
       expect(g.y).toBe(iy < 0 ? intersection.y + 1 : intersection.y - g.h);
@@ -162,6 +203,51 @@ describe("garage landmark site and render model (spec 109 P1/P2)", () => {
       const pylonGrid = localToGrid(model.facingAngle, model.pylon);
       expect(Math.round(center.x + pylonGrid.x)).toBe(g.islandCell.x);
       expect(Math.round(center.y + pylonGrid.y)).toBe(g.islandCell.y);
+    }
+  }, 30000);
+
+  it("keeps the pylon forecourt and display apron visually inside the garage pad and away from final roads", () => {
+    for (const seed of SEEDS) {
+      const rt = rtFor(seed);
+      const g = rt.commercialDistrict!.garagePad!;
+      const model = buildGarageAnchorShellModel(g, () => 1.25);
+      const center = {
+        x: g.x + (g.w - 1) / 2,
+        y: g.y + (g.h - 1) / 2,
+      };
+      const roads = new Set(rt.sim.state.roads.map((c) => `${c.x},${c.y}`));
+
+      const pylonAbs = modelLocalToAbsoluteGrid(center, model.facingAngle, model.pylon);
+      expectInsidePad(pylonAbs, g);
+      expect(nearestRoadDistance(pylonAbs, roads)).toBeGreaterThanOrEqual(3);
+
+      for (const sample of rectSamples({
+        x: 0,
+        z: model.forecourt.frontOffset,
+        w: model.forecourt.w,
+        d: model.forecourt.d,
+      })) {
+        const abs = modelLocalToAbsoluteGrid(center, model.facingAngle, sample);
+        expectInsidePad(abs, g);
+      }
+
+      const bayFaceZ = model.serviceBay.z + model.serviceBay.d / 2 + 0.045;
+      const apronCenterZ = bayFaceZ + model.serviceBay.d * 0.42;
+      const apronD = model.serviceBay.d * 0.85;
+      for (const sample of rectSamples({
+        x: model.serviceBay.x,
+        z: apronCenterZ,
+        w: model.serviceBay.bayDoorW * 1.35,
+        d: apronD,
+      })) {
+        const abs = modelLocalToAbsoluteGrid(center, model.facingAngle, sample);
+        expectInsidePad(abs, g);
+      }
+
+      for (const car of model.displayCars) {
+        const abs = modelLocalToAbsoluteGrid(center, model.facingAngle, car);
+        expectInsidePad(abs, g);
+      }
     }
   }, 30000);
 
