@@ -3822,14 +3822,18 @@ export class PlanetRenderer {
     pylon.castShadow = true;
 
     const pylonCap = new THREE.Mesh(
-      new THREE.BoxGeometry(model.pylon.w * 2.35, 0.9, model.pylon.d * 1.35),
+      new THREE.BoxGeometry(model.pylon.w * 1.18, 0.28, model.pylon.d * 1.24),
       pylonMat,
     );
     pylonCap.name = "garageAnchorPylonLightBox";
-    pylonCap.position.set(model.pylon.x, model.pylon.h + 0.28, model.pylon.z);
+    pylonCap.position.set(
+      model.pylon.x,
+      model.pylon.y + model.pylon.h / 2 + 0.18,
+      model.pylon.z,
+    );
 
     const pylonCyanPanel = new THREE.Mesh(
-      new THREE.BoxGeometry(model.pylon.w * 1.45, 0.12, model.pylon.d * 1.52),
+      new THREE.BoxGeometry(model.pylon.w * 0.86, 0.1, model.pylon.d * 1.36),
       new THREE.MeshStandardMaterial({
         color: 0x79edff,
         emissive: 0x35d8ff,
@@ -3840,12 +3844,12 @@ export class PlanetRenderer {
     pylonCyanPanel.name = "garageAnchorPylonCyanEdgePanel";
     pylonCyanPanel.position.set(
       model.pylon.x,
-      model.pylon.h + 0.78,
+      model.pylon.y + model.pylon.h / 2 + 0.34,
       model.pylon.z,
     );
 
     const pylonRoadFace = new THREE.Mesh(
-      new THREE.BoxGeometry(model.pylon.w * 1.9, model.pylon.h * 0.34, 0.08),
+      new THREE.BoxGeometry(model.pylon.w * 0.92, model.pylon.h * 0.46, 0.06),
       new THREE.MeshStandardMaterial({
         color: 0xffcf74,
         emissive: 0xff9f2f,
@@ -3856,8 +3860,8 @@ export class PlanetRenderer {
     pylonRoadFace.name = "garageAnchorRoadFacingPylonSignFace";
     pylonRoadFace.position.set(
       model.pylon.x,
-      model.pylon.h * 0.74,
-      model.pylon.z + model.pylon.d * 0.78,
+      model.pylon.y,
+      model.pylon.z + model.pylon.d / 2 + 0.035,
     );
 
     for (const [i, car] of model.displayCars.entries()) {

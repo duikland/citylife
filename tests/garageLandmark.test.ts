@@ -191,7 +191,7 @@ describe("garage landmark site and render model (spec 109 P1/P2)", () => {
     }
   }, 30000);
 
-  it("places the pylon model on the surveyed corner island cell", () => {
+  it("mounts the garage sign on the building frontage instead of as a freestanding driveway pole", () => {
     for (const seed of SEEDS) {
       const d = rtFor(seed).commercialDistrict!;
       const g = d.garagePad!;
@@ -200,13 +200,28 @@ describe("garage landmark site and render model (spec 109 P1/P2)", () => {
         x: g.x + (g.w - 1) / 2,
         y: g.y + (g.h - 1) / 2,
       };
-      const pylonGrid = localToGrid(model.facingAngle, model.pylon);
-      expect(Math.round(center.x + pylonGrid.x)).toBe(g.islandCell.x);
-      expect(Math.round(center.y + pylonGrid.y)).toBe(g.islandCell.y);
+      const pylonAbs = modelLocalToAbsoluteGrid(
+        center,
+        model.facingAngle,
+        model.pylon,
+      );
+
+      expectInsidePad(pylonAbs, g);
+      expect(model.pylon.w).toBeGreaterThanOrEqual(model.pylon.h * 3);
+      expect(model.pylon.h).toBeLessThanOrEqual(0.85);
+      expect(model.pylon.y - model.pylon.h / 2).toBeGreaterThanOrEqual(
+        model.serviceBay.h - 0.55,
+      );
+      expect(model.pylon.z).toBeLessThanOrEqual(
+        model.serviceBay.z + model.serviceBay.d / 2 + 0.22,
+      );
+      expect(Math.abs(model.pylon.x - model.serviceBay.x)).toBeLessThanOrEqual(
+        model.serviceBay.w * 0.1,
+      );
     }
   }, 30000);
 
-  it("keeps the pylon forecourt and display apron visually inside the garage pad and away from final roads", () => {
+  it("keeps the facade sign forecourt and display apron visually inside the garage pad and away from final roads", () => {
     for (const seed of SEEDS) {
       const rt = rtFor(seed);
       const g = rt.commercialDistrict!.garagePad!;
@@ -258,7 +273,10 @@ describe("garage landmark site and render model (spec 109 P1/P2)", () => {
     expect(model.isPublicSafe).toBe(true);
     expect(model.showroom.w).toBeGreaterThan(model.serviceBay.bayDoorW);
     expect(model.serviceBay.doorCount).toBe(3);
-    expect(model.pylon.h).toBeGreaterThan(model.showroom.h);
+    expect(model.pylon.w).toBeGreaterThan(model.pylon.h * 3);
+    expect(model.pylon.y - model.pylon.h / 2).toBeGreaterThanOrEqual(
+      model.serviceBay.h - 0.55,
+    );
     expect(model.forecourt.w).toBeGreaterThan(model.serviceBay.w * 0.9);
     expect(garageAnchorNightFloorEmissive(1)).toBeCloseTo(0.12);
     expect(garageAnchorNightFloorEmissive(0)).toBeCloseTo(1.05);
