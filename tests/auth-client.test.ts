@@ -27,9 +27,7 @@ function fakeJwtWithRoles(roles: string[], email = "player@test.com"): string {
 
 /** Build an unsigned JWT carrying an explicit kooker userId claim + a far-future exp. */
 function fakeJwtWithUserId(userId: string, email = "player@test.com"): string {
-  const payload = btoa(
-    JSON.stringify({ sub: email, exp: 4070908800, userId }),
-  )
+  const payload = btoa(JSON.stringify({ sub: email, exp: 4070908800, userId }))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=/g, "");

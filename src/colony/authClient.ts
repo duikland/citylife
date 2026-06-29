@@ -16,7 +16,12 @@ export interface OperatorSession {
   // `id` is the display name (for the HUD); `userId` is the authenticated kooker user id decoded from
   // the JWT — the stable identity the player view keys off, so own-data / step-into can never be
   // hijacked by a colliding display name. `userId` is null only for a legacy token with no such claim.
-  operator: { id: string; userId: string | null; scopes: string[]; roles: string[] };
+  operator: {
+    id: string;
+    userId: string | null;
+    scopes: string[];
+    roles: string[];
+  };
 }
 
 // `pending: true` means the password was accepted but the account is inactive (a 403 "Account
