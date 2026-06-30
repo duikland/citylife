@@ -3909,7 +3909,7 @@ export class ColonyRuntime {
     this.updateFirstPersonGuidedArrival();
     this.wanderIdleCitizens(dtReal); // keep the citizens strolling so watch mode is never frozen
     this.raceTick(dtReal);
-    this.renderer?.frame();
+    this.renderer?.frame(dtReal);
     if (now - this.lastUi > 200) {
       this.lastUi = now;
       this.emit();

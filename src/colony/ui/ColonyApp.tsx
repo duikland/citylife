@@ -44,7 +44,9 @@ import { FirstPersonPanel } from "./FirstPersonPanel";
 import { GaragePanel } from "./GaragePanel";
 import { RaceMobileControls } from "./RaceMobileControls";
 import { gamepadRaceInput } from "../racing/race";
+import { BuilderPanel } from "./BuilderPanel";
 import "./colony.css";
+import { useRoadNetwork } from "../stores/useRoadNetwork";
 
 // Spec 089 — the CityLife HUD shows only the city-relevant stats (citizens, homesteads, the bank, the
 // commercial district, the border). The old colony-sim survival/economy dashboard (water/food/health/
@@ -503,6 +505,7 @@ function detectTouchCapable(): boolean {
 }
 
 export function ColonyApp() {
+  const { builderActive, worldViewActive } = useRoadNetwork();
   const runtime = useRuntime();
   const hostRef = useRef<HTMLDivElement>(null);
   const ui: ColonyUiState = runtime.getUiState();
@@ -807,7 +810,7 @@ export function ColonyApp() {
       )}
       <FirstPersonPanel runtime={runtime} fp={ui.firstPerson} />
       {ui.garage && <GaragePanel runtime={runtime} garage={ui.garage} />}
-      {rallyRead && (
+      {(!builderActive && !worldViewActive && rallyRead) && (
         <div
           className={`rally-social-read ${ui.clock.isDay ? "" : "rally-social-read--night"}`}
           aria-label="Who is here at the rally"
@@ -951,6 +954,7 @@ export function ColonyApp() {
             📷
           </button>
         </div>
+        <BuilderPanel />
         <div className="group">
           <button
             title="Sign out of CityLife"
@@ -963,23 +967,13 @@ export function ColonyApp() {
           </button>
         </div>
       </header>
-
-      <aside
-        className={hudClassName(ui.firstPerson.active)}
-        data-hud-expanded={rightHudOpen ? "true" : "false"}
-      >
-        <div className="hud-essentials" aria-label="City HUD essentials">
-          <h2>{ui.name}</h2>
-          <div className="hud-essential-row">
-            <span>Site</span>
-            <b>{ui.biome}</b>
-          </div>
-          <div className="hud-essential-row">
-            <span>Pop</span>
-            <b>
-              {ui.colonists}/{ui.colony.capacity}
-            </b>
-          </div>
+      {(!builderActive && !worldViewActive) && (
+        <aside
+          className={hudClassName(ui.firstPerson.active)}
+          data-hud-expanded={rightHudOpen ? "true" : "false"}
+        >
+          <div className="hud-essentials" aria-label="City HUD essentials">
+            <h2>{ui.name}</h2>
           <button
             className="hud-detail-toggle"
             type="button"
@@ -2981,6 +2975,7 @@ export function ColonyApp() {
             })()}
         </div>
       </aside>
+      )}
 
       <RadioPanel runtime={runtime} radio={ui.radio} tv={ui.tv} />
 
